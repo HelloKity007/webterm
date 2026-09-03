@@ -93,6 +93,15 @@ func (s *Store) migrate() error {
 		started_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 		ended_at DATETIME
 	);
+
+	CREATE TABLE IF NOT EXISTS user_layouts (
+		user_id INTEGER PRIMARY KEY,
+		schema_version INTEGER NOT NULL,
+		revision INTEGER NOT NULL,
+		layout_json TEXT NOT NULL,
+		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+	);
 	`
 	_, err := s.DB.Exec(schema)
 	if err != nil {
@@ -102,6 +111,8 @@ func (s *Store) migrate() error {
 	s.DB.Exec("ALTER TABLE connections ADD COLUMN max_sessions INTEGER DEFAULT 10")
 	s.DB.Exec("ALTER TABLE connections ADD COLUMN tag TEXT DEFAULT ''")
 	s.DB.Exec("ALTER TABLE connections ADD COLUMN color TEXT DEFAULT '#4fc3f7'")
+	s.DB.Exec("ALTER TABLE connections ADD COLUMN system_managed INTEGER NOT NULL DEFAULT 0")
+	s.DB.Exec("ALTER TABLE connections ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0")
 	return nil
 }
 

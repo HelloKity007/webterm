@@ -14,6 +14,7 @@ interface Props {
   onReceiveTab?: (tab: Tab) => void;
   filterType?: string;
   connections?: { id: number; name: string }[];
+  quickConnect?: { label: string; onClick: () => void | Promise<void> };
 }
 
 const scopeLabels: Record<BroadcastScope, string> = {
@@ -22,12 +23,13 @@ const scopeLabels: Record<BroadcastScope, string> = {
   all: t('broadcast_all'),
 };
 
-export default function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab, onAddTab, onReceiveTab, filterType, connections }: Props) {
+export default function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab, onAddTab, onReceiveTab, filterType, connections, quickConnect }: Props) {
   const filtered = filterType ? tabs.filter((t) => t.type === filterType) : tabs;
   const broadcastScope = useLayoutStore((s) => s.broadcastScope);
   const setBroadcastScope = useLayoutStore((s) => s.setBroadcastScope);
   const [showPicker, setShowPicker] = useState(false);
   const [dragOverAdd, setDragOverAdd] = useState(false);
+  const [quickConnectError, setQuickConnectError] = useState('');
   const pickerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -79,6 +81,13 @@ export default function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab, onA
         </React.Fragment>
       ))}
       {/* Add tab button with connection picker */}
+      {quickConnect && (
+        <button type="button" aria-label={quickConnect.label} title={quickConnect.label}
+          onClick={() => { setQuickConnectError(''); void Promise.resolve(quickConnect.onClick()).catch(() => setQuickConnectError('本机会话创建失败，请稍后重试。')); }}
+          style={{ border: 0, padding: '2px 6px', cursor: 'pointer', color: colors.accent, background: 'transparent', borderRadius: 4, marginBottom: 2, display: 'flex', alignItems: 'center' }}>
+          <Icon name="plus" size={14} />
+        </button>
+      )}
       <div style={{ position: 'relative', flexShrink: 0 }}>
         <span onClick={() => setShowPicker(!showPicker)} title={t("tab_new")}
           style={{ padding: '2px 6px', cursor: 'pointer', color: showPicker ? colors.accent : colors.textMuted, borderRadius: 4, marginBottom: 2, display: 'flex', alignItems: 'center' }}>
@@ -114,10 +123,11 @@ export default function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab, onA
           try {
             const data = JSON.parse(e.dataTransfer.getData('text/plain'));
             if (data.id && onReceiveTab) onReceiveTab(data as Tab);
-          } catch {}
+          } catch { /* ignore malformed tab drag data */ }
         }}
         style={{ flex: 1, alignSelf: 'stretch', minWidth: 4, background: dragOverAdd ? 'rgba(0,122,204,0.3)' : 'transparent' }}
       />
+      {quickConnectError && <span role="status" style={{ color: colors.dangerBright, fontSize: font.sm, flexShrink: 0 }}>{quickConnectError}</span>}
       {(!filterType || filterType === 'ssh') && (
         <span onClick={cycleScope} title={t("broadcast_toggle")}
           style={{

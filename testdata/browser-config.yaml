@@ -1,0 +1,10 @@
+# Test-only configuration. The encryption key and SSH password are synthetic.
+listen_addr: "127.0.0.1:18888"
+encryption_key: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+log_level: "info"
+ssh_host_key_check: false
+local_quick_connect:
+  host: "127.0.0.1"
+  port: 22
+  username: "pgz"
+  password_env: "WEBTERM_LOCAL_SSH_PASSWORD"

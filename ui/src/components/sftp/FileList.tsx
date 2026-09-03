@@ -127,7 +127,7 @@ export default function FileList({ files, loading, connId, currentPath, onNaviga
           try {
             const resp = JSON.parse(xhr.responseText);
             if (resp.error) errMsg = resp.error;
-          } catch {}
+          } catch { /* response is not a JSON error payload */ }
           setUploading(false);
           setUploadError(errMsg);
           setTimeout(() => setUploadError(null), 5000);
@@ -160,7 +160,7 @@ export default function FileList({ files, loading, connId, currentPath, onNaviga
       // Try native save picker, fallback to link download
       if ('showSaveFilePicker' in window) {
         try {
-          const handle = await (window as any).showSaveFilePicker({ suggestedName: fileName });
+          const handle = await (window as unknown as Window & { showSaveFilePicker: (options: { suggestedName: string }) => Promise<{ createWritable: () => Promise<FileSystemWritableFileStream> }> }).showSaveFilePicker({ suggestedName: fileName });
           const writable = await handle.createWritable();
           await writable.write(blob);
           await writable.close();

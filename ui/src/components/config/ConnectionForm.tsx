@@ -14,27 +14,37 @@ interface Group {
 }
 
 interface Props {
-  connection?: any;
+  connection?: EditableConnection;
   onClose: () => void;
   onSaved: () => void;
 }
 
+interface EditableConnection {
+  id?: number; name?: string; host?: string; port?: number; username?: string; auth_method?: string;
+  password?: string; group_id?: number; shared?: boolean; max_sessions?: number; tag?: string; color?: string;
+}
+
+interface ConnectionFormState {
+  name: string; host: string; port: number; username: string; auth_method: string; password: string;
+  private_key: string; passphrase: string; group_id: number; shared: boolean; max_sessions: number; tag: string; color: string;
+}
+
 export default function ConnectionForm({ connection, onClose, onSaved }: Props) {
   const [groups, setGroups] = useState<Group[]>([]);
-  const [form, setForm] = useState({
+  const [form, setForm] = useState<ConnectionFormState>({
     name: connection?.name || '',
     host: connection?.host || '',
     port: connection?.port || 22,
     username: connection?.username || '',
     auth_method: connection?.auth_method || 'password',
-    password: (connection as any)?.password || '',
+    password: connection?.password || '',
     private_key: '',
     passphrase: '',
     group_id: connection?.group_id || 0,
     shared: connection?.shared || false,
     max_sessions: connection?.max_sessions || 10,
-    tag: (connection as any)?.tag || '',
-    color: (connection as any)?.color || colors.accent,
+    tag: connection?.tag || '',
+    color: connection?.color || colors.accent,
   });
   const onekeyPwd = usePreferencesStore((s) => s.onekeyPwd);
   const onekeyKvs = parseOnekey(onekeyPwd || '[]');
@@ -57,14 +67,14 @@ export default function ConnectionForm({ connection, onClose, onSaved }: Props) 
       }
       onSaved();
       onClose();
-    } catch (e: any) {
-      setError(e.message || t('conn_save_failed'));
+    } catch (error: unknown) {
+      setError(error instanceof Error ? error.message : t('conn_save_failed'));
     } finally {
       setSaving(false);
     }
   };
 
-  const update = (key: string, value: any) => setForm((prev) => ({ ...prev, [key]: value }));
+  const update = <K extends keyof ConnectionFormState>(key: K, value: ConnectionFormState[K]) => setForm((prev) => ({ ...prev, [key]: value }));
 
   return (
     <Modal title={connection ? t('conn_edit') : t('conn_new')} onClose={onClose} width={520} height={form.auth_method === 'private_key' ? 530 : 410} unscaled>

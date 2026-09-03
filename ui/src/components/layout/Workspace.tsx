@@ -18,7 +18,9 @@ export default function Workspace() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
 
   useEffect(() => {
-    if (token) setSidebarCollapsed(false);
+    if (!token) return;
+    const timer = window.setTimeout(() => setSidebarCollapsed(false), 0);
+    return () => window.clearTimeout(timer);
   }, [token]);
   const statusConn = useLayoutStore((s) => s.statusConn);
   const [sidebarWidth, setSidebarWidth] = useState(210);

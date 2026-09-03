@@ -28,10 +28,10 @@ export default function Modal({ title, onClose, children, width = 600, height = 
       display: 'flex', alignItems: 'center', justifyContent: 'center',
     }} onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div style={{
-        background: 'rgba(26,27,38,0.88)', borderRadius: 12, width, height, ['--ui-scale' as any]: unscaled ? 1 : undefined,
+        background: 'rgba(26,27,38,0.88)', borderRadius: 12, width, height, '--ui-scale': unscaled ? 1 : undefined,
         display: 'flex', flexDirection: 'column', overflow: 'hidden',
         boxShadow: '0 8px 32px rgba(0,0,0,0.4), 0 0 0 1px var(--c-border)',
-      }} onClick={(e) => e.stopPropagation()}>
+      } as React.CSSProperties & Record<'--ui-scale', string | number | undefined>} onClick={(e) => e.stopPropagation()}>
         <div style={{
           padding: '16px 24px 8px', display: 'flex',
           justifyContent: 'space-between', alignItems: 'center', fontSize: font.xl2,

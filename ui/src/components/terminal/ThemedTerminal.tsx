@@ -25,6 +25,13 @@ interface Props {
   myTabId?: string;
 }
 
+type Octets = Uint8Array | ArrayBuffer;
+interface ZSentry { consume: (octets: Uint8Array) => void; }
+interface ZTransfer { accept: () => Promise<void>; get_payloads: () => unknown; get_details: () => { name: string }; }
+interface ZSession { type: 'send' | 'receive'; on: (event: string, callback: (value?: ZTransfer) => void) => void; start: () => void; abort: () => void; }
+interface ZDetection { deny: () => void; confirm: () => ZSession; }
+type TerminalSendRegistry = Window & Record<string, (data: string) => void>;
+
 function hexToRgb(hex: string): string {
   const r = parseInt(hex.slice(1, 3), 16);
   const g = parseInt(hex.slice(3, 5), 16);
@@ -46,25 +53,51 @@ function highlightText(text: string, rules: HighlightRule[]): string {
   return text;
 }
 
-export default function ThemedTerminal({ connId, themeName: _themeName, onStatus, onResizeDim, extraMenuItems, tabs,  myTabId }: Props) {
+export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMenuItems, tabs, myTabId }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const [termKey, setTermKey] = useState(0);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
   const rules = useHighlightRules();
   const rulesRef = useRef(rules);
-  rulesRef.current = rules;
-  const zsentryRef = useRef<any>(null);
-  const zsessionRef = useRef<any>(null);
+  const zsentryRef = useRef<ZSentry | null>(null);
+  const zsessionRef = useRef<ZSession | null>(null);
   const zmodemActiveRef = useRef(false);
-  const pendingUploadRef = useRef<any>(null);
+  const pendingUploadRef = useRef<ZSession | null>(null);
   const sendRef = useRef<(data: string) => void>(() => {});
   const onStatusRef = useRef(onStatus);
   const onResizeDimRef = useRef(onResizeDim);
-  onStatusRef.current = onStatus;
-  onResizeDimRef.current = onResizeDim;
   const themeName = usePreferencesStore((s) => s.themeName);
   const fontSize = usePreferencesStore((s) => s.fontSize);
+  const broadcastScope = useLayoutStore((s) => s.broadcastScope);
+  const broadcastSourceId = useLayoutStore((s) => s.broadcastSourceId);
+  const setBroadcastSource = useLayoutStore((s) => s.setBroadcastSource);
+  const terminalRegistry = useLayoutStore((s) => s.terminalRegistry);
+  const registerTerminal = useLayoutStore((s) => s.registerTerminal);
+  const unregisterTerminal = useLayoutStore((s) => s.unregisterTerminal);
+  const setSftpCdPath = useLayoutStore((s) => s.setSftpCdPath);
+  const setStatusConn = useLayoutStore((s) => s.setStatusConn);
+  const focusedPaneId = useLayoutStore((s) => s.focusedPaneId);
+
+  useEffect(() => {
+    rulesRef.current = rules;
+    onStatusRef.current = onStatus;
+    onResizeDimRef.current = onResizeDim;
+  }, [onResizeDim, onStatus, rules]);
+
+  const sendBinary = useCallback((octets: Octets) => {
+    const bytes = octets instanceof Uint8Array ? octets : new Uint8Array(octets);
+    let bin = '';
+    for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+    sendRef.current(JSON.stringify({ data: btoa(bin), b64: true }));
+  }, []);
+
+  const sendTextAsBinary = useCallback((text: string) => {
+    const bytes = new TextEncoder().encode(text);
+    let bin = '';
+    for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+    sendRef.current(JSON.stringify({ data: btoa(bin), b64: true }));
+  }, []);
 
   useEffect(() => {
     const themeConfig = getTheme(themeName || 'Dracula');
@@ -204,7 +237,7 @@ export default function ThemedTerminal({ connId, themeName: _themeName, onStatus
       resizeObserver.disconnect();
       window.removeEventListener('resize', handleResize);
     };
-  }, [themeName, fontSize]);
+  }, [fontSize, myTabId, setSftpCdPath, themeName]);
 
   const token = localStorage.getItem('token') || '';
   const wsUrl = `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws/ssh/${connId}?token=${token}`;
@@ -250,34 +283,22 @@ export default function ThemedTerminal({ connId, themeName: _themeName, onStatus
     onOpen: () => {
       onStatusRef.current?.(true);
       const conns = useConnectionStore.getState().connections;
-      const conn = conns.find((c: any) => c.id === connId);
+      const conn = conns.find((connection) => connection.id === connId);
       if (conn && focusedPaneId) {
         setStatusConn({ name: conn.name, host: conn.host, connected: true });
       }
     },
   });
 
-  sendRef.current = send;
-
-  const sendBinary = useCallback((octets: any) => {
-    const bytes = octets instanceof Uint8Array ? octets : new Uint8Array(octets);
-    let bin = '';
-    for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
-    sendRef.current(JSON.stringify({ data: btoa(bin), b64: true }));
-  }, []);
-
-  const sendTextAsBinary = useCallback((s: string) => {
-    const bytes = new TextEncoder().encode(s);
-    let bin = '';
-    for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
-    sendRef.current(JSON.stringify({ data: btoa(bin), b64: true }));
-  }, []);
+  useEffect(() => {
+    sendRef.current = send;
+  }, [send]);
 
   // ZMODEM (sz/rz) support
   useEffect(() => {
-    const makeSentry = () => {
+    const makeSentry = (): ZSentry => {
       const sentry = new Zmodem.Sentry({
-        to_terminal: (octets: any) => {
+        to_terminal: (octets: Octets) => {
           const term = termRef.current;
           if (!term) return;
           const bytes = octets instanceof Uint8Array ? octets : new Uint8Array(octets);
@@ -288,10 +309,10 @@ export default function ThemedTerminal({ connId, themeName: _themeName, onStatus
             term.write(bytes);
           }
         },
-        sender: (octets: any) => sendBinary(octets),
-        on_detect: (detection: any) => {
+        sender: (octets: Octets) => sendBinary(octets),
+        on_detect: (detection: ZDetection) => {
           if (zsessionRef.current) {
-            try { detection.deny(); } catch {}
+            try { detection.deny(); } catch { /* remote session already ended */ }
             return;
           }
           try {
@@ -311,12 +332,14 @@ export default function ThemedTerminal({ connId, themeName: _themeName, onStatus
               });
             } else {
               // Remote ran sz: download offered files
-              session.on('offer', (xfer: any) => {
+              session.on('offer', (transfer) => {
+                if (!transfer) return;
+                const xfer = transfer;
                 xfer.accept()
                   .then(() => {
                     Zmodem.Browser.save_to_disk(xfer.get_payloads(), xfer.get_details().name);
                   })
-                  .catch(() => {});
+                  .catch(() => { /* browser rejected download */ });
               });
               session.on('session_end', () => {
                 zmodemActiveRef.current = false;
@@ -334,7 +357,9 @@ export default function ThemedTerminal({ connId, themeName: _themeName, onStatus
         },
         on_retract: () => {},
       });
-      zsentryRef.current = sentry;
+      const typedSentry = sentry as ZSentry;
+      zsentryRef.current = typedSentry;
+      return typedSentry;
     };
     makeSentry();
     return () => {
@@ -344,24 +369,14 @@ export default function ThemedTerminal({ connId, themeName: _themeName, onStatus
     };
   }, [sendBinary]);
 
-  const broadcastScope = useLayoutStore((s) => s.broadcastScope);
-  const broadcastSourceId = useLayoutStore((s) => s.broadcastSourceId);
-  const setBroadcastSource = useLayoutStore((s) => s.setBroadcastSource);
-  const terminalRegistry = useLayoutStore((s) => s.terminalRegistry);
-  const registerTerminal = useLayoutStore((s) => s.registerTerminal);
-  const unregisterTerminal = useLayoutStore((s) => s.unregisterTerminal);
-  const setSftpCdPath = useLayoutStore((s) => s.setSftpCdPath);
-  const setStatusConn = useLayoutStore((s) => s.setStatusConn);
-  const focusedPaneId = useLayoutStore((s) => s.focusedPaneId);
-
   // Register this terminal's send function globally for broadcast
   useEffect(() => {
     if (!myTabId) return;
     const key = `webterm-ws-${myTabId}`;
-    (window as any)[key] = send;
+    (window as unknown as TerminalSendRegistry)[key] = send;
     registerTerminal(myTabId);
     return () => {
-      delete (window as any)[key];
+      delete (window as unknown as TerminalSendRegistry)[key];
       unregisterTerminal(myTabId);
     };
   }, [myTabId, send, registerTerminal, unregisterTerminal]);
@@ -389,7 +404,7 @@ export default function ThemedTerminal({ connId, themeName: _themeName, onStatus
             if (files.length) {
               await Zmodem.Browser.send_files(session, files);
             } else {
-              try { session.abort(); } catch {}
+              try { session.abort(); } catch { /* session already closed */ }
             }
           } catch (e) {
             termRef.current?.write(`\r\n\x1b[31mZMODEM: ${e}\x1b[0m\r\n`);
@@ -416,14 +431,14 @@ export default function ThemedTerminal({ connId, themeName: _themeName, onStatus
         const targets = broadcastScope === 'all' ? terminalRegistry : tabs?.map((t) => t.id) || [];
         targets.forEach((tid) => {
           if (tid !== myTabId) {
-            const targetSend = (window as any)[`webterm-ws-${tid}`];
+            const targetSend = (window as unknown as TerminalSendRegistry)[`webterm-ws-${tid}`];
             if (targetSend) targetSend(JSON.stringify({ data }));
           }
         });
       }
     });
     return () => disposable.dispose();
-  }, [send, broadcastScope, broadcastSourceId, myTabId, tabs, terminalRegistry, termKey]);
+  }, [send, sendTextAsBinary, broadcastScope, broadcastSourceId, myTabId, tabs, terminalRegistry, termKey]);
 
   return (
     <div ref={ref} style={{ flex: 1, overflow: 'hidden', padding: '0 6px' }}
@@ -438,7 +453,7 @@ export default function ThemedTerminal({ connId, themeName: _themeName, onStatus
               label: t('term_copy'),
               action: () => {
                 const sel = termRef.current?.getSelection();
-                if (sel) navigator.clipboard.writeText(sel).catch(() => {});
+                if (sel) navigator.clipboard.writeText(sel).catch(() => { /* clipboard unavailable */ });
               },
             },
             {
@@ -447,7 +462,7 @@ export default function ThemedTerminal({ connId, themeName: _themeName, onStatus
                 try {
                   const text = await navigator.clipboard.readText();
                   termRef.current?.paste(text);
-                } catch {}
+                } catch { /* clipboard permission denied */ }
               },
             },
             {

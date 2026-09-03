@@ -39,21 +39,27 @@ export default function SftpPanel({ connId, tabId, localMode, currentPath, onPat
   const sessionKey = tabId || String(connId);
   const cacheRef = useRef<Map<string, { path: string; files: SftpFile[] }>>(new Map());
   const navRef = useRef({ history: [defaultPath], index: 0 });
-  const [, setNavTick] = useState(0);
+  const [navState, setNavState] = useState({ history: [defaultPath], index: 0 });
 
   const wsRef = useRef<WebSocket | null>(null);
+  const [editorSocket, setEditorSocket] = useState<WebSocket | null>(null);
   const [wsNonce, setWsNonce] = useState(0);
   const pathRef = useRef(path);
-  pathRef.current = path;
   const prevKeyRef = useRef(sessionKey);
 
-  // Save cache for old session before switching to new one
-  if (prevKeyRef.current !== sessionKey) {
-    if (prevKeyRef.current != null) {
-      cacheRef.current.set(prevKeyRef.current, { path: pathRef.current, files });
+  useEffect(() => {
+    pathRef.current = path;
+  }, [path]);
+
+  // Save cache for old session before switching to new one.
+  useEffect(() => {
+    if (prevKeyRef.current !== sessionKey) {
+      if (prevKeyRef.current != null) {
+        cacheRef.current.set(prevKeyRef.current, { path, files });
+      }
+      prevKeyRef.current = sessionKey;
     }
-    prevKeyRef.current = sessionKey;
-  }
+  }, [files, path, sessionKey]);
 
   const fetchDir = useCallback((dirPath: string, force = false) => {
     const socket = wsRef.current;
@@ -70,7 +76,7 @@ export default function SftpPanel({ connId, tabId, localMode, currentPath, onPat
 
   // Helper: check if connId still has active SSH tabs
   const connIsAlive = (cId: number) => {
-    const cache = (window as any).__paneTabsCache as Map<string, import('../../store/layout').Tab[]> | undefined;
+    const cache = (window as unknown as { __paneTabsCache?: Map<string, import('../../store/layout').Tab[]> }).__paneTabsCache;
     if (!cache) return false;
     for (const tabs of cache.values()) {
       if (tabs.some((t) => t.connId === cId)) return true;
@@ -91,6 +97,7 @@ export default function SftpPanel({ connId, tabId, localMode, currentPath, onPat
     }
     if (existing && existing.readyState === WebSocket.OPEN) {
       wsRef.current = existing;
+      setEditorSocket(existing);
       setDisconnected(false);
       const cached = cacheRef.current.get(sessionKey);
       const cdPaths = useLayoutStore.getState().sftpCdPaths;
@@ -109,6 +116,7 @@ export default function SftpPanel({ connId, tabId, localMode, currentPath, onPat
       } else {
         wsRef.current?.close();
         wsRef.current = null;
+        setEditorSocket(null);
       }
     }
 
@@ -128,6 +136,7 @@ export default function SftpPanel({ connId, tabId, localMode, currentPath, onPat
       : `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws/sftp/${connId}?token=${token}`;
     const socket = new WebSocket(wsUrl);
     wsRef.current = socket;
+    setEditorSocket(socket);
 
     socket.onopen = () => {
       setDisconnected(false);
@@ -144,7 +153,7 @@ export default function SftpPanel({ connId, tabId, localMode, currentPath, onPat
         const msg = JSON.parse(event.data);
         if (msg.type === 'file_list') {
           setFiles(msg.files || []);
-          setPath(msg.path || path);
+          setPath(msg.path || pathRef.current);
           setLoading(false);
         } else if (msg.type === 'error') {
           setError(msg.error);
@@ -155,9 +164,9 @@ export default function SftpPanel({ connId, tabId, localMode, currentPath, onPat
         } else if (msg.type === 'delete_done' || msg.type === 'mkdir_done' || msg.type === 'rename_done') {
           fetchDir(pathRef.current, true);
         }
-      } catch {}
+      } catch { /* ignore malformed SFTP responses */ }
     };
-  }, [connId, wsNonce]);
+  }, [connId, defaultPath, fetchDir, localMode, sessionKey, tabId, wsNonce]);
 
   // Prune a specific connId from the pool when all its SSH tabs are gone
   const sftpPruneConn = useLayoutStore((s) => s.sftpPruneConn);
@@ -173,9 +182,10 @@ export default function SftpPanel({ connId, tabId, localMode, currentPath, onPat
 
   // Clean up pool on unmount
   useEffect(() => {
+    const pool = poolRef.current;
     return () => {
-      poolRef.current.forEach((s) => { try { s.close(); } catch {} });
-      poolRef.current.clear();
+      pool.forEach((socket) => { try { socket.close(); } catch { /* already closed */ } });
+      pool.clear();
     };
   }, []);
 
@@ -191,7 +201,7 @@ export default function SftpPanel({ connId, tabId, localMode, currentPath, onPat
     } else {
       socket.send(JSON.stringify({ action: 'getwd' }));
     }
-  }, [tabId]);
+  }, [fetchDir, sessionKey, tabId]);
 
   // Follow SSH shell cd via OSC 7 (per-tab paths)
   const sftpCdPaths = useLayoutStore((s) => s.sftpCdPaths);
@@ -201,9 +211,12 @@ export default function SftpPanel({ connId, tabId, localMode, currentPath, onPat
     const socket = wsRef.current;
     if (!socket || socket.readyState !== WebSocket.OPEN) return;
     if (cdPath === path) return;
-    setPath(cdPath);
-    fetchDir(cdPath);
-  }, [followCd, cdPath]);
+    const timer = window.setTimeout(() => {
+      setPath(cdPath);
+      fetchDir(cdPath);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [cdPath, fetchDir, followCd, path]);
 
   const navigateTo = useCallback((newPath: string, pushHistory = true) => {
     setPath(newPath);
@@ -215,9 +228,9 @@ export default function SftpPanel({ connId, tabId, localMode, currentPath, onPat
       if (next[next.length - 1] !== newPath) next.push(newPath);
       nav.history = next;
       nav.index = next.length - 1;
-      setNavTick((t) => t + 1);
+      setNavState({ history: [...nav.history], index: nav.index });
     }
-  }, [fetchDir, onPathChange]);
+  }, [fetchDir, onPathChange, setNavState]);
 
   const handleNavigate = useCallback((newPath: string) => navigateTo(newPath, true), [navigateTo]);
 
@@ -235,8 +248,8 @@ export default function SftpPanel({ connId, tabId, localMode, currentPath, onPat
     const parent = path.substring(0, path.lastIndexOf('/')) || '/';
     navigateTo(parent, true);
   };
-  const canGoBack = navRef.current.index > 0;
-  const canGoForward = navRef.current.index < navRef.current.history.length - 1;
+  const canGoBack = navState.index > 0;
+  const canGoForward = navState.index < navState.history.length - 1;
 
   const handleDelete = (filePath: string) => {
     wsRef.current?.send(JSON.stringify({ action: 'delete', path: filePath }));
@@ -295,7 +308,7 @@ export default function SftpPanel({ connId, tabId, localMode, currentPath, onPat
           <Suspense fallback={<div style={{ padding: 12, fontSize: font.md, color: colors.textMuted }}>Loading…</div>}>
             <FileEditor
               filePath={editFile.path} fileName={editFile.name}
-              ws={wsRef.current}
+              ws={editorSocket}
               onClose={() => setEditFile(null)} onSaved={() => fetchDir(path)}
             />
           </Suspense>

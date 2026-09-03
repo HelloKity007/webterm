@@ -12,14 +12,22 @@ interface Group {
 }
 
 interface Props {
-  connection?: any;
+  connection?: EditableDbConnection;
   onClose: () => void;
   onSaved: () => void;
 }
 
+interface EditableDbConnection {
+  id?: number; name?: string; host?: string; port?: number; username?: string; database_name?: string; group_id?: number; shared?: boolean;
+}
+
+interface DbConnectionFormState {
+  name: string; host: string; port: number; username: string; password: string; database_name: string; group_id: number; shared: boolean;
+}
+
 export default function DbConnectionForm({ connection, onClose, onSaved }: Props) {
   const [groups, setGroups] = useState<Group[]>([]);
-  const [form, setForm] = useState({
+  const [form, setForm] = useState<DbConnectionFormState>({
     name: connection?.name || '',
     host: connection?.host || '',
     port: connection?.port || 3306,
@@ -47,14 +55,14 @@ export default function DbConnectionForm({ connection, onClose, onSaved }: Props
       }
       onSaved();
       onClose();
-    } catch (e: any) {
-      setError(e.message || t('conn_save_failed'));
+    } catch (error: unknown) {
+      setError(error instanceof Error ? error.message : t('conn_save_failed'));
     } finally {
       setSaving(false);
     }
   };
 
-  const update = (key: string, value: any) => setForm({ ...form, [key]: value });
+  const update = <K extends keyof DbConnectionFormState>(key: K, value: DbConnectionFormState[K]) => setForm((previous) => ({ ...previous, [key]: value }));
 
   return (
     <Modal title={connection ? t('db_conn_edit') : t('db_conn_new')} onClose={onClose} width={550} height={420} unscaled>
@@ -75,7 +83,7 @@ export default function DbConnectionForm({ connection, onClose, onSaved }: Props
 
           <div>
             <label style={labelStyle}>{t("conn_group")}</label>
-            <CustomSelect value={form.group_id} onChange={(v) => update('group_id', Number(v))} style={inputStyle}>
+            <CustomSelect value={String(form.group_id)} onChange={(v) => update('group_id', Number(v))} style={inputStyle}>
               <option value={0}>{t("conn_ungrouped")}</option>
               {groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
             </CustomSelect>

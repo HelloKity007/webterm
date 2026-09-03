@@ -18,7 +18,7 @@ Web-based SSH/SFTP/Database terminal manager. Single binary, Go backend + React 
 
 ```bash
 make build          # build frontend + Go binary
-./webterm            # runs on :8888 by default (see config.yaml)
+./scripts/lan-up.sh  # serves LAN HTTPS on :9443 through Caddy
 ```
 
 Default admin: `admin` / `admin`
@@ -51,10 +51,19 @@ Default admin: `admin` / `admin`
 
 `config.yaml`:
 ```yaml
-port: 8888
-encryption_key: "64-char-hex-string"
+listen_addr: "127.0.0.1:8888"
+encryption_key_env: "WEBTERM_ENCRYPTION_KEY"
+ssh_host_key_check: true
+ssh_known_hosts: "ssh_known_hosts"
+local_quick_connect:
+  host: "127.0.0.1"
+  port: 22
+  username: "your-linux-user"
+  password_env: "WEBTERM_LOCAL_SSH_PASSWORD"
 log_level: "info"
 ```
+
+For LAN deployment, keep `config.yaml` and `lan-secrets.env` at mode `600`. The ignored `lan-secrets.env` supplies `WEBTERM_ENCRYPTION_KEY`, `WEBTERM_LOCAL_SSH_PASSWORD`, `LAN_TLS_CERT`, and `LAN_TLS_KEY`; never commit it. `Caddyfile` allows only `192.168.11.0/24` on HTTPS port `9443` and proxies to loopback `127.0.0.1:8888`.
 
 ## License
 

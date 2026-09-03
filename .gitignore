@@ -3,3 +3,6 @@
 !/frontend/dist/.gitkeep
 /webterm
 /webterm.db*
+/runtime/
+/lan-secrets.env
+/ssh_known_hosts

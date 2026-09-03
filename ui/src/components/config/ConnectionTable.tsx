@@ -1,16 +1,19 @@
 import { t } from '../../i18n';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { apiGet, apiDelete } from '../../api/client';
 import { useAuthStore } from '../../store/auth';
 import ConnectionForm from './ConnectionForm';
 import DbConnectionForm from './DbConnectionForm';
 import { colors, font } from '../../theme/tokens';
+import type { Connection, DbConnection, Group } from '../../store/connections';
+
+type TableItem = (Connection | DbConnection) & Record<string, unknown>;
 
 interface Column {
   key: string;
   label: string;
   width: string;
-  render?: (v: any) => string;
+  render?: (value: unknown) => string;
 }
 
 interface Props {
@@ -22,32 +25,36 @@ interface Props {
 }
 
 export default function ConnectionTable({ type, title, apiPrefix, groupType, columns }: Props) {
-  const [items, setItems] = useState<any[]>([]);
-  const [groups, setGroups] = useState<any[]>([]);
+  const [items, setItems] = useState<TableItem[]>([]);
+  const [groups, setGroups] = useState<Group[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [showForm, setShowForm] = useState(false);
-  const [editingItem, setEditingItem] = useState<any>(null);
+  const [editingItem, setEditingItem] = useState<TableItem | null>(null);
 
   const token = useAuthStore((s) => s.token);
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     try {
       setLoading(true);
       const [data, groupData] = await Promise.all([
         apiGet(apiPrefix),
         apiGet(`/api/groups?type=${groupType}`),
       ]);
-      setItems(data || []);
-      setGroups(groupData || []);
+      setItems(Array.isArray(data) ? data as TableItem[] : []);
+      setGroups(Array.isArray(groupData) ? groupData as Group[] : []);
     } catch {
       setError(t('config_load_failed'));
     } finally {
       setLoading(false);
     }
-  };
+  }, [apiPrefix, groupType]);
 
-  useEffect(() => { if (token) fetchData(); }, [token]);
+  useEffect(() => {
+    if (!token) return;
+    const timer = window.setTimeout(() => { void fetchData(); }, 0);
+    return () => window.clearTimeout(timer);
+  }, [fetchData, token]);
 
   const handleDelete = async (id: number) => {
     if (!confirm(t('config_confirm_delete_conn'))) return;
@@ -60,7 +67,7 @@ export default function ConnectionTable({ type, title, apiPrefix, groupType, col
   };
 
   const groupMap: Record<number, string> = {};
-  groups.forEach((g: any) => { groupMap[g.id] = g.name; });
+  groups.forEach((group) => { groupMap[group.id] = group.name; });
 
   if (loading) return <div style={{ padding: 24, color: colors.textMuted }}>{t("file_loading")}</div>;
 
@@ -86,7 +93,7 @@ export default function ConnectionTable({ type, title, apiPrefix, groupType, col
           </tr>
         </thead>
         <tbody>
-          {items.map((item: any, i: number) => (
+          {items.map((item, i) => (
             <tr key={item.id} style={{ background: i % 2 === 0 ? colors.bg : colors.bgInput }}
               onDoubleClick={() => { setEditingItem(item); setShowForm(true); }}>
               {columns.map((col) => (
@@ -109,10 +116,10 @@ export default function ConnectionTable({ type, title, apiPrefix, groupType, col
       </table>
 
       {showForm && type === 'ssh' && (
-        <ConnectionForm connection={editingItem} onClose={() => { setShowForm(false); setEditingItem(null); }} onSaved={fetchData} />
+        <ConnectionForm connection={editingItem || undefined} onClose={() => { setShowForm(false); setEditingItem(null); }} onSaved={fetchData} />
       )}
       {showForm && type === 'db' && (
-        <DbConnectionForm connection={editingItem} onClose={() => { setShowForm(false); setEditingItem(null); }} onSaved={fetchData} />
+        <DbConnectionForm connection={editingItem || undefined} onClose={() => { setShowForm(false); setEditingItem(null); }} onSaved={fetchData} />
       )}
     </div>
   );

@@ -17,12 +17,10 @@ export default function QueryEditor({ connId }: Props) {
   const viewRef = useRef<EditorView | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const [ws, setWs] = useState<WebSocket | null>(null);
-  const [result, setResult] = useState<{ columns: string[]; rows: Record<string,any>[]; rowsAffected?: number } | null>(null);
+  const [result, setResult] = useState<{ columns: string[]; rows: Record<string, unknown>[]; rowsAffected?: number } | null>(null);
   const [error, setError] = useState('');
 
   useEffect(() => {
-    setWs(null);
-    wsRef.current = null;
     let closed = false;
     let retries = 0;
     let timer: ReturnType<typeof setTimeout> | undefined;

@@ -1,19 +1,191 @@
 package sshmgr
 
-import "sync"
+import (
+	"errors"
+	"sync"
+)
+
+var ErrMaxSessions = errors.New("ssh session limit reached")
+
+// MaxChannelsPerTransport matches OpenSSH's default MaxSessions. More active
+// terminal panes are sharded across transports instead of overfilling one.
+const MaxChannelsPerTransport = 10
+
+const defaultTransportDialLimit = 8
 
 type poolEntry struct {
 	client   *Client
 	refCount int
 }
 
+type sessionPoolEntry struct {
+	slots  []*sessionSlot
+	active int
+}
+
+type sessionSlot struct {
+	client   *Client
+	sessions int
+	ready    chan struct{}
+	err      error
+}
+
 type Pool struct {
-	mu      sync.Mutex
-	entries map[int64]*poolEntry
+	mu             sync.Mutex
+	entries        map[int64]*poolEntry
+	sessionEntries map[int64]*sessionPoolEntry
+	dialGate       chan struct{}
 }
 
 func NewPool() *Pool {
-	return &Pool{entries: make(map[int64]*poolEntry)}
+	return NewPoolWithDialLimit(defaultTransportDialLimit)
+}
+
+func NewPoolWithDialLimit(limit int) *Pool {
+	if limit < 1 {
+		limit = 1
+	}
+	return &Pool{
+		entries:        make(map[int64]*poolEntry),
+		sessionEntries: make(map[int64]*sessionPoolEntry),
+		dialGate:       make(chan struct{}, limit),
+	}
+}
+
+// SessionLease owns one SSH channel reservation. It must be released exactly
+// once when the browser WebSocket closes.
+type SessionLease struct {
+	pool   *Pool
+	connID int64
+	entry  *sessionPoolEntry
+	slot   *sessionSlot
+	Client *Client
+	once   sync.Once
+}
+
+func (l *SessionLease) Release() {
+	if l == nil {
+		return
+	}
+	l.once.Do(func() { l.pool.releaseSession(l.connID, l.entry, l.slot) })
+}
+
+// AcquireSession reserves one channel without letting any individual SSH
+// transport exceed channelsPerTransport. maxSessions remains the connection's
+// total user-visible limit, irrespective of how many transports are needed.
+func (p *Pool) AcquireSession(connID int64, maxSessions, channelsPerTransport int, factory func() (*Client, error)) (*SessionLease, error) {
+	if channelsPerTransport < 1 {
+		channelsPerTransport = 1
+	}
+
+	p.mu.Lock()
+	entry := p.sessionEntries[connID]
+	if entry == nil {
+		entry = &sessionPoolEntry{}
+		p.sessionEntries[connID] = entry
+	}
+	if maxSessions > 0 && entry.active >= maxSessions {
+		p.mu.Unlock()
+		return nil, ErrMaxSessions
+	}
+
+	for _, slot := range entry.slots {
+		if slot.sessions < channelsPerTransport {
+			slot.sessions++
+			entry.active++
+			p.mu.Unlock()
+			return p.awaitSession(connID, entry, slot)
+		}
+	}
+
+	slot := &sessionSlot{sessions: 1, ready: make(chan struct{})}
+	entry.slots = append(entry.slots, slot)
+	entry.active++
+	p.mu.Unlock()
+
+	p.dialGate <- struct{}{}
+	client, err := factory()
+	<-p.dialGate
+	p.mu.Lock()
+	slot.client = client
+	slot.err = err
+	close(slot.ready)
+	p.mu.Unlock()
+	if err != nil {
+		p.releaseSession(connID, entry, slot)
+		return nil, err
+	}
+	return &SessionLease{pool: p, connID: connID, entry: entry, slot: slot, Client: client}, nil
+}
+
+func (p *Pool) awaitSession(connID int64, entry *sessionPoolEntry, slot *sessionSlot) (*SessionLease, error) {
+	<-slot.ready
+	p.mu.Lock()
+	err := slot.err
+	client := slot.client
+	p.mu.Unlock()
+	if err != nil {
+		p.releaseSession(connID, entry, slot)
+		return nil, err
+	}
+	return &SessionLease{pool: p, connID: connID, entry: entry, slot: slot, Client: client}, nil
+}
+
+func (p *Pool) releaseSession(connID int64, entry *sessionPoolEntry, slot *sessionSlot) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if slot.sessions == 0 {
+		return
+	}
+	slot.sessions--
+	entry.active--
+	if slot.sessions != 0 {
+		return
+	}
+	if slot.client != nil {
+		_ = slot.client.Close()
+	}
+	for i, candidate := range entry.slots {
+		if candidate == slot {
+			entry.slots = append(entry.slots[:i], entry.slots[i+1:]...)
+			break
+		}
+	}
+	if entry.active == 0 && len(entry.slots) == 0 && p.sessionEntries[connID] == entry {
+		delete(p.sessionEntries, connID)
+	}
+}
+
+func (p *Pool) ActiveSessionCount(connID int64) int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if entry := p.sessionEntries[connID]; entry != nil {
+		return entry.active
+	}
+	return 0
+}
+
+func (p *Pool) SessionTransportCount(connID int64) int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if entry := p.sessionEntries[connID]; entry != nil {
+		return len(entry.slots)
+	}
+	return 0
+}
+
+func (p *Pool) SessionTransportLoads(connID int64) []int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	entry := p.sessionEntries[connID]
+	if entry == nil {
+		return nil
+	}
+	loads := make([]int, len(entry.slots))
+	for i, slot := range entry.slots {
+		loads[i] = slot.sessions
+	}
+	return loads
 }
 
 // Acquire returns an existing client and increments its ref count.
@@ -69,6 +241,7 @@ func (p *Pool) AcquireOrCreate(connID int64, factory func() (*Client, error)) (*
 	p.mu.Unlock()
 	return client, nil
 }
+
 // SessionCount returns the current number of active sessions (ref count) for a connId.
 func (p *Pool) SessionCount(connID int64) int {
 	p.mu.Lock()
@@ -86,6 +259,9 @@ func (p *Pool) Remove(connID int64) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	delete(p.entries, connID)
+	// Existing terminal leases retain their transport until their WebSocket
+	// closes. Future sessions use a fresh entry with the updated credentials.
+	delete(p.sessionEntries, connID)
 }
 
 func (p *Pool) Release(connID int64) {

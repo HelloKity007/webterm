@@ -32,7 +32,7 @@ export default function HeaderSearch() {
     const q = query.toLowerCase();
     const items: { label: string; sub: string; type: string; connId: number; icon: string }[] = [];
     sshConns.forEach((c) => {
-      if (c.name.toLowerCase().includes(q) || c.host.toLowerCase().includes(q) || ((c as any).tag || '').toLowerCase().includes(q)) {
+      if (c.name.toLowerCase().includes(q) || c.host.toLowerCase().includes(q) || (c.tag || '').toLowerCase().includes(q)) {
         items.push({ label: c.name, sub: `${c.host}:${c.port}`, type: 'ssh', connId: c.id, icon: 'terminal' });
       }
     });

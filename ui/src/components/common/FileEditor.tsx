@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { EditorView, keymap } from '@codemirror/view';
+import type { Extension } from '@codemirror/state';
 import { t } from '../../i18n';
 import { defaultKeymap } from '@codemirror/commands';
 import { basicSetup } from 'codemirror';
@@ -18,7 +19,9 @@ interface Props {
   onSaved: () => void;
 }
 
-function detectLanguage(fileName: string): any {
+type RemoteFileMessage = { type?: string; path?: string; content?: string; error?: string };
+
+function detectLanguage(fileName: string): Extension | Extension[] {
   const ext = fileName.split('.').pop()?.toLowerCase();
   switch (ext) {
     case 'sql': return sql();
@@ -50,14 +53,14 @@ export default function FileEditor({ filePath, fileName, ws, onClose, onSaved }:
     ws.send(JSON.stringify({ action: 'read', path: filePath }));
 
     const handler = (e: MessageEvent) => {
-      const msg = JSON.parse(e.data);
+      const msg = JSON.parse(e.data) as RemoteFileMessage;
       if (msg.type === 'file_content' && msg.path === filePath) {
         setContent(msg.content || '');
         origContentRef.current = msg.content || '';
         setLoading(false);
         ws.removeEventListener('message', handler);
       } else if (msg.type === 'error') {
-        setError(msg.error);
+        setError(msg.error || 'Unable to read file');
         setLoading(false);
         ws.removeEventListener('message', handler);
       }
@@ -73,7 +76,7 @@ export default function FileEditor({ filePath, fileName, ws, onClose, onSaved }:
 
     const lang = detectLanguage(fileName);
 
-    const extensions: any[] = [
+    const extensions: Extension[] = [
       basicSetup,
       keymap.of([
         ...defaultKeymap,
@@ -102,9 +105,9 @@ export default function FileEditor({ filePath, fileName, ws, onClose, onSaved }:
     viewRef.current = view;
 
     return () => view.destroy();
-  }, [loading]);
+  }, [content, fileName, loading]);
 
-  const handleSave = () => {
+  const handleSave = useCallback(() => {
     if (!ws || !viewRef.current) return;
     const text = viewRef.current.state.doc.toString();
     const bakPath = filePath + '.bak';
@@ -112,14 +115,14 @@ export default function FileEditor({ filePath, fileName, ws, onClose, onSaved }:
     setError('');
 
     const handler = (e: MessageEvent) => {
-      const msg = JSON.parse(e.data);
+      const msg = JSON.parse(e.data) as RemoteFileMessage;
       if (msg.type === 'write_done' && msg.path === filePath) {
         setSaving(false);
         onSaved();
         onClose();
         ws.removeEventListener('message', handler);
       } else if (msg.type === 'error') {
-        setError(msg.error);
+        setError(msg.error || 'Unable to save file');
         setSaving(false);
         ws.removeEventListener('message', handler);
       } else if (backup && msg.type === 'write_done' && msg.path === bakPath) {
@@ -133,10 +136,11 @@ export default function FileEditor({ filePath, fileName, ws, onClose, onSaved }:
     } else {
       ws.send(JSON.stringify({ action: 'write', path: filePath, content: text }));
     }
-  };
+  }, [backup, filePath, onClose, onSaved, ws]);
 
-  // Keep saveHandlerRef up to date
-  saveHandlerRef.current = handleSave;
+  useEffect(() => {
+    saveHandlerRef.current = handleSave;
+  }, [handleSave]);
 
   return (
     <Modal title={`${t('file_edit')}: ${fileName}`} onClose={onClose} width={800} height={600}>

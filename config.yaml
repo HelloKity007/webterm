@@ -1,4 +1,11 @@
-port: 8888
-encryption_key: "0000000000000000000000000000000000000000000000000000000000000000"
+listen_addr: "127.0.0.1:8888"
+encryption_key_env: "WEBTERM_ENCRYPTION_KEY"
 log_level: "info"
-ssh_host_key_check: false
+ssh_host_key_check: true
+ssh_known_hosts: "ssh_known_hosts"
+local_quick_connect:
+  host: "127.0.0.1"
+  port: 22
+  username: "pgz"
+  password_env: "WEBTERM_LOCAL_SSH_PASSWORD"
+  max_sessions: 1000

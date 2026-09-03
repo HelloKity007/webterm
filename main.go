@@ -10,7 +10,7 @@ import (
 	"io/fs"
 	"log"
 	"net/http"
-	"strings"
+	"os"
 	"time"
 
 	"github.com/xufanchn/webterm/auth"
@@ -42,20 +42,24 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to load config: %v", err)
 	}
-	if cfg.EncryptionKey == "" || strings.Trim(cfg.EncryptionKey, "0") == "" {
-		log.Println("warning: encryption key is default/empty — set a random 64-char hex key in config.yaml")
-	}
 	sshmgr.SetStrictHostKeyCheck(cfg.SSHHostKeyCheck)
+	sshmgr.SetKnownHostsPath(cfg.SSHKnownHosts)
 
 	st, err := store.New("webterm.db")
 	if err != nil {
 		log.Fatalf("failed to open database: %v", err)
 	}
 	defer st.Close()
+	seedAdmin(st)
 
 	aesCipher, err := crypto.New(cfg.EncryptionKey)
 	if err != nil {
 		log.Fatalf("invalid encryption key: %v", err)
+	}
+	if _, err := handler.EnsureManagedLocalConnection(st, aesCipher, handler.LocalQuickConnectSettings{
+		Host: cfg.LocalQuickConnect.Host, Port: cfg.LocalQuickConnect.Port, Username: cfg.LocalQuickConnect.Username, MaxSessions: cfg.LocalQuickConnect.MaxSessions,
+	}, os.Getenv(cfg.LocalQuickConnect.PasswordEnv)); err != nil {
+		log.Fatalf("failed to initialize local quick connection: %v", err)
 	}
 	jwtSecret := make([]byte, 32)
 	if _, err := rand.Read(jwtSecret); err != nil {
@@ -78,12 +82,18 @@ func main() {
 
 	pool := sshmgr.NewPool()
 	connH := &handler.ConnectionHandler{Store: st, Pool: pool, AESCipher: aesCipher}
+	quickConnectH := &handler.QuickConnectHandler{Store: st}
+	layoutH := &handler.LayoutHandler{Store: st, Hub: handler.NewLayoutHub()}
 	wsH := &handler.WSHandler{Store: st, Pool: pool, AESCipher: aesCipher}
 
 	mux.Handle("GET /api/connections", auth.Middleware(http.HandlerFunc(connH.List)))
 	mux.Handle("POST /api/connections", auth.Middleware(http.HandlerFunc(connH.Create)))
 	mux.Handle("PUT /api/connections/{id}", auth.Middleware(http.HandlerFunc(connH.Update)))
 	mux.Handle("DELETE /api/connections/{id}", auth.Middleware(http.HandlerFunc(connH.Delete)))
+	mux.Handle("POST /api/quick-connect/local", auth.Middleware(http.HandlerFunc(quickConnectH.OpenLocal)))
+	mux.Handle("GET /api/layout", auth.Middleware(http.HandlerFunc(layoutH.Get)))
+	mux.Handle("PUT /api/layout", auth.Middleware(http.HandlerFunc(layoutH.Save)))
+	mux.Handle("/ws/layout", websocket.Handler(layoutH.HandleEvents))
 
 	sftpRestH := &handler.SftpHandler{Store: st, Pool: pool, AESCipher: aesCipher}
 
@@ -114,12 +124,9 @@ func main() {
 
 	mux.HandleFunc("/", spaHandler())
 
-	seedAdmin(st)
-
-	addr := fmt.Sprintf(":%d", cfg.Port)
-	log.Printf("webterm starting on %s", addr)
+	log.Printf("webterm starting on %s", cfg.ListenAddr)
 	srv := &http.Server{
-		Addr:              addr,
+		Addr:              cfg.ListenAddr,
 		Handler:           mux,
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       60 * time.Second,

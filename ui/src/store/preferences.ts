@@ -9,7 +9,7 @@ export interface HighlightRule {
 }
 
 function parseOnekey(raw: string): OneKeyEntry[] {
-  try { const arr = JSON.parse(raw); if (Array.isArray(arr)) return arr; } catch {}
+  try { const arr = JSON.parse(raw); if (Array.isArray(arr)) return arr; } catch { /* use legacy parser */ }
   // Legacy format: key=username:password per line
   return raw.split('\n').filter(Boolean).map((line) => {
     const eq = line.indexOf('=');
@@ -40,7 +40,7 @@ function loadHighlightRules(): HighlightRule[] {
       const valid = parsed.filter((r) => r && typeof r.keyword === 'string' && typeof r.color === 'string');
       return valid.length ? valid : DEFAULT_HIGHLIGHT_RULES;
     }
-  } catch {}
+  } catch { /* use defaults */ }
   return DEFAULT_HIGHLIGHT_RULES;
 }
 

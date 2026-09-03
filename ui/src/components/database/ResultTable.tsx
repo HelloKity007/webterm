@@ -4,7 +4,7 @@ import { colors, font } from '../../theme/tokens';
 
 interface Props {
   columns: string[];
-  rows: Record<string, any>[];
+  rows: Record<string, unknown>[];
   rowsAffected?: number;
   onExportCSV: () => void;
 }

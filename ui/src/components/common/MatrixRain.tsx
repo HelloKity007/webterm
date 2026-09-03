@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useState } from 'react';
 
 interface Props { fontSize?: number; columns?: number; opacity?: number; radial?: boolean; }
 
@@ -34,9 +34,7 @@ function genRain(columns: number) {
 }
 
 export default function MatrixRain({ fontSize = 16, columns = 24, opacity = 1, radial = false }: Props) {
-  const colsRef = useRef<ReturnType<typeof genRain>>(undefined);
-  if (!colsRef.current) colsRef.current = genRain(columns);
-  const cols = colsRef.current;
+  const [cols] = useState(() => genRain(columns));
 
   return (
     <div style={{

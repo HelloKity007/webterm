@@ -12,20 +12,30 @@ import { t } from '../../i18n';
 import Icon from '../common/Icon';
 import { colors, font } from '../../theme/tokens';
 
+type SidebarConnection = Connection | DbConnection;
+
+function newTabID(type: 'ssh' | 'database', connectionID: number) {
+  return `${type}-${connectionID}-${Date.now()}`;
+}
+
+function isDbConnection(connection: SidebarConnection): connection is DbConnection {
+  return 'database_name' in connection;
+}
+
 export default function Sidebar({ collapsed, width }: { collapsed: boolean; width: number }) {
   const activeModule = useLayoutStore((s) => s.activeModule);
   const { connections, groups, dbConnections, fetchConnections, fetchDbConnections, fetchGroups } = useConnectionStore();
   const requestTab = useLayoutStore((s) => s.requestTab);
   const [showConnForm, setShowConnForm] = useState(false);
-  const [editingConn, setEditingConn] = useState<any>(null);
+  const [editingConn, setEditingConn] = useState<Partial<Connection> | null>(null);
   const [showDbForm, setShowDbForm] = useState(false);
-  const [editingDbConn, setEditingDbConn] = useState<any>(null);
+  const [editingDbConn, setEditingDbConn] = useState<Partial<DbConnection> | null>(null);
   const [showGroupInput, setShowGroupInput] = useState(false);
   const [newGroupName, setNewGroupName] = useState('');
   const [editingGroupId, setEditingGroupId] = useState<number | null>(null);
   const [blankMenu, setBlankMenu] = useState<{x: number; y: number} | null>(null);
   const [groupMenu, setGroupMenu] = useState<{x: number; y: number; group: Group} | null>(null);
-  const [connMenu, setConnMenu] = useState<{x: number; y: number; conn: any} | null>(null);
+  const [connMenu, setConnMenu] = useState<{x: number; y: number; conn: SidebarConnection} | null>(null);
   const [tagFilter, setTagFilter] = useState('');
   const [multiMode, setMultiMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
@@ -54,10 +64,10 @@ export default function Sidebar({ collapsed, width }: { collapsed: boolean; widt
       fetchGroups('database');
       fetchDbConnections();
     }
-  }, [activeModule, token]);
+  }, [activeModule, fetchConnections, fetchDbConnections, fetchGroups, token]);
 
   const handleDblClick = (conn: Connection) => {
-    requestTab({ id: `ssh-${conn.id}-${Date.now()}`, type: 'ssh', title: conn.name, connId: conn.id });
+    requestTab({ id: newTabID('ssh', conn.id), type: 'ssh', title: conn.name, connId: conn.id });
   };
 
   const handleCreateGroup = async (name: string) => {
@@ -117,7 +127,7 @@ export default function Sidebar({ collapsed, width }: { collapsed: boolean; widt
   };
 
   const filtered = connections.filter((c) => {
-    if (tagFilter && (c as any).tag !== tagFilter) return false;
+    if (tagFilter && c.tag !== tagFilter) return false;
     return true;
   });
 
@@ -131,19 +141,23 @@ export default function Sidebar({ collapsed, width }: { collapsed: boolean; widt
   const toggleSelect = (id: number) => {
     setSelectedIds((prev) => {
       const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
+      if (next.has(id)) next.delete(id); else next.add(id);
       return next;
     });
   };
 
-  const renderConnItem = (c: any, isDbConn: boolean, indent = false) => (
+  const renderConnItem = (c: SidebarConnection, isDbConn: boolean, indent = false) => {
+    const sshConnection = !isDbConn ? c as Connection : null;
+    const tag = sshConnection?.tag;
+    const color = sshConnection?.color || colors.textLight;
+    return (
     <div key={c.id} data-sidebar-item
       draggable
       onDragStart={() => setDragConn(c.id)}
       onDragEnd={() => setDragConn(null)}
       onDoubleClick={() => isDbConn
-        ? requestTab({ id: `db-${c.id}-${Date.now()}`, type: 'database', title: c.name, connId: c.id })
-        : handleDblClick(c)}
+        ? requestTab({ id: newTabID('database', c.id), type: 'database', title: c.name, connId: c.id })
+        : handleDblClick(c as Connection)}
       onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setConnMenu({ x: e.clientX, y: e.clientY, conn: c }); }}
       style={{
         padding: indent ? '3px 8px 3px 22px' : '3px 8px 3px 10px', color: colors.textLight, cursor: 'pointer',
@@ -163,17 +177,18 @@ export default function Sidebar({ collapsed, width }: { collapsed: boolean; widt
           </span>
         </span>
       )}
-      <span style={{ color: (c as any).color || colors.textLight, fontSize: font.md, lineHeight: 1 }}>●</span>
+      <span style={{ color, fontSize: font.md, lineHeight: 1 }}>●</span>
       <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.name}</span>
-      {(c as any).tag && (
-        <span onClick={(e) => { e.stopPropagation(); setTagFilter(tagFilter === (c as any).tag ? '' : (c as any).tag); }}
+      {tag && (
+        <span onClick={(e) => { e.stopPropagation(); setTagFilter(tagFilter === tag ? '' : tag); }}
           style={{
-            padding: '1px 4px', borderRadius: 4, fontSize: font.xxs, background: tagFilter === (c as any).tag ? colors.accentSoft : colors.bgBar,
-            color: tagFilter === (c as any).tag ? colors.accent : colors.textDim, whiteSpace: 'nowrap', flexShrink: 0,
-          }}>{(c as any).tag}</span>
+            padding: '1px 4px', borderRadius: 4, fontSize: font.xxs, background: tagFilter === tag ? colors.accentSoft : colors.bgBar,
+            color: tagFilter === tag ? colors.accent : colors.textDim, whiteSpace: 'nowrap', flexShrink: 0,
+          }}>{tag}</span>
       )}
     </div>
   );
+  };
 
   const renderGroup = (g: Group) => {
     const childConns = groupMap[g.id] || [];
@@ -316,7 +331,7 @@ export default function Sidebar({ collapsed, width }: { collapsed: boolean; widt
 
       {/* Connection context menu */}
       {connMenu && (() => {
-        const isDbConn = 'database_name' in connMenu.conn;
+        const isDbConn = isDbConnection(connMenu.conn);
         const moveItems = groups.map((g) => ({
           label: `  ${g.name}`,
           action: () => handleMoveConn(connMenu.conn.id, g.id),
@@ -348,14 +363,14 @@ export default function Sidebar({ collapsed, width }: { collapsed: boolean; widt
 
       {showConnForm && (
         <ConnectionForm
-          connection={editingConn}
+          connection={editingConn || undefined}
           onClose={() => { setShowConnForm(false); setEditingConn(null); }}
           onSaved={() => { fetchConnections(); fetchGroups('ssh'); }}
         />
       )}
       {showDbForm && (
         <DbConnectionForm
-          connection={editingDbConn}
+          connection={editingDbConn || undefined}
           onClose={() => { setShowDbForm(false); setEditingDbConn(null); }}
           onSaved={() => { fetchDbConnections(); fetchGroups('database'); }}
         />

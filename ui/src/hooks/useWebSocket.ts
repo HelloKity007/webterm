@@ -15,14 +15,17 @@ export function useWebSocket({ url, onMessage, onClose, onOpen }: UseWsOptions) 
   const timerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const bufferRef = useRef<string[]>([]);
   const disposedRef = useRef(false);
+  const connectRef = useRef<() => void>(() => {});
 
   // Keep latest callbacks in refs to avoid reconnect on re-render
   const onMessageRef = useRef(onMessage);
   const onCloseRef = useRef(onClose);
   const onOpenRef = useRef(onOpen);
-  onMessageRef.current = onMessage;
-  onCloseRef.current = onClose;
-  onOpenRef.current = onOpen;
+  useEffect(() => {
+    onMessageRef.current = onMessage;
+    onCloseRef.current = onClose;
+    onOpenRef.current = onOpen;
+  }, [onClose, onMessage, onOpen]);
 
   const connect = useCallback(() => {
     if (disposedRef.current) return;
@@ -53,13 +56,17 @@ export function useWebSocket({ url, onMessage, onClose, onOpen }: UseWsOptions) 
       onCloseRef.current?.();
       const delay = Math.min(1000 * Math.pow(2, retryCountRef.current), 30000);
       retryCountRef.current++;
-      timerRef.current = setTimeout(connect, delay);
+      timerRef.current = setTimeout(() => connectRef.current(), delay);
     };
 
     ws.onerror = () => {
       ws.close();
     };
   }, [url]);
+
+  useEffect(() => {
+    connectRef.current = connect;
+  }, [connect]);
 
   useEffect(() => {
     disposedRef.current = false;

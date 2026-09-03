@@ -208,6 +208,10 @@ func (h *ConnectionHandler) Update(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden)
 		return
 	}
+	if existing.SystemManaged {
+		http.Error(w, `{"error":"managed connection cannot be edited"}`, http.StatusForbidden)
+		return
+	}
 	if err := h.Store.UpdateConnection(c); err != nil {
 		http.Error(w, `{"error":"update failed"}`, http.StatusInternalServerError)
 		return
@@ -229,6 +233,10 @@ func (h *ConnectionHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 	if !canManageConnection(user, existing) {
 		http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden)
+		return
+	}
+	if existing.SystemManaged {
+		http.Error(w, `{"error":"managed connection cannot be deleted"}`, http.StatusForbidden)
 		return
 	}
 	if err := h.Store.DeleteConnection(id); err != nil {

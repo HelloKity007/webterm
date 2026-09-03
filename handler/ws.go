@@ -3,6 +3,7 @@ package handler
 import (
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -45,11 +46,7 @@ func (h *WSHandler) HandleSSH(conn *websocket.Conn) {
 		return
 	}
 
-	// Reuse existing client from pool if alive
-	var client *sshmgr.Client
-	if existing, ok := h.Pool.Acquire(connID); ok {
-		client = existing
-	} else {
+	lease, err := h.Pool.AcquireSession(connID, connInfo.MaxSessions, sshmgr.MaxChannelsPerTransport, func() (*sshmgr.Client, error) {
 		var password, privateKey, passphrase string
 		if connInfo.PasswordEncrypted != "" {
 			password, _ = h.AESCipher.Decrypt(connInfo.PasswordEncrypted)
@@ -61,10 +58,9 @@ func (h *WSHandler) HandleSSH(conn *websocket.Conn) {
 			passphrase, _ = h.AESCipher.Decrypt(connInfo.PrivateKeyPassphraseEncrypted)
 		}
 
-		client, err = sshmgr.NewClient(connInfo.Host, connInfo.Port, connInfo.Username, password, privateKey, passphrase)
+		client, err := sshmgr.NewClient(connInfo.Host, connInfo.Port, connInfo.Username, password, privateKey, passphrase)
 		if err != nil {
-			sendErr(conn, "创建连接失败: "+friendlyErr(err))
-			return
+			return nil, err
 		}
 		var connectErr error
 		for attempt := 1; attempt <= 3; attempt++ {
@@ -77,24 +73,21 @@ func (h *WSHandler) HandleSSH(conn *websocket.Conn) {
 			}
 		}
 		if connectErr != nil {
-			sendErr(conn, "连接失败: "+friendlyErr(connectErr))
-			return
+			return nil, connectErr
 		}
-		h.Pool.Add(connID, client)
-	}
-
-	defer h.Pool.Release(connID)
-
-	// Check session limit (default 10, matching OpenSSH MaxSessions)
-	if connInfo.MaxSessions > 0 {
-		count := h.Pool.SessionCount(connID)
-		if count > connInfo.MaxSessions {
+		return client, nil
+	})
+	if err != nil {
+		if errors.Is(err, sshmgr.ErrMaxSessions) {
 			sendErr(conn, fmt.Sprintf("会话数已达上限(%d)，请关闭一些标签页后重试", connInfo.MaxSessions))
-			return
+		} else {
+			sendErr(conn, "连接失败: "+friendlyErr(err))
 		}
+		return
 	}
+	defer lease.Release()
 
-	session, err := client.NewSession()
+	session, err := lease.Client.NewSession()
 	if err != nil {
 		sendErr(conn, "创建会话失败: "+friendlyErr(err))
 		return

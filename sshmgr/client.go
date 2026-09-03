@@ -18,16 +18,24 @@ type Client struct {
 }
 
 var strictHostKeyCheck bool
+var knownHostsPath string
 
 // SetStrictHostKeyCheck enables verification of SSH host keys against ~/.ssh/known_hosts.
 func SetStrictHostKeyCheck(strict bool) { strictHostKeyCheck = strict }
 
+// SetKnownHostsPath configures the exact trust store used by strict host-key
+// verification. An empty value retains the legacy per-user default.
+func SetKnownHostsPath(path string) { knownHostsPath = path }
+
 func knownHostsCallback() (ssh.HostKeyCallback, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return nil, err
+	path := knownHostsPath
+	if path == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return nil, err
+		}
+		path = filepath.Join(home, ".ssh", "known_hosts")
 	}
-	path := filepath.Join(home, ".ssh", "known_hosts")
 	if _, err := os.Stat(path); err != nil {
 		return nil, fmt.Errorf("ssh_host_key_check enabled but %s not found", path)
 	}

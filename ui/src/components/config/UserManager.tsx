@@ -31,14 +31,18 @@ export default function UserManager() {
       setLoading(true);
       const data = await apiGet('/api/users');
       setUsers(data || []);
-    } catch (e) {
+    } catch {
       setError(t('config_load_failed'));
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => { if (token) fetchUsers(); }, [token]);
+  useEffect(() => {
+    if (!token) return;
+    const timer = window.setTimeout(() => { void fetchUsers(); }, 0);
+    return () => window.clearTimeout(timer);
+  }, [token]);
 
   const handleCreate = async () => {
     try {
@@ -46,7 +50,7 @@ export default function UserManager() {
       setShowForm(false);
       resetForm();
       fetchUsers();
-    } catch (e) { setError(t('config_create_failed')); }
+    } catch { setError(t('config_create_failed')); }
   };
 
   const handleUpdate = async () => {
@@ -57,7 +61,7 @@ export default function UserManager() {
       setEditingUser(null);
       resetForm();
       fetchUsers();
-    } catch (e) { setError(t('config_update_failed')); }
+    } catch { setError(t('config_update_failed')); }
   };
 
   const handleDelete = async (id: number) => {
@@ -65,7 +69,7 @@ export default function UserManager() {
     try {
       await apiDelete(`/api/users/${id}`);
       fetchUsers();
-    } catch (e) { setError(t('config_delete_failed')); }
+    } catch { setError(t('config_delete_failed')); }
   };
 
   const resetForm = () => {

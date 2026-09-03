@@ -7,6 +7,8 @@ import ConnectionTable from './ConnectionTable';
 import { apiGet, apiPost, apiDelete } from '../../api/client';
 import { colors, font } from '../../theme/tokens';
 
+interface Group { id: number; name: string; type: string; }
+
 const tabs = [
   { key: 'users', label: t('config_users') },
   { key: 'ssh', label: t('config_ssh') },
@@ -53,7 +55,7 @@ export default function ConfigPage() {
               { key: 'host', label: t('conn_host'), width: '2fr' },
               { key: 'port', label: t('conn_port'), width: '1fr' },
               { key: 'username', label: t('config_user'), width: '1fr' },
-              { key: 'shared', label: t('conn_shared'), width: '1fr', render: (v: boolean) => v ? t('config_yes') : t('config_no') },
+              { key: 'shared', label: t('conn_shared'), width: '1fr', render: (value) => value === true ? t('config_yes') : t('config_no') },
             ]}
           />
         )}
@@ -69,7 +71,7 @@ export default function ConfigPage() {
               { key: 'port', label: t('conn_port'), width: '1fr' },
               { key: 'username', label: t('config_user'), width: '1fr' },
               { key: 'database_name', label: t('db_name'), width: '1fr' },
-              { key: 'shared', label: t('conn_shared'), width: '1fr', render: (v: boolean) => v ? t('config_yes') : t('config_no') },
+              { key: 'shared', label: t('conn_shared'), width: '1fr', render: (value) => value === true ? t('config_yes') : t('config_no') },
             ]}
           />
         )}
@@ -80,7 +82,7 @@ export default function ConfigPage() {
 }
 
 function GroupManager() {
-  const [groups, setGroups] = useState<any[]>([]);
+  const [groups, setGroups] = useState<Group[]>([]);
   const [loading, setLoading] = useState(true);
   const [newName, setNewName] = useState('');
   const [newType, setNewType] = useState('ssh');
@@ -89,17 +91,22 @@ function GroupManager() {
 
   const fetchGroups = async () => {
     try {
-      const all: any[] = [];
-      for (const t of ['ssh', 'database', 'sftp_bookmark']) {
-        const data = await apiGet(`/api/groups?type=${t}`);
-        all.push(...(data || []).map((g: any) => ({ ...g, type: t })));
+      const all: Group[] = [];
+      for (const groupType of ['ssh', 'database', 'sftp_bookmark']) {
+        const data = await apiGet(`/api/groups?type=${groupType}`);
+        const typedGroups = Array.isArray(data) ? data as Group[] : [];
+        all.push(...typedGroups.map((group) => ({ ...group, type: groupType })));
       }
       setGroups(all);
     } catch { setError(t('config_load_failed')); }
     finally { setLoading(false); }
   };
 
-  useEffect(() => { if (token) fetchGroups(); }, [token]);
+  useEffect(() => {
+    if (!token) return;
+    const timer = window.setTimeout(() => { void fetchGroups(); }, 0);
+    return () => window.clearTimeout(timer);
+  }, [token]);
 
   const handleCreate = async () => {
     if (!newName.trim()) return;

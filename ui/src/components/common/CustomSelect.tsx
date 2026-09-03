@@ -8,13 +8,15 @@ interface Props {
   children: React.ReactNode;
 }
 
+type OptionProps = { value: string; style?: React.CSSProperties; children?: React.ReactNode };
+
 export default function CustomSelect({ value, onChange, style, children }: Props) {
   const [open, setOpen] = useState(false);
   const [focusIdx, setFocusIdx] = useState(-1);
   const ref = useRef<HTMLDivElement>(null);
   const opts = React.Children.toArray(children)
-    .filter((o: any) => o && o.props && 'value' in o.props);
-  const currentOpt = opts.find((o: any) => String(o.props.value) === String(value)) as any;
+    .filter((child): child is React.ReactElement<OptionProps> => React.isValidElement<OptionProps>(child) && typeof child.props.value === 'string');
+  const currentOpt = opts.find((option) => option.props.value === value);
   const label = currentOpt?.props?.children ?? (value || '');
   const optStyle = currentOpt?.props?.style;
 
@@ -33,7 +35,7 @@ export default function CustomSelect({ value, onChange, style, children }: Props
     else if (e.key === 'ArrowUp') { setFocusIdx((i) => Math.max(i - 1, 0)); e.preventDefault(); }
     else if (e.key === 'Enter') {
       if (focusIdx >= 0 && opts[focusIdx]) {
-        const v = (opts[focusIdx] as any).props.value;
+        const v = opts[focusIdx].props.value;
         onChange(v); setOpen(false); setFocusIdx(-1);
       }
       e.preventDefault();
@@ -64,7 +66,7 @@ export default function CustomSelect({ value, onChange, style, children }: Props
             el.style.width = `${rect.width}px`;
           }
         }}>
-          {opts.map((opt: any, i: number) => (
+          {opts.map((opt, i) => (
             <div key={i}
               onClick={(e) => { e.stopPropagation(); selectValue(opt.props.value); }}
               onMouseEnter={() => setFocusIdx(i)}
