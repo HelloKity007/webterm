@@ -11,6 +11,8 @@ const zh: Record<string, string> = {
   tab_new: '新建标签', broadcast_off: '广播', broadcast_pane: '当前分屏', broadcast_all: '所有标签',
   broadcast_toggle: '点击切换广播范围',
   term_copy: '复制', term_paste: '粘贴', term_find: '查找 (Ctrl+F)', term_clear: '清屏',
+  term_copied: '已复制', term_copy_empty: '请先选择终端文本', term_copy_failed: '复制失败，请使用 Ctrl+Shift+C',
+  term_paste_empty: '剪贴板为空', term_paste_failed: '浏览器未允许读取剪贴板，请授权或使用 Ctrl+Shift+V',
   term_split_h: '横向分屏', term_split_v: '纵向分屏', term_split_quad: '四象限分屏', term_close_pane: '关闭分屏',
   term_disconnected: '连接已断开', term_reconnecting: '连接已断开，正在重连...',
   term_find_placeholder: '查找...',

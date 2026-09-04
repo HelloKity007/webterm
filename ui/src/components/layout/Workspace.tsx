@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useRef, useCallback } from 'react';
 import ActivityBar from './ActivityBar';
 import Sidebar from './Sidebar';
 import MainArea from './MainArea';
@@ -16,12 +16,6 @@ export default function Workspace() {
   const logout = useAuthStore((s) => s.logout);
   const [showSettings, setShowSettings] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
-
-  useEffect(() => {
-    if (!token) return;
-    const timer = window.setTimeout(() => setSidebarCollapsed(false), 0);
-    return () => window.clearTimeout(timer);
-  }, [token]);
   const statusConn = useLayoutStore((s) => s.statusConn);
   const [sidebarWidth, setSidebarWidth] = useState(210);
   const dragRef = useRef({ startX: 0, startW: 0, dragging: false });

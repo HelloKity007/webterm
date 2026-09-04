@@ -15,6 +15,18 @@ import ContextMenu from '../common/ContextMenu';
 import { colors } from '../../theme/tokens';
 import Zmodem from 'zmodem.js/src/zmodem_browser.js';
 import { deliverTerminalBytes } from './terminalOutput';
+import {
+  copyTerminalText,
+  createTerminalMouseState,
+  getTerminalGridPosition,
+  pasteTerminalText,
+  routeTerminalClipboardShortcut,
+  routeTerminalControlShortcut,
+  routeTerminalContextMenu,
+  routeTerminalMouseDown,
+  routeTerminalMouseMove,
+  routeTerminalMouseUp,
+} from './terminalInteractions';
 
 interface Props {
   connId: number;
@@ -59,6 +71,10 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
   const termRef = useRef<Terminal | null>(null);
   const [termKey, setTermKey] = useState(0);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
+  const [clipboardNotice, setClipboardNotice] = useState('');
+  const contextSelectionRef = useRef('');
+  const mouseStateRef = useRef(createTerminalMouseState());
+  const clipboardNoticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const rules = useHighlightRules();
   const rulesRef = useRef(rules);
   const zsentryRef = useRef<ZSentry | null>(null);
@@ -85,6 +101,50 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
     onStatusRef.current = onStatus;
     onResizeDimRef.current = onResizeDim;
   }, [onResizeDim, onStatus, rules]);
+
+  const showClipboardNotice = useCallback((message: string) => {
+    if (clipboardNoticeTimerRef.current) clearTimeout(clipboardNoticeTimerRef.current);
+    setClipboardNotice(message);
+    clipboardNoticeTimerRef.current = setTimeout(() => setClipboardNotice(''), 2500);
+  }, []);
+
+  const copyCurrentSelection = useCallback(async () => {
+    const result = await copyTerminalText(termRef.current?.getSelection() || '', navigator.clipboard);
+    showClipboardNotice(result === 'ok' ? t('term_copied') : result === 'empty' ? t('term_copy_empty') : t('term_copy_failed'));
+  }, [showClipboardNotice]);
+
+  const pasteFromClipboard = useCallback(async () => {
+    const result = await pasteTerminalText(navigator.clipboard, (text) => termRef.current?.paste(text));
+    if (result === 'ok') termRef.current?.focus();
+    else showClipboardNotice(result === 'empty' ? t('term_paste_empty') : t('term_paste_failed'));
+  }, [showClipboardNotice]);
+
+  const sendTmuxMenuPointer = useCallback((position: { x: number; y: number }, code: number, suffix: 'M' | 'm') => {
+    const term = termRef.current;
+    const screen = term?.element?.querySelector('.xterm-screen');
+    if (!term || !screen) return;
+    const bounds = screen.getBoundingClientRect();
+    if (bounds.width <= 0 || bounds.height <= 0 || term.cols <= 0 || term.rows <= 0) return;
+    const { col, row } = getTerminalGridPosition(position, bounds, term.cols, term.rows);
+    sendRef.current(JSON.stringify({ data: `\x1b[<${code};${col};${row}${suffix}` }));
+    term.focus();
+  }, []);
+
+  const moveTmuxMenuAt = useCallback((position: { x: number; y: number }) => {
+    sendTmuxMenuPointer(position, 42, 'M');
+  }, [sendTmuxMenuPointer]);
+
+  const releaseTmuxMenuAt = useCallback((position: { x: number; y: number }) => {
+    sendTmuxMenuPointer(position, 10, 'm');
+  }, [sendTmuxMenuPointer]);
+
+  const focusTerminalAfterPointer = useCallback(() => {
+    requestAnimationFrame(() => termRef.current?.focus());
+  }, []);
+
+  useEffect(() => () => {
+    if (clipboardNoticeTimerRef.current) clearTimeout(clipboardNoticeTimerRef.current);
+  }, []);
 
   const sendBinary = useCallback((octets: Octets) => {
     const bytes = octets instanceof Uint8Array ? octets : new Uint8Array(octets);
@@ -138,20 +198,15 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
 
     // Ctrl+C: send SIGINT (0x03)
     term.attachCustomKeyEventHandler((e) => {
-      if (e.ctrlKey && e.key === 'c' && !e.shiftKey && !e.altKey) {
-        if (e.type === 'keydown') {
-          sendRef.current(JSON.stringify({ data: '\x03' }));
-        }
-        return false;
-      }
+      const passToTerminal = routeTerminalClipboardShortcut(e, {
+        copy: () => { void copyCurrentSelection(); },
+      });
+      if (!passToTerminal) return false;
 
-      // Ctrl+Z: send SIGTSTP (0x1a)
-      if (e.ctrlKey && e.key === 'z' && !e.shiftKey && !e.altKey) {
-        if (e.type === 'keydown') {
-          sendRef.current(JSON.stringify({ data: '\x1a' }));
-        }
-        return false;
-      }
+      const passControlToTerminal = routeTerminalControlShortcut(e, (data) => {
+        sendRef.current(JSON.stringify({ data }));
+      });
+      if (!passControlToTerminal) return false;
 
       // Ctrl+F: search (existing behavior)
       if (e.ctrlKey && e.key === 'f') {
@@ -249,7 +304,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       resizeObserver.disconnect();
       window.removeEventListener('resize', handleResize);
     };
-  }, [fontSize, myTabId, setSftpCdPath, themeName]);
+  }, [copyCurrentSelection, fontSize, myTabId, pasteFromClipboard, setSftpCdPath, themeName]);
 
   const token = localStorage.getItem('token') || '';
   const terminalID = myTabId || '';
@@ -462,28 +517,39 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
 
   return (
     <div ref={ref} className="terminal-surface" style={{ flex: 1, minWidth: 0, minHeight: 0, overflow: 'hidden', padding: '0 6px', background: getTheme(themeName || 'Dracula').background }}
-      onContextMenu={(e) => {
-        e.preventDefault();
-        setContextMenu({ x: e.clientX, y: e.clientY });
-      }}>
+      onMouseDownCapture={(event) => routeTerminalMouseDown(event, mouseStateRef.current, {
+        focusTerminal: focusTerminalAfterPointer,
+        releaseTmuxMenuAt,
+      })}
+      onMouseMoveCapture={(event) => routeTerminalMouseMove(event, mouseStateRef.current, { moveTmuxMenuAt })}
+      onMouseUpCapture={(event) => routeTerminalMouseUp(event, mouseStateRef.current, { focusTerminal: focusTerminalAfterPointer })}
+      onKeyDownCapture={() => { mouseStateRef.current.tmuxMenuActive = false; }}
+      onContextMenuCapture={(e) => routeTerminalContextMenu(e, (position) => {
+        contextSelectionRef.current = termRef.current?.getSelection() || '';
+        setContextMenu(position);
+      })}>
+      {clipboardNotice && (
+        <div role="status" style={{
+          position: 'absolute', right: 14, bottom: 14, zIndex: 1001,
+          padding: '7px 11px', borderRadius: 5, border: '1px solid var(--c-border)',
+          background: colors.bgInput, color: colors.text, fontSize: 12,
+          boxShadow: '0 4px 18px rgba(0,0,0,0.45)', pointerEvents: 'none',
+        }}>{clipboardNotice}</div>
+      )}
       {contextMenu && (
         <ContextMenu x={contextMenu.x} y={contextMenu.y}
           items={[
             {
               label: t('term_copy'),
-              action: () => {
-                const sel = termRef.current?.getSelection();
-                if (sel) navigator.clipboard.writeText(sel).catch(() => { /* clipboard unavailable */ });
+              action: async () => {
+                const result = await copyTerminalText(contextSelectionRef.current, navigator.clipboard);
+                showClipboardNotice(result === 'ok' ? t('term_copied') : result === 'empty' ? t('term_copy_empty') : t('term_copy_failed'));
+                termRef.current?.focus();
               },
             },
             {
               label: t('term_paste'),
-              action: async () => {
-                try {
-                  const text = await navigator.clipboard.readText();
-                  termRef.current?.paste(text);
-                } catch { /* clipboard permission denied */ }
-              },
+              action: pasteFromClipboard,
             },
             {
               label: t('term_find'),

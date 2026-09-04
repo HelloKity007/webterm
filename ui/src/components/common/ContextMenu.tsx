@@ -3,7 +3,7 @@ import { colors, font } from '../../theme/tokens';
 
 interface MenuItem {
   label: string;
-  action: () => void;
+  action: () => void | Promise<void>;
 }
 
 interface Props {
@@ -31,7 +31,13 @@ export default function ContextMenu({ x, y, items, onClose }: Props) {
       minWidth: 140, boxShadow: '0 0 16px rgba(0,0,0,0.6), 0 0 4px rgba(0,255,255,0.1)',
     }}>
       {items.map((item, i) => (
-        <div key={i} onClick={() => { item.action(); onClose(); }}
+        <div key={i} onClick={async () => {
+          try {
+            await item.action();
+          } finally {
+            onClose();
+          }
+        }}
           style={{
             padding: '8px 16px', fontSize: font.md, color: colors.text, cursor: 'pointer', whiteSpace: 'nowrap',
           }}

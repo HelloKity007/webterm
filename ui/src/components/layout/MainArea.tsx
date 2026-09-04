@@ -16,7 +16,7 @@ export default function MainArea() {
   const activeModule = useLayoutStore((s) => s.activeModule);
   const connections = useConnectionStore((s) => s.connections);
   const drainTabQueue = useLayoutStore((s) => s.drainTabQueue);
-  const [sftpCollapsed, setSftpCollapsed] = useState(false);
+  const [sftpCollapsed, setSftpCollapsed] = useState(true);
   const [sftpWidth, setSftpWidth] = useState(260);
   const sftpDragRef = useRef({ startX: 0, startW: 0, dragging: false });
   const [sftpCtx, setSftpCtx] = useState<{ connId: number; tabId: string } | null>(null);
