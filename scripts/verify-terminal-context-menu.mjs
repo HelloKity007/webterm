@@ -180,8 +180,25 @@ try {
     throw new Error('plain left drag did not create an xterm selection');
   }
 
+  await page.evaluate(() => {
+    window.__terminalCopyShortcutDefaultPrevented = null;
+    const textarea = document.querySelector('.xterm-helper-textarea');
+    const observeCopyShortcut = (event) => {
+      if (!event.ctrlKey || !event.shiftKey || event.key.toLowerCase() !== 'c') return;
+      textarea.removeEventListener('keydown', observeCopyShortcut, true);
+      setTimeout(() => {
+        window.__terminalCopyShortcutDefaultPrevented = event.defaultPrevented;
+      }, 0);
+    };
+    textarea?.addEventListener('keydown', observeCopyShortcut, true);
+  });
   await page.keyboard.press('Control+Shift+C');
   await page.getByRole('status').filter({ hasText: '已复制' }).waitFor({ state: 'visible', timeout });
+  await page.waitForFunction(() => window.__terminalCopyShortcutDefaultPrevented !== null, null, { timeout });
+  const copyShortcutDefaultPrevented = await page.evaluate(() => window.__terminalCopyShortcutDefaultPrevented);
+  if (copyShortcutDefaultPrevented !== true) {
+    throw new Error('Ctrl+Shift+C did not suppress the browser developer-tools shortcut');
+  }
   const shortcutCopied = await page.evaluate(() => navigator.clipboard.readText());
   if (!shortcutCopied) throw new Error('Ctrl+Shift+C left the clipboard empty');
 
@@ -260,7 +277,7 @@ try {
     throw new Error(`plain left click did not activate the tmux Horizontal Split menu item: ${JSON.stringify(messagesAfterClick)}`);
   }
   if (pageErrors.length > 0) throw new Error(`browser errors: ${pageErrors.join(' | ')}`);
-  process.stdout.write(`${JSON.stringify({ defaultPanels: 'collapsed', keyboardInputAndEnter: 'ok', ctrlCInterrupt: 'ok', interruptMessages, plainRightClick: 'frontend-only', plainLeftSelection: 'ok', keyboardCopyPaste: 'single-copy', contextMenuCopyPaste: 'ok', ctrlRightClick: 'tmux-mouse-operable', ctrlRightClickMessages, pageErrors })}\n`);
+  process.stdout.write(`${JSON.stringify({ defaultPanels: 'collapsed', keyboardInputAndEnter: 'ok', ctrlCInterrupt: 'ok', interruptMessages, plainRightClick: 'frontend-only', plainLeftSelection: 'ok', copyShortcutBrowserDefault: 'blocked', keyboardCopyPaste: 'single-copy', contextMenuCopyPaste: 'ok', ctrlRightClick: 'tmux-mouse-operable', ctrlRightClickMessages, pageErrors })}\n`);
   }
 } finally {
   if (controllerToken && temporaryUserID && page) { try { await api(page, controllerToken, `/api/users/${temporaryUserID}`, { method: 'DELETE' }); } catch { /* cleanup best effort */ } }

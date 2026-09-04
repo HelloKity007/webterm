@@ -26,6 +26,8 @@ interface TerminalKeyboardEvent {
   shiftKey: boolean;
   altKey: boolean;
   metaKey: boolean;
+  preventDefault?: () => void;
+  stopPropagation?: () => void;
 }
 
 interface TerminalClipboardShortcutActions {
@@ -72,6 +74,8 @@ export function routeTerminalClipboardShortcut(
   // Ctrl+Shift+V already produces a trusted browser paste event that xterm
   // handles. Reading and pasting here as well duplicates the payload.
   if (key !== 'c') return true;
+  event.preventDefault?.();
+  event.stopPropagation?.();
   if (event.type === 'keydown') actions.copy();
   return false;
 }

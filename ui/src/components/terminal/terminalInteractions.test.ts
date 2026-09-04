@@ -214,14 +214,27 @@ describe('terminal pointer coordinates', () => {
 describe('terminal clipboard actions', () => {
   it('copies the current terminal selection on Ctrl+Shift+C keydown', () => {
     const copy = vi.fn();
+    const preventDefault = vi.fn();
+    const stopPropagation = vi.fn();
 
     const handledByTerminal = routeTerminalClipboardShortcut(
-      { type: 'keydown', key: 'c', ctrlKey: true, shiftKey: true, altKey: false, metaKey: false },
+      {
+        type: 'keydown',
+        key: 'c',
+        ctrlKey: true,
+        shiftKey: true,
+        altKey: false,
+        metaKey: false,
+        preventDefault,
+        stopPropagation,
+      },
       { copy },
     );
 
     expect(handledByTerminal).toBe(false);
     expect(copy).toHaveBeenCalledTimes(1);
+    expect(preventDefault).toHaveBeenCalledTimes(1);
+    expect(stopPropagation).toHaveBeenCalledTimes(1);
   });
 
   it('leaves Ctrl+Shift+V to the browser paste event instead of pasting twice', () => {
