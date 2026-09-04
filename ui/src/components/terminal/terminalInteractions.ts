@@ -147,6 +147,11 @@ export async function pasteTerminalText(
   }
 }
 
+export function clearTerminalHistory(clear: () => void, send: (data: string) => void): void {
+  send(JSON.stringify({ action: 'clear_history' }));
+  clear();
+}
+
 export function routeTerminalMouseDown(
   event: TerminalPointerEvent,
   state: TerminalMouseState = createTerminalMouseState(),

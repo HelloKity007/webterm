@@ -10,8 +10,8 @@ func TestPersistentTerminalCommandIsStableIsolatedAndShellSafe(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !regexp.MustCompile(`^tmux new-session -Ad -s wt-7-12-[a-f0-9]{16} && tmux set-option -t wt-7-12-[a-f0-9]{16} window-size largest && exec tmux attach-session -t wt-7-12-[a-f0-9]{16}$`).MatchString(command) {
-		t.Fatalf("command = %q, want shell-safe persistent tmux command that keeps the largest attached client size", command)
+	if !regexp.MustCompile(`^tmux start-server \\; set-option -g history-limit 200000 \\; new-session -Ad -s wt-7-12-[a-f0-9]{16} && tmux set-option -t wt-7-12-[a-f0-9]{16} window-size largest && exec tmux attach-session -t wt-7-12-[a-f0-9]{16}$`).MatchString(command) {
+		t.Fatalf("command = %q, want a shell-safe persistent tmux command with 200000 history lines and largest-client sizing", command)
 	}
 
 	same, err := persistentTerminalCommand(7, 12, "ssh-12-pane-a; rm -rf /")
@@ -34,5 +34,15 @@ func TestPersistentTerminalCommandIsStableIsolatedAndShellSafe(t *testing.T) {
 func TestPersistentTerminalCommandRejectsMissingTerminalID(t *testing.T) {
 	if _, err := persistentTerminalCommand(7, 12, ""); err == nil {
 		t.Fatal("missing terminal ID was accepted")
+	}
+}
+
+func TestPersistentTerminalClearCommandTargetsOnlyTheDerivedTabSession(t *testing.T) {
+	command, err := persistentTerminalClearCommand(7, 12, "ssh-12-pane-a; rm -rf /")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !regexp.MustCompile(`^tmux send-keys -t wt-7-12-[a-f0-9]{16} C-l && sleep 0.1 && tmux clear-history -t wt-7-12-[a-f0-9]{16}$`).MatchString(command) {
+		t.Fatalf("command = %q, want Ctrl+L followed by clear-history scoped to the derived tab session", command)
 	}
 }

@@ -13,7 +13,7 @@ const en: Record<string, string> = {
   term_copy: 'Copy', term_paste: 'Paste', term_find: 'Find (Ctrl+F)', term_clear: 'Clear',
   term_copied: 'Copied', term_copy_empty: 'Select terminal text first', term_copy_failed: 'Copy failed; use Ctrl+Shift+C',
   term_paste_empty: 'Clipboard is empty', term_paste_failed: 'Clipboard access was denied; allow it or use Ctrl+Shift+V',
-  term_split_h: 'Split Horizontal', term_split_v: 'Split Vertical', term_split_quad: 'Split Quadrant', term_close_pane: 'Close Pane',
+  term_split_h: 'Split Horizontal', term_split_v: 'Split Vertical', term_split_quad: 'Split Quadrant', term_split_eight: 'Split 8 (4 × 2)', term_close_pane: 'Close Pane',
   term_disconnected: 'Disconnected', term_reconnecting: 'Disconnected, reconnecting...',
   term_find_placeholder: 'Find...',
   sftp_follow: 'Follow', sftp_fixed: 'Fixed', sftp_refresh: 'Refresh',

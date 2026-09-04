@@ -14,6 +14,7 @@ import { emptyPersistedLayout, localActiveTabID, normalizePersistedLayout, share
 import { layoutEventRevision, layoutSocketURL } from './layoutSync';
 import { shouldPersistLayout } from './layoutSave';
 import { useWebSocket } from '../../hooks/useWebSocket';
+import { replaceLeafWithEightPaneGrid } from './layoutPresets';
 
 // Grid cell — computed from the tree
 interface GridCell {
@@ -303,6 +304,26 @@ function assignTabLabelNumbers(tabs: Tab[]): Tab[] {
   });
 }
 
+function doEightPaneSplit(targetID: string, activeTab: Tab): boolean {
+  const newPaneIDs = Array.from({ length: 7 }, () => nextLayoutID('pane'));
+  const nextRoot = replaceLeafWithEightPaneGrid(layoutRoot, targetID, [targetID, ...newPaneIDs]);
+  if (!nextRoot) return false;
+
+  for (const paneID of newPaneIDs) {
+    const newTab: Tab = {
+      ...activeTab,
+      id: nextLayoutID(`${activeTab.type}-${activeTab.connId}`),
+      labelNumber: nextTabLabelNumber(),
+    };
+    allPaneIds.add(paneID);
+    paneTabsCache.set(paneID, [newTab]);
+    paneActiveCache.set(paneID, newTab.id);
+  }
+  layoutRoot = nextRoot;
+  notify();
+  return true;
+}
+
 // Leaf pane component — always mounted, just hidden when not in layout
 function LeafPane({ nodeId, onActiveSshChange, isInSplit }: {
   nodeId: string; onActiveSshChange?: (connId: number | null, tabId: string | null) => void; isInSplit: boolean;
@@ -401,6 +422,11 @@ function LeafPane({ nodeId, onActiveSshChange, isInSplit }: {
       doSplit(horizId, 'vertical', vId2);
     }, 0);
   };
+  const handleEightPaneSplit = () => {
+    const activeTab = tabs.find((tab) => tab.id === activeTabId);
+    if (!activeTab?.connId) return;
+    doEightPaneSplit(nodeId, activeTab);
+  };
 
   const activeTab = tabs.find((t) => t.id === activeTabId);
   // Helper: check if a connId still has any active tab across all panes
@@ -454,6 +480,7 @@ function LeafPane({ nodeId, onActiveSshChange, isInSplit }: {
                   { label: t('term_split_h'), action: () => handleSplit('horizontal') },
                   { label: t('term_split_v'), action: () => handleSplit('vertical') },
                   { label: t('term_split_quad'), action: handleQuadSplit },
+                  { label: t('term_split_eight'), action: handleEightPaneSplit },
                   ...(isInSplit ? [{ label: t('term_close_pane'), action: handleClosePane }] : []),
                 ]} />
               </Suspense>

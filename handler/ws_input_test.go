@@ -37,7 +37,7 @@ func TestPumpTerminalInputClosesSSHSessionWhenBrowserDisconnects(t *testing.T) {
 		*raw = messages[0]
 		messages = messages[1:]
 		return nil
-	}, session, &input)
+	}, session, &input, nil)
 
 	if !session.closed {
 		t.Fatal("SSH session was not closed after browser disconnect")
@@ -47,6 +47,32 @@ func TestPumpTerminalInputClosesSSHSessionWhenBrowserDisconnects(t *testing.T) {
 	}
 	if input.String() != "echo keep" {
 		t.Fatalf("stdin = %q, want forwarded terminal input", input.String())
+	}
+}
+
+func TestPumpTerminalInputRoutesClearHistoryWithoutTypingIt(t *testing.T) {
+	session := &fakeTerminalSession{}
+	messages := []json.RawMessage{json.RawMessage(`{"action":"clear_history"}`)}
+	var input strings.Builder
+	var actions []string
+
+	pumpTerminalInput(func(raw *json.RawMessage) error {
+		if len(messages) == 0 {
+			return errors.New("browser websocket closed")
+		}
+		*raw = messages[0]
+		messages = messages[1:]
+		return nil
+	}, session, &input, func(action string) error {
+		actions = append(actions, action)
+		return nil
+	})
+
+	if len(actions) != 1 || actions[0] != "clear_history" {
+		t.Fatalf("actions = %#v, want clear_history", actions)
+	}
+	if input.Len() != 0 {
+		t.Fatalf("stdin = %q, control action must not be typed into SSH", input.String())
 	}
 }
 

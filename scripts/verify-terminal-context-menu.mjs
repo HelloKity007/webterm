@@ -35,6 +35,14 @@ function capture(sessionName) {
   return execFileSync('tmux', ['capture-pane', '-p', '-t', sessionName], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
 }
 
+function captureHistory(sessionName) {
+  return execFileSync('tmux', ['capture-pane', '-p', '-S', '-', '-t', sessionName], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+}
+
+function paneHistory(sessionName, format) {
+  return Number(execFileSync('tmux', ['display-message', '-p', '-t', sessionName, format], { encoding: 'utf8' }).trim());
+}
+
 function paneCount(sessionName) {
   return execFileSync('tmux', ['list-panes', '-t', sessionName, '-F', '#{pane_id}'], { encoding: 'utf8' }).trim().split('\n').filter(Boolean).length;
 }
@@ -169,8 +177,8 @@ try {
     throw new Error('plain right-click did not show exactly one frontend menu');
   }
   await page.screenshot({ path: '/tmp/webterm-plain-right-click.png' });
-  await page.keyboard.press('Escape');
-  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.click(box.x + 8, box.y + 8);
+  await page.getByText('复制', { exact: true }).waitFor({ state: 'hidden', timeout });
 
   await page.mouse.move(box.x + 8, box.y + 15);
   await page.mouse.down();
@@ -238,6 +246,30 @@ try {
   await waitForCapture(sessionName, pasteMarker);
   await page.evaluate((id) => window[`webterm-ws-${id}`](JSON.stringify({ data: '\u0003' })), terminalID);
 
+  const clearMarker = `WEBTERM_CLEAR_HISTORY_${randomBytes(6).toString('hex')}`;
+  await page.evaluate(({ id, marker }) => {
+    window[`webterm-ws-${id}`](JSON.stringify({ data: `for i in $(seq 1 120); do echo ${marker}-$i; done\r` }));
+  }, { id: terminalID, marker: clearMarker });
+  await waitForCapture(sessionName, `${clearMarker}-120`);
+  if (paneHistory(sessionName, '#{history_limit}') !== 200000) {
+    throw new Error(`tmux history limit is ${paneHistory(sessionName, '#{history_limit}')}, want 200000`);
+  }
+  if (paneHistory(sessionName, '#{history_size}') < 1) throw new Error('history fixture did not create tmux scrollback');
+  await screen.click({ button: 'right', position: { x: box.width / 2, y: box.height / 2 } });
+  await page.getByText('清屏', { exact: true }).click();
+  const clearDeadline = Date.now() + 5000;
+  while (Date.now() < clearDeadline && (paneHistory(sessionName, '#{history_size}') !== 0 || captureHistory(sessionName).includes(clearMarker))) {
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  if (paneHistory(sessionName, '#{history_size}') !== 0 || captureHistory(sessionName).includes(clearMarker)) {
+    throw new Error('frontend Clear did not remove the current tab tmux history');
+  }
+  const afterClearMarker = `WEBTERM_AFTER_CLEAR_${randomBytes(6).toString('hex')}`;
+  await page.keyboard.type(`echo ${afterClearMarker}`);
+  await page.keyboard.press('Enter');
+  await waitForCaptureLine(sessionName, afterClearMarker);
+  if (captureHistory(sessionName).includes(clearMarker)) throw new Error('cleared history returned after new terminal input');
+
   // Keep the clicked tmux cell blank so the standard menu has a stable shape;
   // clicking a populated cell conditionally inserts "Copy Line" above Split.
   await page.evaluate((id) => window[`webterm-ws-${id}`](JSON.stringify({ data: 'clear\r' })), terminalID);
@@ -276,12 +308,23 @@ try {
     const messagesAfterClick = await page.evaluate(() => window.__terminalVerificationSends);
     throw new Error(`plain left click did not activate the tmux Horizontal Split menu item: ${JSON.stringify(messagesAfterClick)}`);
   }
+
+  await screen.click({ button: 'right', position: { x: box.width / 2, y: box.height / 2 } });
+  await page.getByText('八分屏（上四下四）', { exact: true }).click();
+  await page.waitForFunction(() => document.querySelectorAll('.xterm-screen').length === 8, null, { timeout });
   if (pageErrors.length > 0) throw new Error(`browser errors: ${pageErrors.join(' | ')}`);
-  process.stdout.write(`${JSON.stringify({ defaultPanels: 'collapsed', keyboardInputAndEnter: 'ok', ctrlCInterrupt: 'ok', interruptMessages, plainRightClick: 'frontend-only', plainLeftSelection: 'ok', copyShortcutBrowserDefault: 'blocked', keyboardCopyPaste: 'single-copy', contextMenuCopyPaste: 'ok', ctrlRightClick: 'tmux-mouse-operable', ctrlRightClickMessages, pageErrors })}\n`);
+  process.stdout.write(`${JSON.stringify({ defaultPanels: 'collapsed', keyboardInputAndEnter: 'ok', ctrlCInterrupt: 'ok', interruptMessages, plainRightClick: 'frontend-only', outsideClickClose: 'ok', plainLeftSelection: 'ok', copyShortcutBrowserDefault: 'blocked', keyboardCopyPaste: 'single-copy', contextMenuCopyPaste: 'ok', clearCurrentTabHistory: 'ok', tmuxHistoryLimit: paneHistory(sessionName, '#{history_limit}'), ctrlRightClick: 'tmux-mouse-operable', ctrlRightClickMessages, eightPaneGrid: '4x2', pageErrors })}\n`);
   }
 } finally {
   if (controllerToken && temporaryUserID && page) { try { await api(page, controllerToken, `/api/users/${temporaryUserID}`, { method: 'DELETE' }); } catch { /* cleanup best effort */ } }
-  if (sessionName) { try { execFileSync('tmux', ['kill-session', '-t', sessionName], { stdio: 'ignore' }); } catch { /* already gone */ } }
+  if (temporaryUserID) {
+    try {
+      const prefix = `wt-${temporaryUserID}-`;
+      const sessions = execFileSync('tmux', ['list-sessions', '-F', '#{session_name}'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
+        .trim().split('\n').filter((name) => name.startsWith(prefix));
+      for (const name of sessions) execFileSync('tmux', ['kill-session', '-t', name], { stdio: 'ignore' });
+    } catch { /* already gone */ }
+  }
   if (context) await context.close();
   if (browser) await browser.close();
 }

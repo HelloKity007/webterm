@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest';
-import { copyTerminalText, createTerminalMouseState, getTerminalGridPosition, pasteTerminalText, routeTerminalClipboardShortcut, routeTerminalControlShortcut, routeTerminalContextMenu, routeTerminalMouseDown, routeTerminalMouseMove, routeTerminalMouseUp } from './terminalInteractions';
+import { clearTerminalHistory, copyTerminalText, createTerminalMouseState, getTerminalGridPosition, pasteTerminalText, routeTerminalClipboardShortcut, routeTerminalControlShortcut, routeTerminalContextMenu, routeTerminalMouseDown, routeTerminalMouseMove, routeTerminalMouseUp } from './terminalInteractions';
 
 describe('terminal right-click routing', () => {
   it('keeps a plain right-click in the frontend and blocks tmux mouse handling', () => {
@@ -266,6 +266,19 @@ describe('terminal clipboard actions', () => {
 
     expect(result).toBe('ok');
     expect(paste).toHaveBeenCalledWith('粘贴内容\n第二行');
+  });
+});
+
+describe('terminal clear action', () => {
+  it('clears xterm and requests history removal for only this tab websocket', () => {
+    const clear = vi.fn();
+    const send = vi.fn();
+
+    clearTerminalHistory(clear, send);
+
+    expect(clear).toHaveBeenCalledTimes(1);
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(send.mock.calls[0][0])).toEqual({ action: 'clear_history' });
   });
 });
 

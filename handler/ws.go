@@ -8,6 +8,7 @@ import (
 	"io"
 	"io/fs"
 	"log"
+	"net/http"
 	"strconv"
 	"time"
 	"unicode/utf8"
@@ -26,6 +27,80 @@ type WSHandler struct {
 	Store     *store.Store
 	Pool      *sshmgr.Pool
 	AESCipher *crypto.AESCipher
+	// RunTerminalCommand is overridden by handler tests to replace remote SSH I/O.
+	RunTerminalCommand func(*store.Connection, string) error
+}
+
+func (h *WSHandler) runTerminalCommand(connection *store.Connection, command string) error {
+	if h.RunTerminalCommand != nil {
+		return h.RunTerminalCommand(connection, command)
+	}
+	var password, privateKey, passphrase string
+	if connection.PasswordEncrypted != "" {
+		password, _ = h.AESCipher.Decrypt(connection.PasswordEncrypted)
+	}
+	if connection.PrivateKeyEncrypted != "" {
+		privateKey, _ = h.AESCipher.Decrypt(connection.PrivateKeyEncrypted)
+	}
+	if connection.PrivateKeyPassphraseEncrypted != "" {
+		passphrase, _ = h.AESCipher.Decrypt(connection.PrivateKeyPassphraseEncrypted)
+	}
+	client, err := sshmgr.NewClient(connection.Host, connection.Port, connection.Username, password, privateKey, passphrase)
+	if err != nil {
+		return err
+	}
+	defer client.Close()
+	for attempt := 1; attempt <= 3; attempt++ {
+		err = client.Connect()
+		if err == nil {
+			break
+		}
+		if attempt < 3 {
+			time.Sleep(time.Duration(attempt) * time.Second)
+		}
+	}
+	if err != nil {
+		return err
+	}
+	session, err := client.NewSession()
+	if err != nil {
+		return err
+	}
+	defer session.Close()
+	return session.Run(command)
+}
+
+func (h *WSHandler) CloseTerminalSession(w http.ResponseWriter, r *http.Request) {
+	connID, err := strconv.ParseInt(r.PathValue("conn_id"), 10, 64)
+	if err != nil || connID < 1 {
+		http.Error(w, `{"error":"invalid connection"}`, http.StatusBadRequest)
+		return
+	}
+	user := auth.GetUser(r)
+	if user == nil {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+	connection, err := h.Store.GetConnection(connID)
+	if err != nil {
+		http.Error(w, `{"error":"connection not found"}`, http.StatusNotFound)
+		return
+	}
+	if !canUseConnection(user, connection) {
+		http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden)
+		return
+	}
+	command, err := persistentTerminalCloseCommand(user.UserID, connID, r.URL.Query().Get("terminal_id"))
+	if err != nil {
+		http.Error(w, `{"error":"invalid terminal"}`, http.StatusBadRequest)
+		return
+	}
+	if err := h.runTerminalCommand(connection, command); err != nil {
+		http.Error(w, `{"error":"failed to close terminal"}`, http.StatusBadGateway)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(`{"status":"ok"}`))
 }
 
 type terminalInputSession interface {
@@ -45,12 +120,23 @@ func requestDefaultTerminalPTY(session terminalPTYSession, modes ssh.TerminalMod
 	return session.RequestPty("xterm-256color", 40, 120, modes)
 }
 
-func pumpTerminalInput(receive func(*json.RawMessage) error, session terminalInputSession, stdin io.Writer) {
+func pumpTerminalInput(receive func(*json.RawMessage) error, session terminalInputSession, stdin io.Writer, handleAction func(string) error) {
 	defer session.Close()
 	for {
 		var raw json.RawMessage
 		if err := receive(&raw); err != nil {
 			return
+		}
+		var actionMsg struct {
+			Action string `json:"action"`
+		}
+		if err := json.Unmarshal(raw, &actionMsg); err == nil && actionMsg.Action != "" {
+			if handleAction != nil {
+				if err := handleAction(actionMsg.Action); err != nil {
+					log.Printf("terminal action %q failed: %v", actionMsg.Action, err)
+				}
+			}
+			continue
 		}
 		var resizeMsg struct {
 			Cols int `json:"cols"`
@@ -101,12 +187,17 @@ func (h *WSHandler) HandleSSH(conn *websocket.Conn) {
 		sendErr(conn, err.Error())
 		return
 	}
+	clearCommand, err := persistentTerminalClearCommand(user.UserID, connID, terminalID)
+	if err != nil {
+		sendErr(conn, err.Error())
+		return
+	}
 
 	maxSessions := connInfo.MaxSessions
 	if maxSessions < 1 {
 		maxSessions = defaultConnectionMaxSessions
 	}
-	lease, err := h.Pool.AcquireSession(connID, maxSessions, sshmgr.MaxChannelsPerTransport, func() (*sshmgr.Client, error) {
+	newSSHClient := func() (*sshmgr.Client, error) {
 		var password, privateKey, passphrase string
 		if connInfo.PasswordEncrypted != "" {
 			password, _ = h.AESCipher.Decrypt(connInfo.PasswordEncrypted)
@@ -136,7 +227,8 @@ func (h *WSHandler) HandleSSH(conn *websocket.Conn) {
 			return nil, connectErr
 		}
 		return client, nil
-	})
+	}
+	lease, err := h.Pool.AcquireSession(connID, maxSessions, sshmgr.MaxChannelsPerTransport, newSSHClient)
 	if err != nil {
 		if errors.Is(err, sshmgr.ErrMaxSessions) {
 			sendErr(conn, fmt.Sprintf("会话数已达上限(%d)，请关闭一些标签页后重试", maxSessions))
@@ -183,7 +275,22 @@ func (h *WSHandler) HandleSSH(conn *websocket.Conn) {
 	go func() {
 		pumpTerminalInput(func(raw *json.RawMessage) error {
 			return websocket.JSON.Receive(conn, raw)
-		}, session, stdinPipe)
+		}, session, stdinPipe, func(action string) error {
+			if action != "clear_history" {
+				return fmt.Errorf("unsupported terminal action: %s", action)
+			}
+			controlClient, err := newSSHClient()
+			if err != nil {
+				return err
+			}
+			defer controlClient.Close()
+			controlSession, err := controlClient.NewSession()
+			if err != nil {
+				return err
+			}
+			defer controlSession.Close()
+			return controlSession.Run(clearCommand)
+		})
 	}()
 
 	// Heartbeat: send ping every 10s

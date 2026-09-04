@@ -16,6 +16,7 @@ import { colors } from '../../theme/tokens';
 import Zmodem from 'zmodem.js/src/zmodem_browser.js';
 import { deliverTerminalBytes } from './terminalOutput';
 import {
+  clearTerminalHistory,
   copyTerminalText,
   createTerminalMouseState,
   getTerminalGridPosition,
@@ -568,7 +569,10 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
             {
               label: t('term_clear'),
               action: () => {
-                termRef.current?.clear();
+                const term = termRef.current;
+                if (!term) return;
+                clearTerminalHistory(() => term.clear(), sendRef.current);
+                term.focus();
               },
             },
             ...(extraMenuItems || []),
