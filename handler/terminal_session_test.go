@@ -1,9 +1,9 @@
 package handler
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"regexp"
 	"testing"
 
 	"github.com/xufanchn/webterm/auth"
@@ -46,7 +46,8 @@ func TestCloseTerminalSessionKillsOnlyTheRequestedTabsTmuxSession(t *testing.T) 
 	if ranForConnection != connectionID {
 		t.Fatalf("command connection = %d, want %d", ranForConnection, connectionID)
 	}
-	if !regexp.MustCompile(`^tmux kill-session -t wt-[0-9]+-[0-9]+-[a-f0-9]{16} 2>/dev/null \|\| true$`).MatchString(ranCommand) {
+	wantCommand := fmt.Sprintf("tmux kill-session -t wt-%d-%d-fe257cc3cbdcf77f 2>/dev/null || true", userID, connectionID)
+	if ranCommand != wantCommand {
 		t.Fatalf("command = %q, want an idempotent, shell-safe kill scoped to the requested tab", ranCommand)
 	}
 }

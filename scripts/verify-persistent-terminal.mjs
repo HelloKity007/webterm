@@ -118,6 +118,19 @@ async function waitForCapture(sessionName, marker) {
   throw new Error(`tmux session ${sessionName} never contained ${marker}`);
 }
 
+async function waitForSessionGone(sessionName) {
+  const deadline = Date.now() + timeout;
+  while (Date.now() < deadline) {
+    try {
+      tmux(['has-session', '-t', sessionName]);
+    } catch {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  throw new Error(`tmux session ${sessionName} still exists after its tab was closed`);
+}
+
 let controlBrowser;
 let controlContext;
 let controlPage;
@@ -210,7 +223,11 @@ try {
   const captured = tmux(['capture-pane', '-p', '-t', sessionName]);
   if (!captured.includes(markerOne) || !captured.includes(markerTwo)) throw new Error('reattached terminal did not retain both markers');
   if (second.errors.length > 0) throw new Error(`browser errors: ${second.errors.join(' | ')}`);
-  process.stdout.write(`${JSON.stringify({ persistentSession: sessionName, retainedAcrossReconnect: true, windowSize: 'largest', tmuxClients: tmuxClients.trim().split('\n'), tmuxWindow, secondBounds, pageErrors: [] })}\n`);
+  const activeTab = second.page.getByText('1: persistent verification renamed', { exact: true });
+  await activeTab.locator('span').last().click();
+  await waitForSessionGone(sessionName);
+  tmux(['has-session', '-t', distractorSessionName]);
+  process.stdout.write(`${JSON.stringify({ persistentSession: sessionName, retainedAcrossReconnect: true, explicitTabCloseTerminatesSession: true, unrelatedSessionRetained: true, windowSize: 'largest', tmuxClients: tmuxClients.trim().split('\n'), tmuxWindow, secondBounds, pageErrors: [] })}\n`);
 } finally {
   if (first) { await first.context.close(); await first.browser.close(); }
   if (second) { await second.context.close(); await second.browser.close(); }

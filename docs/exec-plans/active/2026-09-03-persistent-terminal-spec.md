@@ -17,7 +17,7 @@
 | tab ID 被恶意构造成远程命令 | SHA-256 十六进制摘要；tmux 参数只由受控字符构成 |
 | 旧客户端没有 tab ID，多个 pane 意外共享 | WebSocket 缺少 `terminal_id` 时明确拒绝 |
 | 远端无 tmux 时看似成功却不持久 | 执行 tmux 失败会透传为可见的远端错误；不回退到普通 shell |
-| 永久 tmux 累积资源 | 会话持续到远程 shell `exit` 或远端管理员清理；作为已知运维限制记录，不做静默 TTL 杀进程 |
+| 永久 tmux 累积资源 | 浏览器/网络断开只 detach；用户明确关闭 tab 时调用受鉴权的终止接口，幂等清理对应 tmux，会话也可由 `exit` 或远端管理员终止 |
 
 ## Scenarios
 

@@ -26,6 +26,12 @@
 
 The script kills its temporary tmux session and deletes its temporary user in `finally`; it does not touch operator sessions.
 
+### 2026-09-04 explicit tab-close extension
+
+- `handler/terminal_session_test.go` pins the authenticated HTTP cleanup path and the exact shell-safe, per-user/connection/tab `tmux kill-session` target.
+- `ui/src/api/terminalSessions.test.ts` pins the frontend DELETE request, terminal ID encoding, and JWT forwarding.
+- `scripts/verify-persistent-terminal.mjs` now also closes the live tab, waits for its tmux session to disappear, and verifies the unrelated tab session remains. The live extension was not rerun in this workspace because its load-test URL and credentials are unavailable; syntax, unit tests, lint, and production build were verified locally.
+
 ### Gauntlet (final fresh run)
 
 | Layer | Command | Result |
@@ -42,5 +48,5 @@ The script kills its temporary tmux session and deletes its temporary user in `f
 
 - Persistence lives on the SSH target in tmux, not in WebTerm memory. A WebTerm restart is safe; a remote host restart, `tmux kill-session`, or `exit` ends the session.
 - The target host must install tmux. There is deliberately no non-persistent fallback.
-- A persistent session continues until the user exits its remote shell or an administrator removes it. This avoids silently killing active jobs; remote tmux housekeeping remains an operator responsibility.
+- A browser or network disconnect only detaches. Explicitly closing a WebTerm tab terminates its derived tmux session and attached SSH sessions; `exit` or remote administration can also terminate it.
 - Two browser clients that intentionally restore the same user/connection/tab attach to the same tmux terminal. Do not type concurrently unless shared-terminal behavior is desired.

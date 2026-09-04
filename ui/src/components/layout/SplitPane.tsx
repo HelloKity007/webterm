@@ -15,6 +15,7 @@ import { layoutEventRevision, layoutSocketURL } from './layoutSync';
 import { shouldPersistLayout } from './layoutSave';
 import { useWebSocket } from '../../hooks/useWebSocket';
 import { replaceLeafWithEightPaneGrid } from './layoutPresets';
+import { closeTerminalSession } from '../../api/terminalSessions';
 
 // Grid cell — computed from the tree
 interface GridCell {
@@ -375,6 +376,12 @@ function LeafPane({ nodeId, onActiveSshChange, isInSplit }: {
     setActiveTabId(tab.id); notifyTabMoved(tab.id);
   };
   const closeTab = (id: string) => {
+    const tab = tabs.find((candidate) => candidate.id === id);
+    if (tab?.type === 'ssh' && tab.connId) {
+      void closeTerminalSession(tab.connId, tab.id).catch((error) => {
+        console.error('Failed to close persistent terminal session:', error);
+      });
+    }
     setTabs((prev) => {
       const next = prev.filter((t) => t.id !== id);
       if (next.length === 0 && isInSplit) {

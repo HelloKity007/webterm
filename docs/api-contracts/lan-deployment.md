@@ -34,6 +34,13 @@
 - 前提：SSH 目标机必须安装 `tmux`。用户在 shell 中执行 `exit`，或远端管理员执行 `tmux kill-session`，会终止该持久终端。
 - 隔离：不同应用用户、连接或 tab ID 绝不复用 tmux 名称；`terminal_id` 不直接插入 shell 命令。
 
+## `DELETE /api/terminal-sessions/{connection_id}`
+
+- 鉴权：现有 JWT `Authorization: Bearer …`。
+- 必填 query：`terminal_id`，即用户明确关闭的 tab ID。
+- 行为：幂等终止该用户、连接和 tab 唯一对应的 tmux session；所有 attach 到它的 SSH/WebSocket 会话随后结束并释放。只关闭浏览器或网络断开不会调用此接口。
+- 隔离：服务端重新派生受控 tmux 名称，绝不接受客户端提供的 tmux session 名。
+
 ## Connection resource extension
 
 - `Connection` 新增 `system_managed`、`hidden`。
