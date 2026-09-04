@@ -28,6 +28,47 @@ type WSHandler struct {
 	AESCipher *crypto.AESCipher
 }
 
+type terminalInputSession interface {
+	WindowChange(rows, cols int) error
+	Close() error
+}
+
+// pumpTerminalInput owns the browser-to-SSH direction. Closing the SSH
+// session when the browser socket ends is essential: otherwise io.Copy on the
+// output side can keep the lease reserved indefinitely after a tab is closed.
+func pumpTerminalInput(receive func(*json.RawMessage) error, session terminalInputSession, stdin io.Writer) {
+	defer session.Close()
+	for {
+		var raw json.RawMessage
+		if err := receive(&raw); err != nil {
+			return
+		}
+		var resizeMsg struct {
+			Cols int `json:"cols"`
+			Rows int `json:"rows"`
+		}
+		if err := json.Unmarshal(raw, &resizeMsg); err == nil && resizeMsg.Cols > 0 {
+			if err := session.WindowChange(resizeMsg.Rows, resizeMsg.Cols); err != nil {
+				log.Printf("SSH resize failed: %v", err)
+			}
+			continue
+		}
+		var dataMsg struct {
+			Data string `json:"data"`
+			B64  bool   `json:"b64"`
+		}
+		if err := json.Unmarshal(raw, &dataMsg); err == nil && dataMsg.Data != "" {
+			if dataMsg.B64 {
+				if bin, derr := base64.StdEncoding.DecodeString(dataMsg.Data); derr == nil {
+					_, _ = stdin.Write(bin)
+				}
+			} else {
+				_, _ = io.WriteString(stdin, dataMsg.Data)
+			}
+		}
+	}
+}
+
 func (h *WSHandler) HandleSSH(conn *websocket.Conn) {
 	connID, _ := strconv.ParseInt(conn.Request().PathValue("conn_id"), 10, 64)
 	user := auth.GetUserWS(conn.Request())
@@ -45,8 +86,17 @@ func (h *WSHandler) HandleSSH(conn *websocket.Conn) {
 		sendErr(conn, "forbidden")
 		return
 	}
+	tmuxCommand, err := persistentTerminalCommand(user.UserID, connID, conn.Request().URL.Query().Get("terminal_id"))
+	if err != nil {
+		sendErr(conn, err.Error())
+		return
+	}
 
-	lease, err := h.Pool.AcquireSession(connID, connInfo.MaxSessions, sshmgr.MaxChannelsPerTransport, func() (*sshmgr.Client, error) {
+	maxSessions := connInfo.MaxSessions
+	if maxSessions < 1 {
+		maxSessions = defaultConnectionMaxSessions
+	}
+	lease, err := h.Pool.AcquireSession(connID, maxSessions, sshmgr.MaxChannelsPerTransport, func() (*sshmgr.Client, error) {
 		var password, privateKey, passphrase string
 		if connInfo.PasswordEncrypted != "" {
 			password, _ = h.AESCipher.Decrypt(connInfo.PasswordEncrypted)
@@ -79,7 +129,7 @@ func (h *WSHandler) HandleSSH(conn *websocket.Conn) {
 	})
 	if err != nil {
 		if errors.Is(err, sshmgr.ErrMaxSessions) {
-			sendErr(conn, fmt.Sprintf("会话数已达上限(%d)，请关闭一些标签页后重试", connInfo.MaxSessions))
+			sendErr(conn, fmt.Sprintf("会话数已达上限(%d)，请关闭一些标签页后重试", maxSessions))
 		} else {
 			sendErr(conn, "连接失败: "+friendlyErr(err))
 		}
@@ -95,7 +145,10 @@ func (h *WSHandler) HandleSSH(conn *websocket.Conn) {
 	defer session.Close()
 
 	modes := ssh.TerminalModes{
-		ssh.ECHO:          0, // start silent to inject PROMPT_COMMAND without visible echo
+		// This PTY can attach to an already-running shared tmux shell. Keep
+		// normal echo enabled and never inject setup commands: doing so would
+		// append bytes to another browser's unfinished command line.
+		ssh.ECHO:          1,
 		ssh.TTY_OP_ISPEED: 14400,
 		ssh.TTY_OP_OSPEED: 14400,
 	}
@@ -108,14 +161,10 @@ func (h *WSHandler) HandleSSH(conn *websocket.Conn) {
 	stdoutPipe, _ := session.StdoutPipe()
 	stderrPipe, _ := session.StderrPipe()
 
-	if err := session.Shell(); err != nil {
-		sendErr(conn, "shell failed: "+err.Error())
+	if err := session.Start(tmuxCommand); err != nil {
+		sendErr(conn, "无法启动持久终端（远端必须安装 tmux）: "+friendlyErr(err))
 		return
 	}
-
-	// Configure shell to report PWD via OSC 7 for SFTP sync
-	// ECHO is off in PTY modes, so this line is not echoed; stty echo re-enables it
-	stdinPipe.Write([]byte("PROMPT_COMMAND='printf \"\\033]7;file://%s%s\\033\\\\\" \"$HOSTNAME\" \"$PWD\"'; stty echo\n"))
 
 	logID, _ := h.Store.CreateSessionLog(&store.SessionLog{
 		UserID: user.UserID, ConnectionID: connID, Type: "ssh",
@@ -123,35 +172,9 @@ func (h *WSHandler) HandleSSH(conn *websocket.Conn) {
 	defer h.Store.EndSessionLog(logID)
 
 	go func() {
-		for {
-			var raw json.RawMessage
-			if err := websocket.JSON.Receive(conn, &raw); err != nil {
-				return
-			}
-			var resizeMsg struct {
-				Cols int `json:"cols"`
-				Rows int `json:"rows"`
-			}
-			if err := json.Unmarshal(raw, &resizeMsg); err == nil && resizeMsg.Cols > 0 {
-				if err := session.WindowChange(resizeMsg.Rows, resizeMsg.Cols); err != nil {
-					log.Printf("SSH resize failed: %v", err)
-				}
-				continue
-			}
-			var dataMsg struct {
-				Data string `json:"data"`
-				B64  bool   `json:"b64"`
-			}
-			if err := json.Unmarshal(raw, &dataMsg); err == nil && dataMsg.Data != "" {
-				if dataMsg.B64 {
-					if bin, derr := base64.StdEncoding.DecodeString(dataMsg.Data); derr == nil {
-						stdinPipe.Write(bin)
-					}
-				} else {
-					stdinPipe.Write([]byte(dataMsg.Data))
-				}
-			}
-		}
+		pumpTerminalInput(func(raw *json.RawMessage) error {
+			return websocket.JSON.Receive(conn, raw)
+		}, session, stdinPipe)
 	}()
 
 	// Heartbeat: send ping every 10s

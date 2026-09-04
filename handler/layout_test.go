@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/xufanchn/webterm/auth"
@@ -115,6 +116,105 @@ func TestLayoutSavePublishesNewRevisionToSavingUser(t *testing.T) {
 		}
 	default:
 		t.Fatal("successful layout save did not publish a revision")
+	}
+}
+
+func TestLayoutSaveDoesNotShareBrowserTabSelection(t *testing.T) {
+	st := newQuickConnectTestStore(t)
+	userID, err := st.CreateUser("selection-owner", "hash", "user")
+	if err != nil {
+		t.Fatal(err)
+	}
+	connectionID, err := st.CreateConnection(&store.Connection{Name: "shared shell", Host: "10.0.0.10", Port: 22, Username: "owner", AuthMethod: "password", CreatedBy: userID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := &LayoutHandler{Store: st}
+	req := httptest.NewRequest(http.MethodPut, "/api/layout", bytes.NewReader([]byte(fmt.Sprintf(`{"schema_version":1,"revision":0,"layout":{"tree":{"type":"leaf","id":"root"},"panes":{"root":{"tabs":[{"id":"ssh-1","type":"ssh","title":"shared shell","connId":%d}],"activeTabId":"ssh-1"}},"focusedPaneId":"root"}}`, connectionID))))
+	req.Header.Set("Authorization", "Bearer "+testJWT(t, userID, "user"))
+	res := httptest.NewRecorder()
+	auth.Middleware(http.HandlerFunc(h.Save)).ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("save status = %d, body = %s", res.Code, res.Body.String())
+	}
+
+	getReq := httptest.NewRequest(http.MethodGet, "/api/layout", nil)
+	getReq.Header.Set("Authorization", "Bearer "+testJWT(t, userID, "user"))
+	getRes := httptest.NewRecorder()
+	auth.Middleware(http.HandlerFunc(h.Get)).ServeHTTP(getRes, getReq)
+	var response struct {
+		Layout struct {
+			FocusedPaneID string `json:"focusedPaneId"`
+			Panes         map[string]struct {
+				ActiveTabID string `json:"activeTabId"`
+			} `json:"panes"`
+		} `json:"layout"`
+	}
+	if err := json.NewDecoder(getRes.Body).Decode(&response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Layout.FocusedPaneID != "" || response.Layout.Panes["root"].ActiveTabID != "" {
+		t.Fatalf("shared layout retained browser selection: %#v", response.Layout)
+	}
+}
+
+func TestSharedLayoutKeepsTabLabelNumberAndName(t *testing.T) {
+	raw := json.RawMessage(`{"tree":{"type":"leaf","id":"root"},"panes":{"root":{"tabs":[{"id":"ssh-7","type":"ssh","title":"生产机","connId":7,"labelNumber":3}],"activeTabId":"ssh-7"}},"focusedPaneId":"root"}`)
+	shared, err := sharedLayoutJSON(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var layout savedLayout
+	if err := json.Unmarshal(shared, &layout); err != nil {
+		t.Fatal(err)
+	}
+	tab := layout.Panes["root"].Tabs[0]
+	if tab.LabelNumber != 3 || tab.Title != "生产机" {
+		t.Fatalf("shared tab = %#v, want fixed label 3 and renamed title", tab)
+	}
+	if layout.Panes["root"].ActiveTabID != "" || layout.FocusedPaneID != "" {
+		t.Fatalf("browser-local selection leaked into shared layout: %#v", layout)
+	}
+}
+
+func TestLayoutSaveDoesNotPublishAnUnchangedSharedLayout(t *testing.T) {
+	st := newQuickConnectTestStore(t)
+	userID, err := st.CreateUser("dedupe-owner", "hash", "user")
+	if err != nil {
+		t.Fatal(err)
+	}
+	connectionID, err := st.CreateConnection(&store.Connection{Name: "dedupe shell", Host: "10.0.0.11", Port: 22, Username: "owner", AuthMethod: "password", CreatedBy: userID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	hub := NewLayoutHub()
+	events, unsubscribe := hub.Subscribe(userID)
+	defer unsubscribe()
+	h := &LayoutHandler{Store: st, Hub: hub}
+	body := []byte(fmt.Sprintf(`{"schema_version":1,"revision":0,"layout":{"tree":{"type":"leaf","id":"root"},"panes":{"root":{"tabs":[{"id":"ssh-1","type":"ssh","title":"dedupe shell","connId":%d}],"activeTabId":"ssh-1"}},"focusedPaneId":"root"}}`, connectionID))
+	req := httptest.NewRequest(http.MethodPut, "/api/layout", bytes.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+testJWT(t, userID, "user"))
+	res := httptest.NewRecorder()
+	auth.Middleware(http.HandlerFunc(h.Save)).ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("first save status = %d", res.Code)
+	}
+	<-events
+
+	req = httptest.NewRequest(http.MethodPut, "/api/layout", bytes.NewReader([]byte(fmt.Sprintf(`{"schema_version":1,"revision":1,"layout":{"tree":{"type":"leaf","id":"root"},"panes":{"root":{"tabs":[{"id":"ssh-1","type":"ssh","title":"dedupe shell","connId":%d}],"activeTabId":"ssh-1"}},"focusedPaneId":"root"}}`, connectionID))))
+	req.Header.Set("Authorization", "Bearer "+testJWT(t, userID, "user"))
+	res = httptest.NewRecorder()
+	auth.Middleware(http.HandlerFunc(h.Save)).ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("repeat save status = %d, body = %s", res.Code, res.Body.String())
+	}
+	if !strings.Contains(res.Body.String(), `"revision":1`) {
+		t.Fatalf("repeat save response = %s, want existing revision 1", res.Body.String())
+	}
+	select {
+	case revision := <-events:
+		t.Fatalf("unchanged layout published revision %d", revision)
+	default:
 	}
 }
 

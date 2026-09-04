@@ -29,6 +29,31 @@ export const emptyPersistedLayout = (): PersistedLayout => ({
   focusedPaneId: 'root',
 });
 
+// The shape of the workspace is shared between a user's browsers. The current
+// tab and focused pane are intentionally local: syncing either would make a
+// click in one browser steal focus (and rebuild terminals) in every other one.
+export function sharedLayoutSnapshot(layout: PersistedLayout): PersistedLayout {
+  const panes: Record<string, PersistedPane> = {};
+  for (const [paneID, pane] of Object.entries(layout.panes)) {
+    panes[paneID] = {
+      tabs: pane.tabs.map((tab) => ({ ...tab })),
+      activeTabId: null,
+    };
+  }
+  return {
+    tree: structuredClone(layout.tree),
+    panes,
+    focusedPaneId: null,
+  };
+}
+
+export function localActiveTabID(previousID: string | null | undefined, tabs: Tab[], restoredID: string | null): string | null {
+  const hasTab = (id: string | null | undefined) => !!id && tabs.some((tab) => tab.id === id);
+  if (hasTab(previousID)) return previousID!;
+  if (hasTab(restoredID)) return restoredID!;
+  return tabs.at(-1)?.id || null;
+}
+
 export function normalizePersistedLayout(value: unknown): PersistedLayout | null {
   if (!value || typeof value !== 'object') return null;
   const candidate = value as Partial<PersistedLayout>;
@@ -38,14 +63,39 @@ export function normalizePersistedLayout(value: unknown): PersistedLayout | null
   if (paneIds.length !== leaves.size || paneIds.some((id) => !leaves.has(id))) return null;
 
   const panes: Record<string, PersistedPane> = {};
+  const usedLabelNumbers = new Set<number>();
+  for (const paneID of paneIds) {
+    for (const tab of candidate.panes[paneID].tabs) {
+      if (typeof tab.labelNumber === 'number' && Number.isInteger(tab.labelNumber) && tab.labelNumber > 0) {
+        usedLabelNumbers.add(tab.labelNumber);
+      }
+    }
+  }
+  const claimedLabelNumbers = new Set<number>();
+  let nextLabelNumber = 1;
+  const allocateLabelNumber = () => {
+    while (usedLabelNumbers.has(nextLabelNumber)) nextLabelNumber++;
+    const allocated = nextLabelNumber++;
+    usedLabelNumbers.add(allocated);
+    return allocated;
+  };
   for (const paneID of paneIds) {
     const pane = candidate.panes[paneID];
     if (!pane || !Array.isArray(pane.tabs) || !pane.tabs.every(isValidTab)) return null;
     const ids = new Set(pane.tabs.map((tab) => tab.id));
-    if (ids.size !== pane.tabs.length || (pane.activeTabId !== null && pane.activeTabId !== undefined && !ids.has(pane.activeTabId))) return null;
-    panes[paneID] = { tabs: pane.tabs, activeTabId: pane.activeTabId ?? null };
+    const activeTabId = pane.activeTabId || null;
+    if (ids.size !== pane.tabs.length || (activeTabId !== null && !ids.has(activeTabId))) return null;
+    const tabs = pane.tabs.map((tab) => {
+      const labelNumber = tab.labelNumber;
+      if (typeof labelNumber === 'number' && Number.isInteger(labelNumber) && labelNumber > 0 && !claimedLabelNumbers.has(labelNumber)) {
+        claimedLabelNumbers.add(labelNumber);
+        return { ...tab, labelNumber };
+      }
+      return { ...tab, labelNumber: allocateLabelNumber() };
+    });
+    panes[paneID] = { tabs, activeTabId };
   }
-  const focusedPaneId = candidate.focusedPaneId ?? null;
+  const focusedPaneId = candidate.focusedPaneId || null;
   if (focusedPaneId !== null && !leaves.has(focusedPaneId)) return null;
   return { tree: candidate.tree as LayoutNode, panes, focusedPaneId };
 }
@@ -68,5 +118,6 @@ function isValidTab(tab: unknown): tab is Tab {
   return typeof candidate.id === 'string' && candidate.id.trim() !== '' &&
     typeof candidate.title === 'string' && candidate.title.trim() !== '' &&
     (candidate.type === 'ssh' || candidate.type === 'database') &&
-    typeof candidate.connId === 'number' && Number.isInteger(candidate.connId) && candidate.connId > 0;
+    typeof candidate.connId === 'number' && Number.isInteger(candidate.connId) && candidate.connId > 0 &&
+    (candidate.labelNumber === undefined || (typeof candidate.labelNumber === 'number' && Number.isInteger(candidate.labelNumber) && candidate.labelNumber > 0));
 }

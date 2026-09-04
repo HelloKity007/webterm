@@ -28,6 +28,9 @@ func friendlyErr(err error) string {
 	if strings.Contains(msg, "timeout") {
 		return "连接超时，请检查主机可达性"
 	}
+	if strings.Contains(msg, "knownhosts") || strings.Contains(msg, "host key") {
+		return "SSH 主机密钥未受信任或已变更，请联系管理员更新受信任主机密钥"
+	}
 	if strings.Contains(msg, "handshake failed") {
 		return "SSH 握手失败，请检查主机配置"
 	}

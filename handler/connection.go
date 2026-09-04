@@ -25,6 +25,8 @@ type ConnectionHandler struct {
 	AESCipher *crypto.AESCipher
 }
 
+const defaultConnectionMaxSessions = 30
+
 func (h *ConnectionHandler) List(w http.ResponseWriter, r *http.Request) {
 	groupID, _ := strconv.ParseInt(r.URL.Query().Get("group_id"), 10, 64)
 	user := auth.GetUser(r)
@@ -52,16 +54,17 @@ func (h *ConnectionHandler) List(w http.ResponseWriter, r *http.Request) {
 func (h *ConnectionHandler) Create(w http.ResponseWriter, r *http.Request) {
 	user := auth.GetUser(r)
 	var req struct {
-		GroupID    int64  `json:"group_id"`
-		Name       string `json:"name"`
-		Host       string `json:"host"`
-		Port       int    `json:"port"`
-		Username   string `json:"username"`
-		AuthMethod string `json:"auth_method"`
-		Password   string `json:"password"`
-		PrivateKey string `json:"private_key"`
-		Passphrase string `json:"passphrase"`
-		Shared     bool   `json:"shared"`
+		GroupID     int64  `json:"group_id"`
+		Name        string `json:"name"`
+		Host        string `json:"host"`
+		Port        int    `json:"port"`
+		Username    string `json:"username"`
+		AuthMethod  string `json:"auth_method"`
+		Password    string `json:"password"`
+		PrivateKey  string `json:"private_key"`
+		Passphrase  string `json:"passphrase"`
+		Shared      bool   `json:"shared"`
+		MaxSessions int    `json:"max_sessions"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, `{"error":"bad request"}`, http.StatusBadRequest)
@@ -104,6 +107,10 @@ func (h *ConnectionHandler) Create(w http.ResponseWriter, r *http.Request) {
 		PrivateKeyPassphraseEncrypted: passEnc,
 		CreatedBy:                     user.UserID,
 		Shared:                        req.Shared,
+		MaxSessions:                   req.MaxSessions,
+	}
+	if c.MaxSessions < 1 {
+		c.MaxSessions = defaultConnectionMaxSessions
 	}
 	id, err := h.Store.CreateConnection(c)
 	if err != nil {
@@ -117,16 +124,17 @@ func (h *ConnectionHandler) Update(w http.ResponseWriter, r *http.Request) {
 	id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	user := auth.GetUser(r)
 	var req struct {
-		GroupID    int64  `json:"group_id"`
-		Name       string `json:"name"`
-		Host       string `json:"host"`
-		Port       int    `json:"port"`
-		Username   string `json:"username"`
-		AuthMethod string `json:"auth_method"`
-		Password   string `json:"password"`
-		PrivateKey string `json:"private_key"`
-		Passphrase string `json:"passphrase"`
-		Shared     bool   `json:"shared"`
+		GroupID     int64  `json:"group_id"`
+		Name        string `json:"name"`
+		Host        string `json:"host"`
+		Port        int    `json:"port"`
+		Username    string `json:"username"`
+		AuthMethod  string `json:"auth_method"`
+		Password    string `json:"password"`
+		PrivateKey  string `json:"private_key"`
+		Passphrase  string `json:"passphrase"`
+		Shared      bool   `json:"shared"`
+		MaxSessions int    `json:"max_sessions"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, `{"error":"bad request"}`, http.StatusBadRequest)
@@ -169,6 +177,7 @@ func (h *ConnectionHandler) Update(w http.ResponseWriter, r *http.Request) {
 		PrivateKeyEncrypted:           keyEnc,
 		PrivateKeyPassphraseEncrypted: passEnc,
 		Shared:                        req.Shared,
+		MaxSessions:                   req.MaxSessions,
 	}
 	// Merge with existing: keep old values for fields not provided
 	existing, err := h.Store.GetConnection(id)
@@ -202,6 +211,12 @@ func (h *ConnectionHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.GroupID == 0 {
 		c.GroupID = existing.GroupID
+	}
+	if c.MaxSessions < 1 {
+		c.MaxSessions = existing.MaxSessions
+	}
+	if c.MaxSessions < 1 {
+		c.MaxSessions = defaultConnectionMaxSessions
 	}
 	c.Shared = req.Shared || existing.Shared
 	if !canManageConnection(user, existing) {

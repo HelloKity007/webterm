@@ -14,7 +14,7 @@ interface Props {
 
 export default function TerminalTab({ connId, extraMenuItems, paneTabs, myTabId }: Props) {
   return (
-    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0, overflow: 'hidden' }}>
       <ThemedTerminal connId={connId} extraMenuItems={extraMenuItems} tabs={paneTabs} myTabId={myTabId} />
     </div>
   );

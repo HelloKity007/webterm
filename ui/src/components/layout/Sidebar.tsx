@@ -26,6 +26,7 @@ export default function Sidebar({ collapsed, width }: { collapsed: boolean; widt
   const activeModule = useLayoutStore((s) => s.activeModule);
   const { connections, groups, dbConnections, fetchConnections, fetchDbConnections, fetchGroups } = useConnectionStore();
   const requestTab = useLayoutStore((s) => s.requestTab);
+  const setFocusedPane = useLayoutStore((s) => s.setFocusedPane);
   const [showConnForm, setShowConnForm] = useState(false);
   const [editingConn, setEditingConn] = useState<Partial<Connection> | null>(null);
   const [showDbForm, setShowDbForm] = useState(false);
@@ -67,6 +68,10 @@ export default function Sidebar({ collapsed, width }: { collapsed: boolean; widt
   }, [activeModule, fetchConnections, fetchDbConnections, fetchGroups, token]);
 
   const handleDblClick = (conn: Connection) => {
+    // The sidebar lives outside every pane, so restore a valid target before
+    // queuing the tab. This is particularly important after a synced layout
+    // was restored without its browser-local focus state.
+    setFocusedPane('root');
     requestTab({ id: newTabID('ssh', conn.id), type: 'ssh', title: conn.name, connId: conn.id });
   };
 

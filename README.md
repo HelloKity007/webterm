@@ -6,7 +6,7 @@ Web-based SSH/SFTP/Database terminal manager. Single binary, Go backend + React 
 
 ## Features
 
-- **SSH Terminal** — xterm.js based, multi-tab, split panes with CSS Grid
+- **SSH Terminal** — xterm.js based, multi-tab, split panes with CSS Grid; persistent tmux sessions reconnect after browsers close
 - **SFTP File Manager** — dual-pane, drag-drop upload, context menu, directory following (OSC 7)
 - **Database Query Editor** — SQL highlighting, result table
 - **Connection Manager** — groups, tags, color labels, search, multi-select batch ops
@@ -64,6 +64,8 @@ log_level: "info"
 ```
 
 For LAN deployment, keep `config.yaml` and `lan-secrets.env` at mode `600`. The ignored `lan-secrets.env` supplies `WEBTERM_ENCRYPTION_KEY`, `WEBTERM_LOCAL_SSH_PASSWORD`, `LAN_TLS_CERT`, and `LAN_TLS_KEY`; never commit it. `Caddyfile` allows only `192.168.11.0/24` on HTTPS port `9443` and proxies to loopback `127.0.0.1:8888`.
+
+SSH targets used by the terminal must have `tmux` installed. A terminal tab reconnects to its server-side tmux session after every browser closes; type `exit` in the shell to end that persistent session.
 
 ## License
 

@@ -49,7 +49,7 @@ export default function MainArea() {
 
   useEffect(() => {
     const interval = setInterval(() => {
-      const queue = drainTabQueue();
+      const queue = drainTabQueue('database');
       if (queue.length > 0) {
         const newDb = queue.filter((t) => t.type === 'database');
         if (newDb.length > 0) {
@@ -72,6 +72,9 @@ export default function MainArea() {
       }
       return next;
     });
+  };
+  const dbRenameTab = (id: string, title: string) => {
+    setDbTabs((prev) => prev.map((tab) => tab.id === id ? { ...tab, title } : tab));
   };
 
   const dbActiveTab = dbTabs.find((t) => t.id === dbActiveTabId);
@@ -130,7 +133,7 @@ export default function MainArea() {
 
       {/* Database module */}
       <div style={{ flex: 1, display: show('database'), flexDirection: 'column', overflow: 'hidden' }}>
-        <TabBar tabs={dbTabs} activeTabId={dbActiveTabId} onSelectTab={setDbActiveTabId} onCloseTab={dbCloseTab} filterType="database" />
+        <TabBar tabs={dbTabs} activeTabId={dbActiveTabId} onSelectTab={setDbActiveTabId} onCloseTab={dbCloseTab} onRenameTab={dbRenameTab} filterType="database" />
         <div style={{ flex: 1, overflow: 'hidden' }}>
           {dbActiveTab?.type === 'database' && dbActiveTab.connId ? (
             <Suspense fallback={<div style={{ padding: 12, fontSize: font.md, color: colors.textMuted }}>Loading…</div>}>

@@ -26,7 +26,7 @@ func EnsureManagedLocalConnection(st *store.Store, cipher *crypto.AESCipher, set
 		return 0, errors.New("local quick connection settings are incomplete")
 	}
 	if settings.MaxSessions == 0 {
-		settings.MaxSessions = 10
+		settings.MaxSessions = 30
 	}
 	admin, err := st.GetUserByUsername("admin")
 	if err != nil {

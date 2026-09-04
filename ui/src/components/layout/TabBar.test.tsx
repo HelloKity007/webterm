@@ -4,18 +4,33 @@ import { describe, expect, it, vi } from 'vitest';
 import TabBar from './TabBar';
 
 describe('TabBar', () => {
-  it('lets an authorized caller add another managed local SSH session', () => {
-    const onQuickConnect = vi.fn();
+  it('does not render a new-tab button because SSH hosts open by double-clicking the sidebar', () => {
     render(<TabBar
       tabs={[{ id: 'ssh-1', type: 'ssh', title: '本机', connId: 1 }]}
       activeTabId="ssh-1"
       onSelectTab={() => {}}
       onCloseTab={() => {}}
-      quickConnect={{ label: '新增本机会话', onClick: onQuickConnect }}
     />);
 
-    fireEvent.click(screen.getByRole('button', { name: '新增本机会话' }));
+    expect(screen.queryAllByRole('button')).toHaveLength(0);
+  });
 
-    expect(onQuickConnect).toHaveBeenCalledOnce();
+  it('keeps a fixed tab number while a double-click renames only the title', () => {
+    const onRenameTab = vi.fn();
+    render(<TabBar
+      tabs={[{ id: 'ssh-7', type: 'ssh', title: 'x99', connId: 7, labelNumber: 3 }]}
+      activeTabId="ssh-7"
+      onSelectTab={() => {}}
+      onCloseTab={() => {}}
+      onRenameTab={onRenameTab}
+    />);
+
+    fireEvent.doubleClick(screen.getByText('3: x99'));
+    const input = screen.getByDisplayValue('x99');
+    fireEvent.change(input, { target: { value: '生产机' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    expect(onRenameTab).toHaveBeenCalledWith('ssh-7', '生产机');
+    expect(screen.getByText('3: x99')).toBeTruthy();
   });
 });

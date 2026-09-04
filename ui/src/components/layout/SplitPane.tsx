@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState, useEffect, useRef, useCallback } from 'react';
+import { lazy, Suspense, useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
 import { useLayoutStore } from '../../store/layout';
 import type { Tab } from '../../store/layout';
 import { useConnectionStore } from '../../store/connections';
@@ -10,7 +10,7 @@ import MatrixRain from '../common/MatrixRain';
 import { useAuthStore } from '../../store/auth';
 import { apiGet, apiPost, apiPut } from '../../api/client';
 import { colors, font } from '../../theme/tokens';
-import { emptyPersistedLayout, normalizePersistedLayout, type Direction, type LayoutNode, type PersistedLayout } from './layoutPersistence';
+import { emptyPersistedLayout, localActiveTabID, normalizePersistedLayout, sharedLayoutSnapshot, type Direction, type LayoutNode, type PersistedLayout } from './layoutPersistence';
 import { layoutEventRevision, layoutSocketURL } from './layoutSync';
 import { shouldPersistLayout } from './layoutSave';
 import { useWebSocket } from '../../hooks/useWebSocket';
@@ -66,16 +66,25 @@ function layoutSnapshot(): PersistedLayout {
 
 function restoreLayout(value: unknown) {
   const layout = normalizePersistedLayout(value) || emptyPersistedLayout();
+  const previousActiveTabs = new Map(paneActiveCache);
+  const previousFocusedPane = useLayoutStore.getState().focusedPaneId;
   layoutRoot = structuredClone(layout.tree);
   allPaneIds.clear();
   leafIDs(layoutRoot).forEach((id) => allPaneIds.add(id));
   paneTabsCache.clear();
   paneActiveCache.clear();
   for (const [paneID, pane] of Object.entries(layout.panes)) {
-    paneTabsCache.set(paneID, pane.tabs.map((tab) => ({ ...tab })));
-    paneActiveCache.set(paneID, pane.activeTabId);
+    const tabs = pane.tabs.map((tab) => ({ ...tab }));
+    paneTabsCache.set(paneID, tabs);
+    paneActiveCache.set(paneID, localActiveTabID(previousActiveTabs.get(paneID), tabs, pane.activeTabId));
   }
-  useLayoutStore.getState().setFocusedPane(layout.focusedPaneId || 'root');
+  const paneIDs = leafIDs(layoutRoot);
+  const focusedPane = previousFocusedPane && paneIDs.includes(previousFocusedPane)
+    ? previousFocusedPane
+    : layout.focusedPaneId && paneIDs.includes(layout.focusedPaneId)
+      ? layout.focusedPaneId
+      : paneIDs[0] || 'root';
+  useLayoutStore.getState().setFocusedPane(focusedPane);
   layoutRestoreVersion++;
   notify();
 }
@@ -268,6 +277,32 @@ function computeGrid(node: LayoutNode): { cols: number; rows: number; cells: Gri
 const paneTabsCache = new Map<string, Tab[]>();
 const paneActiveCache = new Map<string, string | null>();
 
+function nextTabLabelNumber() {
+  let highest = 0;
+  for (const tabs of paneTabsCache.values()) {
+    for (const tab of tabs) highest = Math.max(highest, tab.labelNumber || 0);
+  }
+  return highest + 1;
+}
+
+function assignTabLabelNumbers(tabs: Tab[]): Tab[] {
+  const used = new Set<number>();
+  for (const paneTabs of paneTabsCache.values()) {
+    for (const tab of paneTabs) if (tab.labelNumber) used.add(tab.labelNumber);
+  }
+  let next = nextTabLabelNumber();
+  return tabs.map((tab) => {
+    if (tab.labelNumber && !used.has(tab.labelNumber)) {
+      used.add(tab.labelNumber);
+      return tab;
+    }
+    while (used.has(next)) next++;
+    const labelNumber = next++;
+    used.add(labelNumber);
+    return { ...tab, labelNumber };
+  });
+}
+
 // Leaf pane component — always mounted, just hidden when not in layout
 function LeafPane({ nodeId, onActiveSshChange, isInSplit }: {
   nodeId: string; onActiveSshChange?: (connId: number | null, tabId: string | null) => void; isInSplit: boolean;
@@ -287,7 +322,6 @@ function LeafPane({ nodeId, onActiveSshChange, isInSplit }: {
   const removedTabs = useLayoutStore((s) => s.removedTabQueue);
   const notifyTabMoved = useLayoutStore((s) => s.notifyTabMoved);
   const connections = useConnectionStore((s) => s.connections);
-  const userRole = useAuthStore((s) => s.user?.role);
 
   useEffect(() => {
     paneTabsCache.set(nodeId, tabs);
@@ -297,34 +331,24 @@ function LeafPane({ nodeId, onActiveSshChange, isInSplit }: {
 
   useEffect(() => {
     if (focusedPaneId !== nodeId || queuedTabs.length === 0) return;
-    const queue = drainTabQueue();
+    const queue = drainTabQueue('ssh');
     if (queue.length === 0) return;
-    const timer = window.setTimeout(() => {
+    window.setTimeout(() => {
       setTabs((prev) => {
         const ids = new Set(prev.map((tab) => tab.id));
-        return [...prev, ...queue.filter((tab) => !ids.has(tab.id))];
+        return [...prev, ...assignTabLabelNumbers(queue.filter((tab) => !ids.has(tab.id)))];
       });
       setActiveTabId(queue[queue.length - 1].id);
     }, 0);
-    return () => window.clearTimeout(timer);
   }, [drainTabQueue, focusedPaneId, nodeId, queuedTabs]);
 
   useEffect(() => {
     if (removedTabs.length === 0) return;
     const removed = drainRemovedTabs();
     if (removed.length === 0) return;
-    const timer = window.setTimeout(() => setTabs((prev) => prev.filter((tab) => !removed.includes(tab.id))), 0);
-    return () => window.clearTimeout(timer);
+    window.setTimeout(() => setTabs((prev) => prev.filter((tab) => !removed.includes(tab.id))), 0);
   }, [drainRemovedTabs, removedTabs]);
 
-  const handleAddTab = (connId: number, name: string, type: string) => {
-    const tab: Tab = { id: nextLayoutID(`${type}-${connId}`), type: type as Tab['type'], title: name, connId };
-    setTabs((prev) => [...prev, tab]); setActiveTabId(tab.id);
-  };
-  const openLocalQuickTab = async () => {
-    const data = await apiPost('/api/quick-connect/local', {});
-    handleAddTab(data.connection.id, data.connection.name, 'ssh');
-  };
   const handleReceiveTab = (tab: Tab) => {
     setTabs((prev) => { if (prev.find((t) => t.id === tab.id)) return prev; return [...prev, tab]; });
     setActiveTabId(tab.id); notifyTabMoved(tab.id);
@@ -343,12 +367,15 @@ function LeafPane({ nodeId, onActiveSshChange, isInSplit }: {
       return next;
     });
   };
+  const renameTab = (id: string, title: string) => {
+    setTabs((prev) => prev.map((tab) => tab.id === id ? { ...tab, title } : tab));
+  };
   const handleSplit = (dir: Direction) => {
     const activeTab = tabs.find((t) => t.id === activeTabId);
     if (!activeTab?.connId) return;
 
     const newPaneId = nextLayoutID('pane');
-    const newTab: Tab = { ...activeTab, id: nextLayoutID(`${activeTab.type}-${activeTab.connId}`) };
+    const newTab: Tab = { ...activeTab, id: nextLayoutID(`${activeTab.type}-${activeTab.connId}`), labelNumber: nextTabLabelNumber() };
     // Pre-cache tab BEFORE doSplit so the new LeafPane finds it on first mount
     paneTabsCache.set(newPaneId, [newTab]);
     paneActiveCache.set(newPaneId, newTab.id);
@@ -361,9 +388,9 @@ function LeafPane({ nodeId, onActiveSshChange, isInSplit }: {
     if (!activeTab?.connId) return;
     const vId1 = nextLayoutID('pane');
     const vId2 = nextLayoutID('pane');
-    const tab1: Tab = { ...activeTab, id: nextLayoutID(`${activeTab.type}-${activeTab.connId}`) };
-    const tab2: Tab = { ...activeTab, id: nextLayoutID(`${activeTab.type}-${activeTab.connId}`) };
+    const tab1: Tab = { ...activeTab, id: nextLayoutID(`${activeTab.type}-${activeTab.connId}`), labelNumber: nextTabLabelNumber() };
     paneTabsCache.set(vId1, [tab1]);
+    const tab2: Tab = { ...activeTab, id: nextLayoutID(`${activeTab.type}-${activeTab.connId}`), labelNumber: nextTabLabelNumber() };
     paneTabsCache.set(vId2, [tab2]);
     paneActiveCache.set(vId1, tab1.id);
     paneActiveCache.set(vId2, tab2.id);
@@ -415,13 +442,12 @@ function LeafPane({ nodeId, onActiveSshChange, isInSplit }: {
   return (
     <div onClick={() => setFocusedPane(nodeId)} style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0, minHeight: 0 }}>
       {tabs.length > 0 && (
-        <TabBar tabs={tabs} activeTabId={activeTabId} onSelectTab={setActiveTabId} onCloseTab={closeTab} filterType="ssh"
-          connections={connections} onAddTab={handleAddTab} onReceiveTab={handleReceiveTab}
-          quickConnect={userRole === 'admin' ? { label: '新增本机会话', onClick: openLocalQuickTab } : undefined} />
+        <TabBar tabs={tabs} activeTabId={activeTabId} onSelectTab={setActiveTabId} onCloseTab={closeTab} onRenameTab={renameTab} filterType="ssh"
+          onReceiveTab={handleReceiveTab} />
       )}
       <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-        {tabs.map((tab) => (
-          <div key={tab.id} style={{ flex: 1, display: tab.id === activeTabId ? 'flex' : 'none', overflow: 'hidden' }}>
+        {tabs.filter((tab) => tab.id === activeTabId).map((tab) => (
+          <div key={tab.id} style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
             {tab.type === 'ssh' && tab.connId && (
               <Suspense fallback={<div style={{ padding: 12, fontSize: font.md, color: colors.textMuted }}>Loading…</div>}>
                 <TerminalTab connId={tab.connId} myTabId={tab.id} paneTabs={tabs} extraMenuItems={[
@@ -449,7 +475,9 @@ function LeafPane({ nodeId, onActiveSshChange, isInSplit }: {
 function GridContainer({ onActiveSshChange }: { onActiveSshChange?: (connId: number | null, tabId: string | null) => void }) {
   const [, forceUpdate] = useState(0);
 
-  useEffect(() => subscribe(() => forceUpdate((n) => n + 1)), []);
+  // Subscribe before passive effects load the saved layout, otherwise a fast
+  // layout response can be restored before this grid starts listening.
+  useLayoutEffect(() => subscribe(() => forceUpdate((n) => n + 1)), []);
 
   const { cols, rows, cells } = computeGrid(layoutRoot);
   const cellMap = new Map(cells.map((c) => [c.id, c]));
@@ -693,7 +721,7 @@ export default function SplitPane({ onActiveSshChange }: { onActiveSshChange?: (
   const applyLayout = useCallback((response: { revision: number; layout: unknown; skipped_tabs: number }) => {
     revisionRef.current = response.revision;
     restoreLayout(response.layout);
-    persistedLayoutRef.current = JSON.stringify(layoutSnapshot());
+    persistedLayoutRef.current = JSON.stringify(sharedLayoutSnapshot(layoutSnapshot()));
     restoredAtRef.current = Date.now();
     if (response.skipped_tabs > 0) setLayoutMessage(`已跳过 ${response.skipped_tabs} 个无法访问的已保存标签页。`);
   }, []);
@@ -726,7 +754,7 @@ export default function SplitPane({ onActiveSshChange }: { onActiveSshChange?: (
       if (Date.now() - restoredAtRef.current < 500) return;
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
       saveTimerRef.current = setTimeout(() => {
-        const layout = layoutSnapshot();
+        const layout = sharedLayoutSnapshot(layoutSnapshot());
         const serializedLayout = JSON.stringify(layout);
         if (!shouldPersistLayout(serializedLayout, persistedLayoutRef.current)) return;
         void apiPut('/api/layout', {

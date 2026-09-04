@@ -1,5 +1,6 @@
 import playwright from '../ui/node_modules/@playwright/test/index.js';
 import { randomBytes } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -23,6 +24,18 @@ function percentile(values, percentileValue) {
   const sorted = [...values].sort((a, b) => a - b);
   if (sorted.length === 0) return null;
   return sorted[Math.min(sorted.length - 1, Math.ceil(sorted.length * percentileValue) - 1)];
+}
+
+function tmuxSessionName(userID, connectionID, terminalID) {
+  return `wt-${userID}-${connectionID}-${createHash('sha256').update(terminalID).digest('hex').slice(0, 16)}`;
+}
+
+function removeTemporaryTmuxSessions(sessionNames) {
+  for (const sessionName of sessionNames) {
+    try {
+      execFileSync('tmux', ['kill-session', '-t', sessionName], { stdio: 'ignore' });
+    } catch { /* the session may not have started or may already be gone */ }
+  }
 }
 
 function startWebtermSampler() {
@@ -145,6 +158,7 @@ let currentRevision;
 let clientInstances = [];
 let restoreAttempted = false;
 let sampler;
+let temporaryTmuxSessions = [];
 const startedAt = performance.now();
 
 try {
@@ -165,6 +179,8 @@ try {
   const originalLayout = await api(controlPage, token, '/api/layout');
   const quickConnection = await api(controlPage, token, '/api/quick-connect/local', { method: 'POST', body: '{}' });
   const initialLayout = makeLayout(quickConnection.connection.id, totalPanes - 1);
+  temporaryTmuxSessions = Object.values(makeLayout(quickConnection.connection.id, totalPanes).panes)
+    .flatMap((pane) => pane.tabs.map((tab) => tmuxSessionName(loadTestUserID, quickConnection.connection.id, tab.id)));
   const initialSave = await api(controlPage, token, '/api/layout', {
     method: 'PUT', body: JSON.stringify({ schema_version: 1, revision: originalLayout.revision, layout: initialLayout }),
   });
@@ -201,6 +217,7 @@ try {
 } finally {
   if (sampler) sampler.stop();
   await Promise.all(clientInstances.map(async ({ context, browser }) => { await context.close(); await browser.close(); }));
+  removeTemporaryTmuxSessions(temporaryTmuxSessions);
   if (controllerToken && loadTestUserID && controlPage) {
     restoreAttempted = true;
     try {

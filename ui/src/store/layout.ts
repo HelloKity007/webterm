@@ -8,6 +8,8 @@ export interface Tab {
   type: ModuleType;
   title: string;
   connId?: number;
+  // Shared, immutable label shown before the editable title (for example 3:).
+  labelNumber?: number;
 }
 
 interface LayoutState {
@@ -21,7 +23,7 @@ interface LayoutState {
   removedTabQueue: string[];
   setActiveModule: (m: ModuleType) => void;
   requestTab: (tab: Tab) => void;
-  drainTabQueue: () => Tab[];
+  drainTabQueue: (type?: Tab['type']) => Tab[];
   drainRemovedTabs: () => string[];
   notifyTabMoved: (tabId: string) => void;
   setSftpCdPath: (tabId: string, path: string) => void;
@@ -55,10 +57,15 @@ export const useLayoutStore = create<LayoutState>((set, get) => ({
       signalSftpDisconnect: () => set((s) => ({ sftpDisconnectSignal: s.sftpDisconnectSignal + 1 })),
       setActiveModule: (m) => set({ activeModule: m }),
       requestTab: (tab) => set((s) => ({ newTabQueue: [...s.newTabQueue, tab] })),
-      drainTabQueue: () => {
+      drainTabQueue: (type) => {
         const queue = get().newTabQueue;
-        if (queue.length > 0) set({ newTabQueue: [] });
-        return queue;
+        if (!type) {
+          if (queue.length > 0) set({ newTabQueue: [] });
+          return queue;
+        }
+        const matched = queue.filter((tab) => tab.type === type);
+        if (matched.length > 0) set({ newTabQueue: queue.filter((tab) => tab.type !== type) });
+        return matched;
       },
       drainRemovedTabs: () => {
         const queue = get().removedTabQueue;

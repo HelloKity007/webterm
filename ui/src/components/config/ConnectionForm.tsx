@@ -42,7 +42,7 @@ export default function ConnectionForm({ connection, onClose, onSaved }: Props) 
     passphrase: '',
     group_id: connection?.group_id || 0,
     shared: connection?.shared || false,
-    max_sessions: connection?.max_sessions || 10,
+    max_sessions: connection?.max_sessions || 30,
     tag: connection?.tag || '',
     color: connection?.color || colors.accent,
   });
@@ -77,11 +77,11 @@ export default function ConnectionForm({ connection, onClose, onSaved }: Props) 
   const update = <K extends keyof ConnectionFormState>(key: K, value: ConnectionFormState[K]) => setForm((prev) => ({ ...prev, [key]: value }));
 
   return (
-    <Modal title={connection ? t('conn_edit') : t('conn_new')} onClose={onClose} width={520} height={form.auth_method === 'private_key' ? 530 : 410} unscaled>
+    <Modal title={connection ? t('conn_edit') : t('conn_new')} onClose={onClose} width={760} height={form.auth_method === 'private_key' ? 'min(720px, calc(100vh - 32px))' : 'min(650px, calc(100vh - 32px))'} unscaled>
       <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-        {error && <div style={{ color: colors.danger, fontSize: font.md, padding: '4px 10px', background: colors.bgError, borderRadius: 4, margin: '4px 12px 0' }}>{error}</div>}
+        {error && <div role="alert" style={{ color: colors.dangerBright, fontSize: font.md, padding: '9px 12px', background: colors.dangerSoft, border: '1px solid rgba(247,118,142,0.26)', borderRadius: 8, margin: '14px 24px 0' }}>{error}</div>}
 
-        <div style={{ padding: '16px 28px', flex: 1, display: 'flex', flexDirection: 'column', gap: 10, overflow: 'auto' }}>
+        <div style={{ padding: '20px 24px', flex: 1, display: 'flex', flexDirection: 'column', gap: 16, overflow: 'auto' }}>
           {/* All rows use same 4-column grid for perfect vertical alignment */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 12, alignItems: 'end' }}>
             <div style={{ gridColumn: '1 / 3' }}><FormField label={t("conn_name")} value={form.name} onChange={(v) => update('name', v)} required /></div>
@@ -199,11 +199,11 @@ export default function ConnectionForm({ connection, onClose, onSaved }: Props) 
                 <option value="shared">共享</option>
               </CustomSelect>
             </div>
-            <div style={{ gridColumn: '4 / 5' }}><FormField label={t("conn_max_sessions")} value={String(form.max_sessions)} onChange={(v) => update('max_sessions', Number(v) || 10)} type="number" /></div>
+            <div style={{ gridColumn: '4 / 5' }}><FormField label={t("conn_max_sessions")} value={String(form.max_sessions)} onChange={(v) => update('max_sessions', Number(v) || 30)} type="number" /></div>
           </div>
         </div>
 
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, padding: '12px 24px', flexShrink: 0 }}>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, padding: '16px 24px', borderTop: '1px solid rgba(122,162,247,0.16)', flexShrink: 0, background: 'rgba(15,18,32,0.22)' }}>
           <button onClick={onClose} style={btnSecondary}>{t("conn_cancel")}</button>
           <button onClick={handleSubmit} disabled={saving || !form.name || !form.host}
             style={saving ? { ...btnPrimary, background: colors.textMuted, cursor: 'default' } : btnPrimary}>
@@ -228,10 +228,10 @@ function FormField({ label, value, onChange, type = 'text', placeholder, require
 }
 
 const inputStyle: React.CSSProperties = {
-  width: '100%', padding: '10px 12px', background: 'rgba(31,35,53,0.5)', border: '1px solid var(--c-border)',
-  borderRadius: 4, color: colors.text, fontSize: font.xl, boxSizing: 'border-box', outline: 'none',
+  width: '100%', padding: '10px 12px', minHeight: 42, background: 'rgba(15,18,32,0.5)', border: '1px solid rgba(122,162,247,0.24)',
+  borderRadius: 7, color: colors.text, fontSize: font.xl, boxSizing: 'border-box', outline: 'none',
 };
 const selectStyle: React.CSSProperties = { ...inputStyle };
-const btnSecondary: React.CSSProperties = { padding: '8px 20px', background: 'transparent', border: '1px solid var(--c-border)', color: colors.text, borderRadius: 4, cursor: 'pointer', fontSize: font.xl };
-const btnPrimary: React.CSSProperties = { padding: '8px 20px', background: colors.accent, border: 'none', color: colors.bg, borderRadius: 4, cursor: 'pointer', fontSize: font.xl, fontWeight: 600 };
-const labelStyle: React.CSSProperties = { color: colors.textMuted, fontSize: font.md, display: 'block', marginBottom: 4 };
+const btnSecondary: React.CSSProperties = { padding: '9px 20px', background: 'transparent', border: '1px solid rgba(122,162,247,0.28)', color: colors.text, borderRadius: 7, cursor: 'pointer', fontSize: font.xl };
+const btnPrimary: React.CSSProperties = { padding: '9px 22px', background: 'linear-gradient(135deg, #7aa2f7, #a58bf5)', border: 'none', color: colors.bg, borderRadius: 7, cursor: 'pointer', fontSize: font.xl, fontWeight: 700 };
+const labelStyle: React.CSSProperties = { color: colors.textMuted2, fontSize: font.md, display: 'block', marginBottom: 6 };

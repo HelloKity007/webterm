@@ -82,6 +82,18 @@ func TestLoadUsesBoundedQuickConnectSessionLimit(t *testing.T) {
 	}
 }
 
+func TestLoadDefaultsQuickConnectSessionLimitToThirty(t *testing.T) {
+	path := writeTestConfig(t, "encryption_key: "+validEncryptionKey+"\n"+validQuickConnect)
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.LocalQuickConnect.MaxSessions != 30 {
+		t.Fatalf("MaxSessions = %d, want default 30", cfg.LocalQuickConnect.MaxSessions)
+	}
+}
+
 func TestLoadRejectsUnboundedQuickConnectSessionLimit(t *testing.T) {
 	path := writeTestConfig(t, "encryption_key: "+validEncryptionKey+"\nlocal_quick_connect:\n  host: 127.0.0.1\n  port: 22\n  username: pgz\n  password_env: WEBTERM_LOCAL_SSH_PASSWORD\n  max_sessions: 1001\n")
 	if _, err := Load(path); err == nil {

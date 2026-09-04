@@ -76,7 +76,7 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("local_quick_connect must target 127.0.0.1:22 with username and password_env")
 	}
 	if c.LocalQuickConnect.MaxSessions == 0 {
-		c.LocalQuickConnect.MaxSessions = 10
+		c.LocalQuickConnect.MaxSessions = 30
 	}
 	if c.LocalQuickConnect.MaxSessions < 1 || c.LocalQuickConnect.MaxSessions > 1000 {
 		return fmt.Errorf("local_quick_connect.max_sessions must be between 1 and 1000")

@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -55,10 +56,11 @@ type layoutPane struct {
 }
 
 type layoutTab struct {
-	ID     string `json:"id"`
-	Type   string `json:"type"`
-	Title  string `json:"title"`
-	ConnID int64  `json:"connId"`
+	ID          string `json:"id"`
+	Type        string `json:"type"`
+	Title       string `json:"title"`
+	ConnID      int64  `json:"connId"`
+	LabelNumber int64  `json:"labelNumber,omitempty"`
 }
 
 func (h *LayoutHandler) Get(w http.ResponseWriter, r *http.Request) {
@@ -102,7 +104,23 @@ func (h *LayoutHandler) Save(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"layout references unavailable connection"}`, http.StatusForbidden)
 		return
 	}
-	revision, err := h.Store.SaveUserLayout(user.UserID, request.SchemaVersion, request.Revision, request.Layout)
+	sharedLayout, err := sharedLayoutJSON(request.Layout)
+	if err != nil {
+		http.Error(w, `{"error":"invalid layout"}`, http.StatusBadRequest)
+		return
+	}
+	current, err := h.Store.GetUserLayout(user.UserID)
+	if err != nil {
+		http.Error(w, `{"error":"failed to load layout"}`, http.StatusInternalServerError)
+		return
+	}
+	currentSharedLayout, err := sharedLayoutJSON(current.LayoutJSON)
+	if current.Revision > 0 && current.Revision == request.Revision && err == nil && bytes.Equal(currentSharedLayout, sharedLayout) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{"revision": current.Revision})
+		return
+	}
+	revision, err := h.Store.SaveUserLayout(user.UserID, request.SchemaVersion, request.Revision, sharedLayout)
 	if errors.Is(err, store.ErrLayoutConflict) {
 		http.Error(w, `{"error":"layout revision conflict"}`, http.StatusConflict)
 		return
@@ -116,6 +134,22 @@ func (h *LayoutHandler) Save(w http.ResponseWriter, r *http.Request) {
 		h.Hub.Publish(user.UserID, revision)
 	}
 	json.NewEncoder(w).Encode(map[string]any{"revision": revision})
+}
+
+// sharedLayoutJSON deliberately removes browser-local selection state before
+// it reaches the database or the layout event stream.  Only workspace shape
+// and opened tabs are shared between a user's browsers.
+func sharedLayoutJSON(raw json.RawMessage) ([]byte, error) {
+	var layout savedLayout
+	if err := json.Unmarshal(raw, &layout); err != nil {
+		return nil, err
+	}
+	layout.FocusedPaneID = ""
+	for paneID, pane := range layout.Panes {
+		pane.ActiveTabID = ""
+		layout.Panes[paneID] = pane
+	}
+	return json.Marshal(layout)
 }
 
 func validLayoutJSON(raw json.RawMessage) bool {
@@ -171,7 +205,7 @@ func validLayoutPane(pane layoutPane) bool {
 	seen := make(map[string]struct{})
 	activeFound := pane.ActiveTabID == ""
 	for _, tab := range pane.Tabs {
-		if strings.TrimSpace(tab.ID) == "" || strings.TrimSpace(tab.Title) == "" || tab.ConnID < 1 || (tab.Type != "ssh" && tab.Type != "database") {
+		if strings.TrimSpace(tab.ID) == "" || strings.TrimSpace(tab.Title) == "" || tab.ConnID < 1 || tab.LabelNumber < 0 || (tab.Type != "ssh" && tab.Type != "database") {
 			return false
 		}
 		if _, duplicate := seen[tab.ID]; duplicate {

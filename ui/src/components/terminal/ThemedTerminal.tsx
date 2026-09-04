@@ -14,6 +14,7 @@ import { getTheme } from '../../themes/presets';
 import ContextMenu from '../common/ContextMenu';
 import { colors } from '../../theme/tokens';
 import Zmodem from 'zmodem.js/src/zmodem_browser.js';
+import { deliverTerminalBytes } from './terminalOutput';
 
 interface Props {
   connId: number;
@@ -208,14 +209,27 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       onResizeDimRef.current?.(cols, rows);
     });
 
+    const fitWhenVisible = () => {
+      if (!ref.current || ref.current.offsetWidth <= 0 || ref.current.offsetHeight <= 0) return;
+      fitAddon.fit();
+    };
+
     if (ref.current) {
       ref.current.style.backgroundColor = themeConfig.background;
       term.open(ref.current);
+      // xterm sizes its canvas to integral character cells.  Keep its viewport
+      // itself stretched to the pane so the few remaining pixels (or a
+      // transient pre-resize canvas) cannot reveal the page behind it.
+      if (term.element) {
+        term.element.style.width = '100%';
+        term.element.style.height = '100%';
+        term.element.style.backgroundColor = themeConfig.background;
+      }
       termRef.current = term;
       setTermKey((k) => k + 1);
 
       requestAnimationFrame(() => {
-        fitAddon.fit();
+        fitWhenVisible();
         term.focus();
         // Retry focus after layout settles (important for split panes)
         setTimeout(() => term.focus(), 100);
@@ -223,13 +237,11 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
     }
 
     const resizeObserver = new ResizeObserver(() => {
-      if (ref.current && (ref.current.offsetWidth > 0 || ref.current.offsetHeight > 0)) {
-        fitAddon.fit();
-      }
+      fitWhenVisible();
     });
     if (ref.current) resizeObserver.observe(ref.current);
 
-    const handleResize = () => fitAddon.fit();
+    const handleResize = () => fitWhenVisible();
     window.addEventListener('resize', handleResize);
 
     return () => {
@@ -240,7 +252,8 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
   }, [fontSize, myTabId, setSftpCdPath, themeName]);
 
   const token = localStorage.getItem('token') || '';
-  const wsUrl = `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws/ssh/${connId}?token=${token}`;
+  const terminalID = myTabId || '';
+  const wsUrl = `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws/ssh/${connId}?token=${encodeURIComponent(token)}&terminal_id=${encodeURIComponent(terminalID)}`;
 
   const { send } = useWebSocket({
     url: wsUrl,
@@ -259,7 +272,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
             bytes = new TextEncoder().encode(msg.data);
           }
           try {
-            zsentryRef.current?.consume(bytes);
+            deliverTerminalBytes(term, zsentryRef.current, bytes);
           } catch (e) {
             // Repeated ZMODEM handshakes (rz retries) can make the session throw;
             // swallow them instead of dumping raw JSON into the terminal.
@@ -441,7 +454,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
   }, [send, sendTextAsBinary, broadcastScope, broadcastSourceId, myTabId, tabs, terminalRegistry, termKey]);
 
   return (
-    <div ref={ref} style={{ flex: 1, overflow: 'hidden', padding: '0 6px' }}
+    <div ref={ref} style={{ flex: 1, minWidth: 0, minHeight: 0, overflow: 'hidden', padding: '0 6px', background: getTheme(themeName || 'Dracula').background }}
       onContextMenu={(e) => {
         e.preventDefault();
         setContextMenu({ x: e.clientX, y: e.clientY });
