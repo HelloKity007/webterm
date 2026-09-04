@@ -10,8 +10,8 @@ func TestPersistentTerminalCommandIsStableIsolatedAndShellSafe(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !regexp.MustCompile(`^tmux new-session -Ad -s wt-7-12-[a-f0-9]{16} && tmux set-option -t wt-7-12-[a-f0-9]{16} window-size smallest && exec tmux attach-session -t wt-7-12-[a-f0-9]{16}$`).MatchString(command) {
-		t.Fatalf("command = %q, want shell-safe persistent tmux command that uses the smallest attached client size", command)
+	if !regexp.MustCompile(`^tmux new-session -Ad -s wt-7-12-[a-f0-9]{16} && tmux set-option -t wt-7-12-[a-f0-9]{16} window-size largest && exec tmux attach-session -t wt-7-12-[a-f0-9]{16}$`).MatchString(command) {
+		t.Fatalf("command = %q, want shell-safe persistent tmux command that keeps the largest attached client size", command)
 	}
 
 	same, err := persistentTerminalCommand(7, 12, "ssh-12-pane-a; rm -rf /")

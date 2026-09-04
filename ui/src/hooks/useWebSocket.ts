@@ -6,7 +6,7 @@ interface UseWsOptions {
   url: string;
   onMessage: (data: string) => void;
   onClose?: (final?: boolean) => void;
-  onOpen?: () => void;
+  onOpen?: (sendNow: (data: string) => void) => void;
 }
 
 export function useWebSocket({ url, onMessage, onClose, onOpen }: UseWsOptions) {
@@ -40,7 +40,7 @@ export function useWebSocket({ url, onMessage, onClose, onOpen }: UseWsOptions) 
         }
         bufferRef.current = [];
       }
-      onOpenRef.current?.();
+      onOpenRef.current?.((data) => ws.send(data));
     };
 
     ws.onmessage = (event) => {

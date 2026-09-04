@@ -36,6 +36,15 @@ type terminalInputSession interface {
 // pumpTerminalInput owns the browser-to-SSH direction. Closing the SSH
 // session when the browser socket ends is essential: otherwise io.Copy on the
 // output side can keep the lease reserved indefinitely after a tab is closed.
+type terminalPTYSession interface {
+	RequestPty(term string, height, width int, modes ssh.TerminalModes) error
+}
+
+func requestDefaultTerminalPTY(session terminalPTYSession, modes ssh.TerminalModes) error {
+	// RequestPty takes height before width.
+	return session.RequestPty("xterm-256color", 40, 120, modes)
+}
+
 func pumpTerminalInput(receive func(*json.RawMessage) error, session terminalInputSession, stdin io.Writer) {
 	defer session.Close()
 	for {
@@ -47,7 +56,7 @@ func pumpTerminalInput(receive func(*json.RawMessage) error, session terminalInp
 			Cols int `json:"cols"`
 			Rows int `json:"rows"`
 		}
-		if err := json.Unmarshal(raw, &resizeMsg); err == nil && resizeMsg.Cols > 0 {
+		if err := json.Unmarshal(raw, &resizeMsg); err == nil && resizeMsg.Cols > 1 && resizeMsg.Rows > 0 {
 			if err := session.WindowChange(resizeMsg.Rows, resizeMsg.Cols); err != nil {
 				log.Printf("SSH resize failed: %v", err)
 			}
@@ -86,7 +95,8 @@ func (h *WSHandler) HandleSSH(conn *websocket.Conn) {
 		sendErr(conn, "forbidden")
 		return
 	}
-	tmuxCommand, err := persistentTerminalCommand(user.UserID, connID, conn.Request().URL.Query().Get("terminal_id"))
+	terminalID := conn.Request().URL.Query().Get("terminal_id")
+	tmuxCommand, err := persistentTerminalCommand(user.UserID, connID, terminalID)
 	if err != nil {
 		sendErr(conn, err.Error())
 		return
@@ -152,7 +162,7 @@ func (h *WSHandler) HandleSSH(conn *websocket.Conn) {
 		ssh.TTY_OP_ISPEED: 14400,
 		ssh.TTY_OP_OSPEED: 14400,
 	}
-	if err := session.RequestPty("xterm-256color", 120, 40, modes); err != nil {
+	if err := requestDefaultTerminalPTY(session, modes); err != nil {
 		sendErr(conn, "pty failed: "+err.Error())
 		return
 	}
@@ -165,7 +175,6 @@ func (h *WSHandler) HandleSSH(conn *websocket.Conn) {
 		sendErr(conn, "无法启动持久终端（远端必须安装 tmux）: "+friendlyErr(err))
 		return
 	}
-
 	logID, _ := h.Store.CreateSessionLog(&store.SessionLog{
 		UserID: user.UserID, ConnectionID: connID, Type: "ssh",
 	})

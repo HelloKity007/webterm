@@ -17,7 +17,9 @@ class FakeWebSocket {
     FakeWebSocket.instances.push(this);
   }
 
-  send(data: string) { void data; }
+  sent: string[] = [];
+
+  send(data: string) { this.sent.push(data); }
   close() { this.onclose?.(); }
   emitMessage(data: string) { this.onmessage?.(new MessageEvent('message', { data })); }
 }
@@ -41,5 +43,18 @@ describe('useWebSocket', () => {
     expect(first).not.toHaveBeenCalled();
     expect(second).toHaveBeenCalledWith('latest');
     expect(FakeWebSocket.instances).toHaveLength(1);
+  });
+
+  it('lets onOpen send the initial terminal size on the socket that just opened', () => {
+    vi.stubGlobal('WebSocket', FakeWebSocket);
+    renderHook(() => useWebSocket({
+      url: 'ws://example.test/socket',
+      onMessage: vi.fn(),
+      onOpen: (sendNow) => sendNow('{"cols":235,"rows":41}'),
+    }));
+
+    act(() => FakeWebSocket.instances[0].onopen?.());
+
+    expect(FakeWebSocket.instances[0].sent).toEqual(['{"cols":235,"rows":41}']);
   });
 });

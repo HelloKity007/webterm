@@ -293,7 +293,14 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
         termRef.current?.write('\r\n\x1b[33m[' + t('term_reconnecting') + ']\x1b[0m\r\n');
       }
     },
-    onOpen: () => {
+    onOpen: (sendNow) => {
+      // fit() may run before the socket is open. Always make the first frame
+      // carry the real xterm grid so the backend never leaves tmux at the
+      // fallback PTY size (especially after a layout or tab-title update).
+      const term = termRef.current;
+      if (term && term.cols > 1 && term.rows > 0) {
+        sendNow(JSON.stringify({ cols: term.cols, rows: term.rows }));
+      }
       onStatusRef.current?.(true);
       const conns = useConnectionStore.getState().connections;
       const conn = conns.find((connection) => connection.id === connId);
@@ -454,7 +461,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
   }, [send, sendTextAsBinary, broadcastScope, broadcastSourceId, myTabId, tabs, terminalRegistry, termKey]);
 
   return (
-    <div ref={ref} style={{ flex: 1, minWidth: 0, minHeight: 0, overflow: 'hidden', padding: '0 6px', background: getTheme(themeName || 'Dracula').background }}
+    <div ref={ref} className="terminal-surface" style={{ flex: 1, minWidth: 0, minHeight: 0, overflow: 'hidden', padding: '0 6px', background: getTheme(themeName || 'Dracula').background }}
       onContextMenu={(e) => {
         e.preventDefault();
         setContextMenu({ x: e.clientX, y: e.clientY });

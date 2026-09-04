@@ -5,6 +5,8 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	"golang.org/x/crypto/ssh"
 )
 
 type fakeTerminalSession struct {
@@ -45,5 +47,26 @@ func TestPumpTerminalInputClosesSSHSessionWhenBrowserDisconnects(t *testing.T) {
 	}
 	if input.String() != "echo keep" {
 		t.Fatalf("stdin = %q, want forwarded terminal input", input.String())
+	}
+}
+
+type fakePTYSession struct {
+	term   string
+	height int
+	width  int
+}
+
+func (s *fakePTYSession) RequestPty(term string, height, width int, _ ssh.TerminalModes) error {
+	s.term, s.height, s.width = term, height, width
+	return nil
+}
+
+func TestDefaultTerminalPTYUsesHeightBeforeWidth(t *testing.T) {
+	session := &fakePTYSession{}
+	if err := requestDefaultTerminalPTY(session, nil); err != nil {
+		t.Fatal(err)
+	}
+	if session.term != "xterm-256color" || session.height != 40 || session.width != 120 {
+		t.Fatalf("RequestPty(%q, %d, %d), want xterm-256color, 40, 120", session.term, session.height, session.width)
 	}
 }
