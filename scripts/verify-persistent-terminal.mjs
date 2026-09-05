@@ -212,6 +212,9 @@ try {
   if (tmux(['show-options', '-t', sessionName, 'window-size']).trim() !== 'window-size largest') {
     throw new Error('persistent tmux session did not preserve the largest attached client size');
   }
+  if (tmux(['show-options', '-t', sessionName, 'mouse']).trim() !== 'mouse on') {
+    throw new Error('persistent tmux session did not enable mouse forwarding for full-screen applications');
+  }
   await first.context.close();
   await first.browser.close();
   first = undefined;

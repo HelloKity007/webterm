@@ -192,6 +192,11 @@ func (h *WSHandler) HandleSSH(conn *websocket.Conn) {
 		sendErr(conn, err.Error())
 		return
 	}
+	codexScrollableCommand, err := persistentTerminalCodexScrollableCommand(user.UserID, connID, terminalID)
+	if err != nil {
+		sendErr(conn, err.Error())
+		return
+	}
 
 	maxSessions := connInfo.MaxSessions
 	if maxSessions < 1 {
@@ -276,7 +281,13 @@ func (h *WSHandler) HandleSSH(conn *websocket.Conn) {
 		pumpTerminalInput(func(raw *json.RawMessage) error {
 			return websocket.JSON.Receive(conn, raw)
 		}, session, stdinPipe, func(action string) error {
-			if action != "clear_history" {
+			var command string
+			switch action {
+			case "clear_history":
+				command = clearCommand
+			case "launch_codex_scrollable":
+				command = codexScrollableCommand
+			default:
 				return fmt.Errorf("unsupported terminal action: %s", action)
 			}
 			controlClient, err := newSSHClient()
@@ -289,7 +300,7 @@ func (h *WSHandler) HandleSSH(conn *websocket.Conn) {
 				return err
 			}
 			defer controlSession.Close()
-			return controlSession.Run(clearCommand)
+			return controlSession.Run(command)
 		})
 	}()
 

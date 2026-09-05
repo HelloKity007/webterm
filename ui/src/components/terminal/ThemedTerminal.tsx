@@ -15,6 +15,13 @@ import ContextMenu from '../common/ContextMenu';
 import { colors } from '../../theme/tokens';
 import Zmodem from 'zmodem.js/src/zmodem_browser.js';
 import { deliverTerminalBytes } from './terminalOutput';
+import TerminalHistoryHelp from './TerminalHistoryHelp';
+import {
+  launchCodexScrollableAction,
+  routeTerminalHistoryWheel,
+  terminalActionMessage,
+  terminalScrollbackLines,
+} from './terminalCliSupport';
 import {
   clearTerminalHistory,
   copyTerminalText,
@@ -73,6 +80,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
   const [termKey, setTermKey] = useState(0);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
   const [clipboardNotice, setClipboardNotice] = useState('');
+  const [historyHelpOpen, setHistoryHelpOpen] = useState(false);
   const contextSelectionRef = useRef('');
   const mouseStateRef = useRef(createTerminalMouseState());
   const clipboardNoticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -165,6 +173,8 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
     const themeConfig = getTheme(themeName || 'Dracula');
     const term = new Terminal({
       cursorBlink: true, fontSize: fontSize, fontFamily: '"JetBrains Mono", "JetBrains Maple Mono", Consolas, monospace',
+      scrollback: terminalScrollbackLines,
+      scrollOnUserInput: true,
       theme: {
         background: themeConfig.background,
         foreground: themeConfig.foreground,
@@ -196,6 +206,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
     const searchAddon = new SearchAddon();
     term.loadAddon(fitAddon);
     term.loadAddon(searchAddon);
+    term.attachCustomWheelEventHandler(routeTerminalHistoryWheel);
 
     // Ctrl+C: send SIGINT (0x03)
     term.attachCustomKeyEventHandler((e) => {
@@ -370,6 +381,13 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
     sendRef.current = send;
   }, [send]);
 
+  const launchCodexScrollable = useCallback(() => {
+    sendRef.current(terminalActionMessage(launchCodexScrollableAction));
+    showClipboardNotice(t('term_history_codex_sent'));
+    setHistoryHelpOpen(false);
+    termRef.current?.focus();
+  }, [showClipboardNotice]);
+
   // ZMODEM (sz/rz) support
   useEffect(() => {
     const makeSentry = (): ZSentry => {
@@ -517,18 +535,33 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
   }, [send, sendTextAsBinary, broadcastScope, broadcastSourceId, myTabId, tabs, terminalRegistry, termKey]);
 
   return (
-    <div ref={ref} className="terminal-surface" style={{ flex: 1, minWidth: 0, minHeight: 0, overflow: 'hidden', padding: '0 6px', background: getTheme(themeName || 'Dracula').background }}
-      onMouseDownCapture={(event) => routeTerminalMouseDown(event, mouseStateRef.current, {
-        focusTerminal: focusTerminalAfterPointer,
-        releaseTmuxMenuAt,
-      })}
-      onMouseMoveCapture={(event) => routeTerminalMouseMove(event, mouseStateRef.current, { moveTmuxMenuAt })}
-      onMouseUpCapture={(event) => routeTerminalMouseUp(event, mouseStateRef.current, { focusTerminal: focusTerminalAfterPointer })}
-      onKeyDownCapture={() => { mouseStateRef.current.tmuxMenuActive = false; }}
-      onContextMenuCapture={(e) => routeTerminalContextMenu(e, (position) => {
-        contextSelectionRef.current = termRef.current?.getSelection() || '';
-        setContextMenu(position);
-      })}>
+    <div style={{ position: 'relative', flex: 1, display: 'flex', minWidth: 0, minHeight: 0, overflow: 'hidden', background: getTheme(themeName || 'Dracula').background }}>
+      <div ref={ref} className="terminal-surface" style={{ flex: 1, minWidth: 0, minHeight: 0, overflow: 'hidden', padding: '0 6px', background: getTheme(themeName || 'Dracula').background }}
+        onMouseDownCapture={(event) => routeTerminalMouseDown(event, mouseStateRef.current, {
+          focusTerminal: focusTerminalAfterPointer,
+          releaseTmuxMenuAt,
+        })}
+        onMouseMoveCapture={(event) => routeTerminalMouseMove(event, mouseStateRef.current, { moveTmuxMenuAt })}
+        onMouseUpCapture={(event) => routeTerminalMouseUp(event, mouseStateRef.current, { focusTerminal: focusTerminalAfterPointer })}
+        onKeyDownCapture={() => { mouseStateRef.current.tmuxMenuActive = false; }}
+        onContextMenuCapture={(e) => routeTerminalContextMenu(e, (position) => {
+          contextSelectionRef.current = termRef.current?.getSelection() || '';
+          setContextMenu(position);
+        })}
+      />
+      <button type="button" aria-label={t('term_history_title')} title={t('term_history_title')}
+        onClick={() => setHistoryHelpOpen((open) => !open)} style={{
+          position: 'absolute', top: 5, right: 11, zIndex: 12,
+          padding: '2px 6px', border: '1px solid var(--c-border)', borderRadius: 4,
+          background: colors.bgInput, color: colors.textMuted, cursor: 'pointer',
+          fontSize: 10, lineHeight: 1.4, opacity: historyHelpOpen ? 1 : 0.72,
+        }}>{t('term_history')}</button>
+      {historyHelpOpen && (
+        <TerminalHistoryHelp onClose={() => {
+          setHistoryHelpOpen(false);
+          termRef.current?.focus();
+        }} onLaunchCodexScrollable={launchCodexScrollable} />
+      )}
       {clipboardNotice && (
         <div role="status" style={{
           position: 'absolute', right: 14, bottom: 14, zIndex: 1001,
@@ -574,6 +607,14 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
                 clearTerminalHistory(() => term.clear(), sendRef.current);
                 term.focus();
               },
+            },
+            {
+              label: t('term_history_title'),
+              action: () => setHistoryHelpOpen(true),
+            },
+            {
+              label: t('term_history_codex_launch'),
+              action: launchCodexScrollable,
             },
             ...(extraMenuItems || []),
           ]}

@@ -76,6 +76,32 @@ func TestPumpTerminalInputRoutesClearHistoryWithoutTypingIt(t *testing.T) {
 	}
 }
 
+func TestPumpTerminalInputRoutesCodexLauncherWithoutTypingIt(t *testing.T) {
+	session := &fakeTerminalSession{}
+	messages := []json.RawMessage{json.RawMessage(`{"action":"launch_codex_scrollable"}`)}
+	var input strings.Builder
+	var actions []string
+
+	pumpTerminalInput(func(raw *json.RawMessage) error {
+		if len(messages) == 0 {
+			return errors.New("browser websocket closed")
+		}
+		*raw = messages[0]
+		messages = messages[1:]
+		return nil
+	}, session, &input, func(action string) error {
+		actions = append(actions, action)
+		return nil
+	})
+
+	if len(actions) != 1 || actions[0] != "launch_codex_scrollable" {
+		t.Fatalf("actions = %#v, want launch_codex_scrollable", actions)
+	}
+	if input.Len() != 0 {
+		t.Fatalf("stdin = %q, launcher action must not be typed directly into SSH", input.String())
+	}
+}
+
 type fakePTYSession struct {
 	term   string
 	height int
