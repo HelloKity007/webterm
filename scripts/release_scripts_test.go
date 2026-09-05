@@ -81,3 +81,19 @@ func TestReleaseRuntimePreservesSharedTmuxSessions(t *testing.T) {
 		}
 	}
 }
+
+func TestProcessStopEscalationTargetsOnlyTheRecordedPID(t *testing.T) {
+	lanLibrary, err := os.ReadFile("lan-lib.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	contents := string(lanLibrary)
+	if !strings.Contains(contents, `kill -KILL "$pid"`) {
+		t.Fatal("bounded graceful shutdown does not escalate against the exact PID")
+	}
+	for _, forbidden := range []string{"pkill", "killall"} {
+		if strings.Contains(contents, forbidden) {
+			t.Fatalf("process management must not use broad command %q", forbidden)
+		}
+	}
+}

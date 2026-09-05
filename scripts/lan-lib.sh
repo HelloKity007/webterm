@@ -20,6 +20,11 @@ lan_die() {
   exit 1
 }
 
+lan_pid_running() {
+  local pid="$1"
+  kill -0 "$pid" 2>/dev/null && [[ "$(ps -o stat= -p "$pid" 2>/dev/null)" != Z* ]]
+}
+
 lan_require_mode_600() {
   local path="$1"
   [[ -f "$path" ]] || lan_die "missing required file: $path"
@@ -52,10 +57,10 @@ lan_start() {
   [[ -x "$LAN_BINARY" ]] || lan_die "missing executable binary: $LAN_BINARY (run make build first)"
   mkdir -p "$LAN_RUNTIME_DIR"
 
-  if [[ -f "$LAN_RUNTIME_DIR/webterm.pid" ]] && kill -0 "$(<"$LAN_RUNTIME_DIR/webterm.pid")" 2>/dev/null; then
+  if [[ -f "$LAN_RUNTIME_DIR/webterm.pid" ]] && lan_pid_running "$(<"$LAN_RUNTIME_DIR/webterm.pid")"; then
     lan_die "webterm is already running"
   fi
-  if [[ -f "$LAN_RUNTIME_DIR/caddy.pid" ]] && kill -0 "$(<"$LAN_RUNTIME_DIR/caddy.pid")" 2>/dev/null; then
+  if [[ -f "$LAN_RUNTIME_DIR/caddy.pid" ]] && lan_pid_running "$(<"$LAN_RUNTIME_DIR/caddy.pid")"; then
     lan_die "caddy is already running"
   fi
 
@@ -67,7 +72,8 @@ lan_start() {
 }
 
 lan_start_caddy() {
-  if [[ -f "$LAN_RUNTIME_DIR/caddy.pid" ]] && kill -0 "$(<"$LAN_RUNTIME_DIR/caddy.pid")" 2>/dev/null; then
+  lan_check
+  if [[ -f "$LAN_RUNTIME_DIR/caddy.pid" ]] && lan_pid_running "$(<"$LAN_RUNTIME_DIR/caddy.pid")"; then
     lan_die "caddy is already running"
   fi
   (
@@ -79,7 +85,7 @@ lan_start_caddy() {
 
 lan_start_production() {
   [[ -x "$LAN_BINARY" ]] || lan_die "missing production binary: $LAN_BINARY"
-  if [[ -f "$LAN_RUNTIME_DIR/webterm.pid" ]] && kill -0 "$(<"$LAN_RUNTIME_DIR/webterm.pid")" 2>/dev/null; then
+  if [[ -f "$LAN_RUNTIME_DIR/webterm.pid" ]] && lan_pid_running "$(<"$LAN_RUNTIME_DIR/webterm.pid")"; then
     lan_die "production webterm is already running"
   fi
   (
@@ -94,7 +100,7 @@ lan_start_release() {
   [[ -x "$LAN_RELEASE_BINARY" ]] || lan_die "missing release-test binary: $LAN_RELEASE_BINARY"
   [[ -f "$LAN_RELEASE_DATABASE" ]] || lan_die "missing release-test database snapshot: $LAN_RELEASE_DATABASE"
   mkdir -p "$LAN_RELEASE_DIR"
-  if [[ -f "$LAN_RUNTIME_DIR/webterm-release.pid" ]] && kill -0 "$(<"$LAN_RUNTIME_DIR/webterm-release.pid")" 2>/dev/null; then
+  if [[ -f "$LAN_RUNTIME_DIR/webterm-release.pid" ]] && lan_pid_running "$(<"$LAN_RUNTIME_DIR/webterm-release.pid")"; then
     lan_die "release-test webterm is already running"
   fi
   (
@@ -110,13 +116,26 @@ lan_stop_pid() {
   [[ -f "$pidfile" ]] || return 0
   local pid
   pid="$(<"$pidfile")"
-  if [[ "$pid" =~ ^[0-9]+$ ]] && kill -0 "$pid" 2>/dev/null; then
+  if [[ "$pid" =~ ^[0-9]+$ ]] && lan_pid_running "$pid"; then
     kill "$pid"
     local deadline=$((SECONDS + 10))
-    while kill -0 "$pid" 2>/dev/null && (( SECONDS < deadline )); do
+    while lan_pid_running "$pid" && (( SECONDS < deadline )); do
       sleep 0.1
     done
-    kill -0 "$pid" 2>/dev/null && lan_die "$name did not stop within 10 seconds"
+    if lan_pid_running "$pid"; then
+      # Caddy gives upgraded WebSocket connections an eternal grace period by
+      # default.  After the bounded graceful window, terminate only the exact
+      # PID owned by this deployment so browsers can reconnect to the new
+      # listener while remote tmux sessions remain untouched.
+      kill -KILL "$pid"
+      local force_deadline=$((SECONDS + 2))
+      while lan_pid_running "$pid" && (( SECONDS < force_deadline )); do
+        sleep 0.1
+      done
+      if lan_pid_running "$pid"; then
+        lan_die "$name did not stop after targeted SIGKILL"
+      fi
+    fi
   fi
   rm -f "$pidfile"
 }
@@ -130,7 +149,7 @@ lan_stop() {
 lan_status() {
   for name in webterm webterm-release caddy; do
     local pidfile="$LAN_RUNTIME_DIR/$name.pid"
-    if [[ -f "$pidfile" ]] && kill -0 "$(<"$pidfile")" 2>/dev/null; then
+    if [[ -f "$pidfile" ]] && lan_pid_running "$(<"$pidfile")"; then
       echo "$name: running (pid $(<"$pidfile"))"
     else
       echo "$name: stopped"
