@@ -12,7 +12,7 @@ v1.1 的产品方向成立：WebTerm 的近期核心仍是“同一账号、多�
 
 本版做出以下修正：
 
-1. **共享的是语义布局与远端会话，不是跨尺寸逐像素一致。** 同一 revision 下 pane 树、比例、tab 和会话身份一致；不同 viewport 允许像素尺寸不同。共享 tmux window 使用 `window-size smallest`，保证同时在线的最小 pane 仍能看到底部输入区；大客户端允许出现留白。
+1. **共享的是语义布局、完整终端网格与远端会话，不是跨尺寸逐像素一致。** 同一 revision 下 pane 树、比例、tab 和会话身份一致；不同 viewport 允许字号和单元格间距不同。共享 tmux window 使用 `window-size largest` 让大屏铺满，并通过终端 title 广播权威 grid；较小客户端用自适应字号/间距显示同一完整 grid，不裁掉 Claude/Codex composer。session 级视口跟随只作为 attach/resize 期间的兜底。
 2. **会话恢复不等于浏览器 scrollback 原样恢复。** 重连后恢复当前 TTY 画面和远端进程；历史由 tmux history/copy-mode 保留。若要把完整历史重新灌入 xterm，需另立 snapshot/replay 规格。
 3. **布局当前已经持久化在 SQLite。** 现有 `user_layouts`、revision 乐观锁、按用户 LayoutHub 广播和权威 GET 已完成；P0 不重做。
 4. **当前 WS 已鉴权和校验连接权限，但发生在 HTTP 101 之后。** P0 修复点是握手前拒绝、严格 Origin、URL 中长寿命 JWT，以及并发写安全，不是“完全无鉴权”。
@@ -114,7 +114,7 @@ v1.1 的产品方向成立：WebTerm 的近期核心仍是“同一账号、多�
 - 普通 wheel 优先遵循当前前台应用申请的 mouse protocol，不改变短会话和触控板手感。`Shift+wheel` 在 fullscreen TUI 中提供限速 `PageUp/PageDown` 兜底，在 main screen 中保留 terminal/tmux history override。
 - 右键菜单、文本选择、复制粘贴和 IME 不能因 mouse forwarding 回归；不得把完整或半截 SGR mouse escape 写进 Claude/Codex composer。
 - fullscreen CLI 必须提供显式“选择并复制”模式：WebTerm 直接按当前 xterm viewport 的终端单元格建立线性选区，拖动期间不向远端发送 mouse report，并持续保存文本快照；松开后在同一用户手势内复制该快照，同时保留独立视觉选区，不能依赖 CLI 重绘后 xterm 原生选区仍存在。
-- 同一 session 被不同尺寸客户端同时 attach 时，tmux grid 必须适配最小客户端，底部 composer 不得因大客户端抢占尺寸而被裁掉；大客户端留白是允许的正确性取舍。
+- 同一 session 被不同尺寸客户端同时 attach 时，tmux grid 必须适配最大客户端并铺满大屏；较小客户端必须通过自适应字号和单元格间距显示完整共享 grid，不得裁切右侧或底部，Claude/Codex composer 必须始终可见。鼠标命中、文本选择和键盘输入仍按真实终端单元格计算。
 - 提供显式“回到底部并恢复输入”动作：若处于 tmux copy-mode 则取消 copy-mode，否则向前台 CLI 发送原生 `Ctrl+End`；服务端必须重新派生 tmux target。
 - inline/main-screen 的 xterm 滚动是浏览器本地视图，不影响其他端。fullscreen TUI 的原生历史导航可能改变共享 tmux 画面，UI 文档必须说明这是同一共享会话的行为。
 - 断线重连后必须仍能通过 CLI 自身 transcript/session 恢复已保存对话；不承诺浏览器本地 xterm scroll offset 原样恢复。
@@ -366,14 +366,14 @@ JWT signing secret 必须来自稳定的生产配置/环境变量，使服务重
 - P0 多端 E2E、断网/重启 E2E、24 shell 容量、8 pane 性能均通过
 - `git diff --check` 通过，且最后一次验证发生在最后一次代码修改之后
 - 新旧数据库迁移在副本上验证；失败可回滚二进制且不破坏 layout/tmux session
-- 发布说明明确 D1 的共享账号限制、tmux ≥ 3.1、小屏裁切语义和显式关闭会 kill session
+- 发布说明明确 D1 的共享账号限制、tmux ≥ 3.1、小屏自适应缩放语义和显式关闭会 kill session
 
 ## 11. 风险登记
 
 | ID | 风险 | 处理 |
 |---|---|---|
 | R1 | 同账号无法问责 | 产品文案明确；需要问责时先做身份模型 |
-| R2 | 小屏在 tmux largest 下裁切 | 手机定位为查看/基本操作；不承诺像素一致 |
+| R2 | 小屏缩放后字号过小 | 保持完整 grid 和操作坐标正确；极端尺寸提示用户放大 pane，不承诺跨尺寸像素一致 |
 | R3 | 远端全局 tmux option 污染 | M1 审计 namespace 与兼容迁移，未解决前记录限制 |
 | R4 | xterm 6/WebGL context loss | context-loss fallback、少 churn、真实浏览器 soak |
 | R5 | snapshot CAS 冲突覆盖体验 | 明确 409/权威拉取；自动 merge 延后 |
@@ -386,7 +386,7 @@ JWT signing secret 必须来自稳定的生产配置/环境变量，使服务重
 - [xterm.js 官方仓库与 addons](https://github.com/xtermjs/xterm.js/)：WebGL 是可选 GPU renderer。
 - [xterm.js 6.0.0 release](https://github.com/xtermjs/xterm.js/releases/tag/6.0.0)：Canvas renderer 已移除，建议 DOM 或 WebGL。
 - [WebglAddon API](https://github.com/xtermjs/xterm.js/blob/master/addons/addon-webgl/typings/addon-webgl.d.ts)：提供 `onContextLoss`。
-- [tmux Advanced Use — window sizes](https://github.com/tmux/tmux/wiki/Advanced-Use#window-sizes)：`largest` 下小客户端只显示窗口的一部分。
+- [tmux Advanced Use — window sizes](https://github.com/tmux/tmux/wiki/Advanced-Use#window-sizes)：`largest` 下小客户端只显示窗口的一部分；`smallest` 下较大客户端的未使用区域以 `·` 填充。
 - [tmux Getting Started — options](https://github.com/tmux/tmux/wiki/Getting-Started#list-of-useful-options)：`history-limit` 与 mouse 属于 session 级配置语义。
 - [Go x/net/websocket package](https://pkg.go.dev/golang.org/x/net/websocket)：`Server.Handshake` 可做 Origin/握手检查；默认 Handler 只解析 Origin，不等价于同源授权。
 - [Claude Code 官方 Fullscreen rendering](https://code.claude.com/docs/en/fullscreen)：alternate screen 只渲染可见消息，mouse/PgUp/Ctrl+Home 等由 Claude 内部处理，Ctrl+O transcript 可搜索/写入 scrollback。

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest';
-import { createTerminalWheelState, launchCodexScrollableAction, resumeTerminalInputAction, routeTerminalHistoryWheel, routeTerminalWheel, terminalActionMessage, terminalScrollbackLines } from './terminalCliSupport';
+import { createTerminalWheelState, followTerminalInputAction, launchCodexScrollableAction, resumeTerminalInputAction, routeTerminalHistoryWheel, routeTerminalWheel, terminalActionMessage, terminalScrollbackLines } from './terminalCliSupport';
 
 describe('terminal CLI history support', () => {
   it('replays Shift+wheel without Shift so xterm and tmux use the negotiated wheel path', () => {
@@ -50,6 +50,7 @@ describe('terminal CLI history support', () => {
   it('uses a fixed action instead of typing a shell command into the active composer', () => {
     expect(terminalActionMessage(launchCodexScrollableAction)).toBe('{"action":"launch_codex_scrollable"}');
     expect(terminalActionMessage(resumeTerminalInputAction)).toBe('{"action":"resume_terminal_input"}');
+    expect(terminalActionMessage(followTerminalInputAction)).toBe('{"action":"follow_terminal_input"}');
     expect(terminalScrollbackLines).toBeGreaterThanOrEqual(5_000);
   });
 });

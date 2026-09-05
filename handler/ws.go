@@ -211,6 +211,11 @@ func (h *WSHandler) HandleSSH(conn *websocket.Conn) {
 		sendErr(conn, err.Error())
 		return
 	}
+	followInputCommand, err := persistentTerminalFollowInputCommand(user.UserID, connID, terminalID)
+	if err != nil {
+		sendErr(conn, err.Error())
+		return
+	}
 
 	maxSessions := connInfo.MaxSessions
 	if maxSessions < 1 {
@@ -303,6 +308,8 @@ func (h *WSHandler) HandleSSH(conn *websocket.Conn) {
 				command = codexScrollableCommand
 			case "resume_terminal_input":
 				command = resumeInputCommand
+			case "follow_terminal_input":
+				command = followInputCommand
 			default:
 				return fmt.Errorf("unsupported terminal action: %s", action)
 			}

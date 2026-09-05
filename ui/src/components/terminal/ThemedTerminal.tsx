@@ -18,6 +18,7 @@ import { deliverTerminalBytes } from './terminalOutput';
 import TerminalHistoryHelp from './TerminalHistoryHelp';
 import {
   createTerminalWheelState,
+  followTerminalInputAction,
   launchCodexScrollableAction,
   resumeTerminalInputAction,
   routeTerminalWheel,
@@ -43,6 +44,7 @@ import {
   routeTerminalMouseUp,
   shouldPersistTerminalSelection,
 } from './terminalInteractions';
+import { calculateTerminalScale, parseSharedTerminalGridTitle, type TerminalGrid } from './terminalScaling';
 
 interface Props {
   connId: number;
@@ -60,6 +62,7 @@ interface ZTransfer { accept: () => Promise<void>; get_payloads: () => unknown; 
 interface ZSession { type: 'send' | 'receive'; on: (event: string, callback: (value?: ZTransfer) => void) => void; start: () => void; abort: () => void; }
 interface ZDetection { deny: () => void; confirm: () => ZSession; }
 type TerminalSendRegistry = Window & Record<string, (data: string) => void>;
+const sharedTerminalGridCache = new Map<string, TerminalGrid>();
 
 interface PendingLeftGesture {
   anchor: { col: number; row: number };
@@ -116,6 +119,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
   const zmodemActiveRef = useRef(false);
   const pendingUploadRef = useRef<ZSession | null>(null);
   const sendRef = useRef<(data: string) => void>(() => {});
+  const inputViewportFollowedRef = useRef(false);
   const onStatusRef = useRef(onStatus);
   const onResizeDimRef = useRef(onResizeDim);
   const themeName = usePreferencesStore((s) => s.themeName);
@@ -416,13 +420,16 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
     const searchAddon = new SearchAddon();
     term.loadAddon(fitAddon);
     term.loadAddon(searchAddon);
-    term.attachCustomWheelEventHandler((event) => routeTerminalWheel(event, {
-      alternateScreen: term.buffer.active.type === 'alternate',
-      state: wheelStateRef.current,
-      sendPage: (direction) => {
-        sendRef.current(JSON.stringify({ data: direction === 'up' ? '\x1b[5~' : '\x1b[6~' }));
-      },
-    }));
+    term.attachCustomWheelEventHandler((event) => {
+      if (event.deltaY < 0) inputViewportFollowedRef.current = false;
+      return routeTerminalWheel(event, {
+        alternateScreen: term.buffer.active.type === 'alternate',
+        state: wheelStateRef.current,
+        sendPage: (direction) => {
+          sendRef.current(JSON.stringify({ data: direction === 'up' ? '\x1b[5~' : '\x1b[6~' }));
+        },
+      });
+    });
 
     // Ctrl+C: send SIGINT (0x03)
     term.attachCustomKeyEventHandler((e) => {
@@ -486,16 +493,134 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       return false; // don't display in terminal
     });
 
+    let resizingForSharedGrid = false;
+    let sharedGrid: TerminalGrid | null = myTabId ? sharedTerminalGridCache.get(myTabId) || null : null;
+    let pendingFitFrame: number | null = null;
+    let pendingScreenScaleFrame: number | null = null;
+
     term.onResize(({ cols, rows }) => {
       if (cols < 2 || rows < 1) return; // ignore zero-size (hidden terminal)
+      if (resizingForSharedGrid) return;
+      // Changing font metrics can emit a delayed native-grid resize after the
+      // adaptive fit has completed. Never let that transient event shrink the
+      // PTY below the grid already announced by tmux.
+      if (sharedGrid && (cols < sharedGrid.cols || rows < sharedGrid.rows)) return;
       sendRef.current(JSON.stringify({ cols, rows }));
       onResizeDimRef.current?.(cols, rows);
+      inputViewportFollowedRef.current = false;
     });
 
     const fitWhenVisible = () => {
       if (!ref.current || ref.current.offsetWidth <= 0 || ref.current.offsetHeight <= 0) return;
-      fitAddon.fit();
+      resizingForSharedGrid = true;
+      try {
+        if (pendingScreenScaleFrame !== null) {
+          cancelAnimationFrame(pendingScreenScaleFrame);
+          pendingScreenScaleFrame = null;
+        }
+        const currentScreen = term.element?.querySelector<HTMLElement>('.xterm-screen');
+        if (currentScreen) currentScreen.style.transform = '';
+
+        // First measure how many cells this browser can show at the configured
+        // font. Never accept a title smaller than that native grid: this lets a
+        // newly attached larger browser grow the shared tmux window.
+        term.options.fontSize = fontSize;
+        term.options.letterSpacing = 0;
+        term.options.lineHeight = 1;
+        fitAddon.fit();
+
+        const nativeGrid = { cols: term.cols, rows: term.rows };
+        const targetGrid = sharedGrid ? {
+          cols: Math.max(nativeGrid.cols, sharedGrid.cols),
+          rows: Math.max(nativeGrid.rows, sharedGrid.rows),
+        } : nativeGrid;
+        const screen = term.element?.querySelector<HTMLElement>('.xterm-screen');
+        const nativeCellWidth = screen && nativeGrid.cols > 0
+          ? screen.getBoundingClientRect().width / nativeGrid.cols
+          : 1;
+        let scaleOptions = calculateTerminalScale(nativeGrid, targetGrid, fontSize, nativeCellWidth);
+
+        term.options.fontSize = scaleOptions.fontSize;
+        term.options.letterSpacing = scaleOptions.letterSpacing;
+        term.options.lineHeight = scaleOptions.lineHeight;
+
+        // Font rasterisation can differ by a fraction of a pixel across DPRs.
+        // Add a small correction only when xterm says the target would overflow.
+        const proposed = fitAddon.proposeDimensions();
+        if (proposed && (proposed.cols < targetGrid.cols || proposed.rows < targetGrid.rows)) {
+          const correction = Math.min(proposed.cols / targetGrid.cols, proposed.rows / targetGrid.rows) * 0.995;
+          scaleOptions = {
+            ...scaleOptions,
+            fontSize: Math.max(4, scaleOptions.fontSize * correction),
+            letterSpacing: Math.max(0, scaleOptions.letterSpacing * correction),
+            scale: scaleOptions.scale * correction,
+          };
+          term.options.fontSize = scaleOptions.fontSize;
+          term.options.letterSpacing = scaleOptions.letterSpacing;
+        }
+
+        term.resize(targetGrid.cols, targetGrid.rows);
+        ref.current.dataset.nativeCols = String(nativeGrid.cols);
+        ref.current.dataset.nativeRows = String(nativeGrid.rows);
+        ref.current.dataset.sharedCols = String(targetGrid.cols);
+        ref.current.dataset.sharedRows = String(targetGrid.rows);
+        ref.current.dataset.terminalScale = scaleOptions.scale.toFixed(3);
+        ref.current.dataset.screenScaleX = '1.000';
+        ref.current.dataset.screenScaleY = '1.000';
+        sharedGrid = targetGrid;
+        if (myTabId) sharedTerminalGridCache.set(myTabId, targetGrid);
+
+        if (targetGrid.cols !== nativeGrid.cols || targetGrid.rows !== nativeGrid.rows) {
+          pendingScreenScaleFrame = requestAnimationFrame(() => {
+            pendingScreenScaleFrame = null;
+            const surface = ref.current;
+            const scaledScreen = term.element?.querySelector<HTMLElement>('.xterm-screen');
+            if (!surface || !scaledScreen) return;
+            const surfaceStyle = getComputedStyle(surface);
+            const availableWidth = surface.clientWidth - parseFloat(surfaceStyle.paddingLeft) - parseFloat(surfaceStyle.paddingRight);
+            const availableHeight = surface.clientHeight;
+            const screenRect = scaledScreen.getBoundingClientRect();
+            if (availableWidth <= 0 || availableHeight <= 0 || screenRect.width <= 0 || screenRect.height <= 0) return;
+            // Browser font rasterisation rounds cell dimensions to device
+            // pixels. Correct only that residual error so the complete last
+            // row/column is visible and the scaled grid fills the small pane.
+            const screenScaleX = availableWidth / screenRect.width;
+            const screenScaleY = availableHeight / screenRect.height;
+            scaledScreen.style.transformOrigin = 'top left';
+            scaledScreen.style.transform = `scale(${screenScaleX}, ${screenScaleY})`;
+            surface.dataset.screenScaleX = screenScaleX.toFixed(3);
+            surface.dataset.screenScaleY = screenScaleY.toFixed(3);
+          });
+        }
+
+        sendRef.current(JSON.stringify({ cols: targetGrid.cols, rows: targetGrid.rows }));
+        onResizeDimRef.current?.(targetGrid.cols, targetGrid.rows);
+        inputViewportFollowedRef.current = false;
+      } finally {
+        resizingForSharedGrid = false;
+      }
     };
+
+    const scheduleFit = () => {
+      if (pendingFitFrame !== null) cancelAnimationFrame(pendingFitFrame);
+      pendingFitFrame = requestAnimationFrame(() => {
+        pendingFitFrame = null;
+        fitWhenVisible();
+      });
+    };
+
+    const titleDisposable = term.onTitleChange((title) => {
+      const announcedGrid = parseSharedTerminalGridTitle(title);
+      if (!announcedGrid) return;
+      const nextGrid = sharedGrid ? {
+        cols: Math.max(sharedGrid.cols, announcedGrid.cols),
+        rows: Math.max(sharedGrid.rows, announcedGrid.rows),
+      } : announcedGrid;
+      if (sharedGrid?.cols === nextGrid.cols && sharedGrid.rows === nextGrid.rows) return;
+      sharedGrid = nextGrid;
+      if (myTabId) sharedTerminalGridCache.set(myTabId, nextGrid);
+      scheduleFit();
+    });
 
     if (ref.current) {
       ref.current.style.backgroundColor = themeConfig.background;
@@ -512,7 +637,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       setTermKey((k) => k + 1);
 
       requestAnimationFrame(() => {
-        fitWhenVisible();
+        scheduleFit();
         term.focus();
         // Retry focus after layout settles (important for split panes)
         setTimeout(() => term.focus(), 100);
@@ -520,14 +645,17 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
     }
 
     const resizeObserver = new ResizeObserver(() => {
-      fitWhenVisible();
+      scheduleFit();
     });
     if (ref.current) resizeObserver.observe(ref.current);
 
-    const handleResize = () => fitWhenVisible();
+    const handleResize = () => scheduleFit();
     window.addEventListener('resize', handleResize);
 
     return () => {
+      if (pendingFitFrame !== null) cancelAnimationFrame(pendingFitFrame);
+      if (pendingScreenScaleFrame !== null) cancelAnimationFrame(pendingScreenScaleFrame);
+      titleDisposable.dispose();
       term.dispose();
       resizeObserver.disconnect();
       window.removeEventListener('resize', handleResize);
@@ -582,8 +710,14 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       // fallback PTY size (especially after a layout or tab-title update).
       const term = termRef.current;
       if (term && term.cols > 1 && term.rows > 0) {
-        sendNow(JSON.stringify({ cols: term.cols, rows: term.rows }));
+        const cachedGrid = terminalID ? sharedTerminalGridCache.get(terminalID) : null;
+        sendNow(JSON.stringify({
+          cols: Math.max(term.cols, cachedGrid?.cols || 0),
+          rows: Math.max(term.rows, cachedGrid?.rows || 0),
+        }));
       }
+      sendNow(terminalActionMessage(followTerminalInputAction));
+      inputViewportFollowedRef.current = true;
       onStatusRef.current?.(true);
       const conns = useConnectionStore.getState().connections;
       const conn = conns.find((connection) => connection.id === connId);
@@ -735,6 +869,10 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       if (zmodemActiveRef.current) {
         sendTextAsBinary(data);
         return;
+      }
+      if (!inputViewportFollowedRef.current) {
+        send(terminalActionMessage(followTerminalInputAction));
+        inputViewportFollowedRef.current = true;
       }
       selectionSnapshotRef.current = '';
       setSelectionOverlayRows([]);

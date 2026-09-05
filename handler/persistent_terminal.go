@@ -31,16 +31,26 @@ func persistentTerminalCommand(userID, connectionID int64, terminalID string) (s
 	if err != nil {
 		return "", err
 	}
-	// tmux has one grid per shared window. Size it to the smallest attached browser
-	// so every simultaneous client can see the live prompt/composer at the bottom;
-	// larger clients may show padding while a smaller split view remains attached.
+	// tmux has one grid per shared window. Size it to the largest attached browser
+	// so the large-screen workspace is filled. The terminal title broadcasts that
+	// canonical grid to every browser; smaller browsers render the same full grid
+	// with an adaptive font instead of showing a cropped viewport. Bottom-follow
+	// hooks remain as a fallback while a browser is attaching or resizing.
 	// Mouse mode is set
 	// on this WebTerm session (rather than globally) so wheel events are forwarded
 	// to full-screen applications such as Claude Code and otherwise enter tmux
 	// copy mode for shell scrollback. Some user configs override WheelUpPane without
 	// checking mouse_any_flag. Tag WebTerm sessions and install a conditional wrapper
 	// that preserves that legacy behavior for every untagged/non-mouse pane.
-	return fmt.Sprintf("tmux start-server \\; set-option -g history-limit %d \\; new-session -Ad -s %s && tmux set-option -t %s window-size smallest && tmux set-option -t %s mouse on && tmux set-option -t %s @webterm_mouse_passthrough on && tmux bind-key -n -T root WheelUpPane if-shell -F '#{&&:#{@webterm_mouse_passthrough},#{mouse_any_flag}}' 'send-keys -M' 'if-shell -F \"#{pane_in_mode}\" \"send-keys -M\" \"copy-mode -e; send-keys -M\"' && exec tmux attach-session -t %s", terminalHistoryLines, sessionName, sessionName, sessionName, sessionName, sessionName), nil
+	return fmt.Sprintf("tmux start-server \\; set-option -g history-limit %d && (tmux has-session -t %s 2>/dev/null || tmux new-session -d -s %s) && tmux set-option -t %s window-size largest && tmux set-option -t %s status on && tmux set-option -t %s set-titles on && tmux set-option -t %s set-titles-string 'webterm-grid:#{window_width}x#{window_height}' && tmux set-hook -t %s 'client-attached[200]' 'set-option -t %s window-size largest; refresh-client -D -t \"#{hook_client}\" 9999' && tmux set-hook -t %s 'client-resized[200]' 'set-option -t %s window-size largest; refresh-client -D -t \"#{hook_client}\" 9999' && tmux set-hook -w -t %s 'window-resized[200]' 'run-shell \"tmux list-clients -t %s | cut -d: -f1 | xargs -r -I{} tmux refresh-client -D -t {} 9999\"' && tmux set-option -t %s mouse on && tmux set-option -t %s @webterm_mouse_passthrough on && tmux bind-key -n -T root WheelUpPane if-shell -F '#{&&:#{@webterm_mouse_passthrough},#{mouse_any_flag}}' 'send-keys -M' 'if-shell -F \"#{pane_in_mode}\" \"send-keys -M\" \"copy-mode -e; send-keys -M\"' && exec tmux attach-session -t %s", terminalHistoryLines, sessionName, sessionName, sessionName, sessionName, sessionName, sessionName, sessionName, sessionName, sessionName, sessionName, sessionName, sessionName, sessionName, sessionName, sessionName), nil
+}
+
+func persistentTerminalFollowInputCommand(userID, connectionID int64, terminalID string) (string, error) {
+	sessionName, err := persistentTerminalSessionName(userID, connectionID, terminalID)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf(`tmux list-clients -t %s -F '#{client_name}' | while IFS= read -r client; do tmux refresh-client -D -t "$client" 9999; done`, sessionName), nil
 }
 
 func persistentTerminalClearCommand(userID, connectionID int64, terminalID string) (string, error) {
@@ -75,9 +85,13 @@ func persistentTerminalResumeInputCommand(userID, connectionID int64, terminalID
 	if err != nil {
 		return "", err
 	}
+	followCommand, err := persistentTerminalFollowInputCommand(userID, connectionID, terminalID)
+	if err != nil {
+		return "", err
+	}
 	return fmt.Sprintf(
-		`if [ "$(tmux display-message -p -t %s '#{pane_in_mode}')" = 1 ]; then tmux send-keys -X -t %s cancel; else tmux send-keys -t %s C-End; fi`,
-		sessionName, sessionName, sessionName,
+		`if [ "$(tmux display-message -p -t %s '#{pane_in_mode}')" = 1 ]; then tmux send-keys -X -t %s cancel; else tmux send-keys -t %s C-End; fi; %s`,
+		sessionName, sessionName, sessionName, followCommand,
 	), nil
 }
 

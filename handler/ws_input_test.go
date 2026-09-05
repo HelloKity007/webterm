@@ -128,6 +128,32 @@ func TestPumpTerminalInputRoutesResumeInputWithoutTypingIt(t *testing.T) {
 	}
 }
 
+func TestPumpTerminalInputRoutesFollowInputWithoutTypingIt(t *testing.T) {
+	session := &fakeTerminalSession{}
+	messages := []json.RawMessage{json.RawMessage(`{"action":"follow_terminal_input"}`)}
+	var input strings.Builder
+	var actions []string
+
+	pumpTerminalInput(func(raw *json.RawMessage) error {
+		if len(messages) == 0 {
+			return errors.New("browser websocket closed")
+		}
+		*raw = messages[0]
+		messages = messages[1:]
+		return nil
+	}, session, &input, func(action string) error {
+		actions = append(actions, action)
+		return nil
+	})
+
+	if len(actions) != 1 || actions[0] != "follow_terminal_input" {
+		t.Fatalf("actions = %#v, want follow_terminal_input", actions)
+	}
+	if input.Len() != 0 {
+		t.Fatalf("stdin = %q, viewport action must not be typed directly into SSH", input.String())
+	}
+}
+
 type fakePTYSession struct {
 	term   string
 	height int
