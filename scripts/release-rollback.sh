@@ -5,6 +5,8 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck disable=SC1091
 source "$SCRIPT_DIR/release-lib.sh"
 
+lan_check
+
 [[ -x "$RELEASE_PREVIOUS_BINARY" ]] || lan_die "no previous production binary is available"
 [[ -s "$RELEASE_PREVIOUS_VERSION" ]] || lan_die "previous production version is unknown"
 previous_version="$(<"$RELEASE_PREVIOUS_VERSION")"

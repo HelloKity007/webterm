@@ -88,9 +88,16 @@ lan_start_production() {
   if [[ -f "$LAN_RUNTIME_DIR/webterm.pid" ]] && lan_pid_running "$(<"$LAN_RUNTIME_DIR/webterm.pid")"; then
     lan_die "production webterm is already running"
   fi
+  local start_args=(-config "$LAN_CONFIG")
+  # Release-aware binaries support explicit database/environment flags. Keep
+  # rollback compatible with the pre-release binary, which used the config and
+  # default webterm.db path but did not yet define those flags.
+  if "$LAN_BINARY" -help 2>&1 | grep -q -- "-database"; then
+    start_args+=(-database "$LAN_ROOT/webterm.db" -environment production)
+  fi
   (
     cd "$LAN_ROOT"
-    setsid "$LAN_BINARY" -config "$LAN_CONFIG" -database "$LAN_ROOT/webterm.db" -environment production >"$LAN_RUNTIME_DIR/webterm.log" 2>&1 &
+    setsid "$LAN_BINARY" "${start_args[@]}" >"$LAN_RUNTIME_DIR/webterm.log" 2>&1 &
     echo $! >"$LAN_RUNTIME_DIR/webterm.pid"
   )
 }

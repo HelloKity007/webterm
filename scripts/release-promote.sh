@@ -5,6 +5,11 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck disable=SC1091
 source "$SCRIPT_DIR/release-lib.sh"
 
+# Production needs the encryption and local SSH environment just like the
+# release-test process. Validate the deployment inputs and export secrets before
+# stopping the currently healthy process.
+lan_check
+
 candidate="$(release_candidate_sha)"
 [[ -s "$RELEASE_APPROVED_SHA" ]] || lan_die "candidate has not been approved"
 approved="$(<"$RELEASE_APPROVED_SHA")"

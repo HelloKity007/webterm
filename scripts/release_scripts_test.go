@@ -54,6 +54,7 @@ func TestReleasePromotionIsApprovalAndReleaseBranchGated(t *testing.T) {
 	}
 	contents := string(promote)
 	for _, expected := range []string{
+		"lan_check",
 		"RELEASE_APPROVED_SHA",
 		"approval does not match the current candidate",
 		"release_exact_rb_ref",
@@ -61,6 +62,29 @@ func TestReleasePromotionIsApprovalAndReleaseBranchGated(t *testing.T) {
 	} {
 		if !strings.Contains(contents, expected) {
 			t.Fatalf("release-promote.sh is missing safety gate %q", expected)
+		}
+	}
+}
+
+func TestProductionStartLoadsSecretsAndSupportsLegacyRollbackBinary(t *testing.T) {
+	promote, err := os.ReadFile("release-promote.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rollback, err := os.ReadFile("release-rollback.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	lanLibrary, err := os.ReadFile("lan-lib.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(promote), "lan_check") || !strings.Contains(string(rollback), "lan_check") {
+		t.Fatal("production promote and rollback must load validated deployment secrets")
+	}
+	for _, expected := range []string{`start_args=(-config "$LAN_CONFIG")`, `grep -q -- "-database"`, `start_args+=(-database "$LAN_ROOT/webterm.db" -environment production)`} {
+		if !strings.Contains(string(lanLibrary), expected) {
+			t.Fatalf("lan_start_production is missing legacy-compatible argument handling %q", expected)
 		}
 	}
 }
