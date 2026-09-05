@@ -84,3 +84,12 @@ git diff --check             PASS
 - WebTerm 兼容收窄为无侵入兜底：普通 wheel 保持不变；`Shift+wheel` 在 alternate-screen 使用 120ms 限速的标准 `PageUp/PageDown` 序列，main-screen 仍走 tmux history 路径。
 - fresh 门禁：UI `16 files / 46 tests` PASS；lint/build PASS；`go test ./...` PASS；synthetic CLI 为 `{"shellMarkers":5000,"historySize":4981,"mouseReports":100,"rawComposerBytes":0}`。
 - 2026-09-04 18:30（America/Adak）部署兜底版：WebTerm PID `396173`、Caddy PID `396174`；LAN HTTPS health 为 HTTP `200`，首页资源为 `assets/index--p3o_U6V.js`。部署后 tab 6 仍为 `claude`、`pane_in_mode=0`、`alternate_on=1`，会话未重建。
+
+## Fullscreen CLI 选择并复制
+
+- 普通 shell 的 xterm 选区、`Ctrl+Shift+C` 与右键复制已有真实浏览器证据；Claude/Codex 开启 mouse reporting 后，依赖合成 `Shift+drag` 的强制选择在实际 TUI 中仍不稳定。
+- 终端右上角、右键菜单和历史帮助新增“选择并复制”。启用后 WebTerm 从当前 xterm viewport 计算 0-based buffer cell，使用 `Terminal.select(startColumn, startRow, length)` 建立线性选区；mouse down/move/up 在捕获阶段终止，不发给 CLI。松开后立即读取 `Terminal.getSelection()` 并写入 Clipboard API，成功或失败均显示状态。
+- 该模式一次拖动后自动退出，普通 wheel、Claude/Codex mouse interaction、tmux menu 与既有普通选择路径保持不变。
+- 新增反向/跨行 selection range 单测，以及真实浏览器 synthetic alternate-screen + SGR mouse fixture：门禁需断言剪贴板包含指定 TUI 行，且 WS 上行没有 `SGR mouse` 序列。
+- fresh 自动化：UI `16 files / 47 tests` PASS；lint/build PASS；`go test ./...` PASS；synthetic CLI history/mouse 为 `{"shellMarkers":5000,"historySize":4981,"mouseReports":100,"rawComposerBytes":0}`。需要登录态的 fullscreen clipboard Playwright 门禁因没有独立测试账号未在真实用户布局运行，等待用户在现有 Claude/Codex 会话手工验收。
+- 2026-09-04 18:40（America/Adak）部署：WebTerm PID `487815`、Caddy PID `487816`；LAN HTTPS health 为 HTTP `200`，首页资源为 `assets/index-CGzRF6Wt.js`。未登录 Playwright smoke 返回 HTTP `200`、标题 `WebTerm`、无 page/request error；无登录态视觉 baseline，因此交互视觉结论为 INCONCLUSIVE。部署后 tab 6 仍为 `claude`、`pane_in_mode=0`、`alternate_on=1`，会话未重建。

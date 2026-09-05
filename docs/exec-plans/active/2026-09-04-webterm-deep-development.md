@@ -122,7 +122,7 @@ M5 和 M6 在 M4 契约稳定后可并行开发，但合并前分别在最新共
 3. 定义并测试 `Shift+wheel` history override；若 tmux/CLI 组合不能安全工作，显示明确替代入口，禁止发送猜测性的 escape sequence。
 4. 增加“Codex 可回看模式”显式启动入口，发送 `codex --no-alt-screen`；只允许用户在空闲 shell 主动触发，不写用户 dotfiles，不添加权限绕过参数。
 5. Claude 帮助入口说明 `/tui fullscreen`、Ctrl+O transcript 和 `[` 写入 scrollback；不静默设置远端全局 `CLAUDE_CODE_NO_FLICKER`。
-6. 保持普通右键为 WebTerm 菜单、Ctrl+右键 tmux 操作、Shift+drag 文本选择、复制粘贴和中文 IME。
+6. 保持普通右键为 WebTerm 菜单、Ctrl+右键 tmux 操作、Shift+drag 文本选择、复制粘贴和中文 IME；fullscreen mouse-reporting CLI 另提供不向远端发送鼠标事件的显式“选择并复制”模式。
 
 ### 自动化与真实 CLI 验收
 

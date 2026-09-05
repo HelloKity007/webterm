@@ -10,6 +10,7 @@ describe('TerminalHistoryHelp', () => {
     onClose: vi.fn(),
     onLaunchCodexScrollable: vi.fn(),
     onResumeInput: vi.fn(),
+    onSelectCopy: vi.fn(),
     onCopySelection: vi.fn(),
     onPaste: vi.fn(),
   };
@@ -37,13 +38,16 @@ describe('TerminalHistoryHelp', () => {
     const resume = vi.fn();
     const copy = vi.fn();
     const paste = vi.fn();
-    render(<TerminalHistoryHelp {...baseProps} onResumeInput={resume} onCopySelection={copy} onPaste={paste} />);
+    const selectCopy = vi.fn();
+    render(<TerminalHistoryHelp {...baseProps} onResumeInput={resume} onSelectCopy={selectCopy} onCopySelection={copy} onPaste={paste} />);
 
     fireEvent.click(screen.getByRole('button', { name: /恢复输入|resume input/i }));
+    fireEvent.click(screen.getByRole('button', { name: /选择并复制|select & copy/i }));
     fireEvent.click(screen.getByRole('button', { name: /^复制$|^copy$/i }));
     fireEvent.click(screen.getByRole('button', { name: /^粘贴$|^paste$/i }));
 
     expect(resume).toHaveBeenCalledTimes(1);
+    expect(selectCopy).toHaveBeenCalledTimes(1);
     expect(copy).toHaveBeenCalledTimes(1);
     expect(paste).toHaveBeenCalledTimes(1);
   });

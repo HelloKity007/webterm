@@ -65,6 +65,22 @@ export function getTerminalGridPosition(
   };
 }
 
+export function getTerminalSelectionRange(
+  anchor: { col: number; row: number },
+  focus: { col: number; row: number },
+  cols: number,
+): { startColumn: number; startRow: number; length: number } {
+  const anchorOffset = anchor.row * cols + anchor.col;
+  const focusOffset = focus.row * cols + focus.col;
+  const start = Math.min(anchorOffset, focusOffset);
+  const end = Math.max(anchorOffset, focusOffset);
+  return {
+    startColumn: start % cols,
+    startRow: Math.floor(start / cols),
+    length: end - start + 1,
+  };
+}
+
 export function routeTerminalClipboardShortcut(
   event: TerminalKeyboardEvent,
   actions: TerminalClipboardShortcutActions,

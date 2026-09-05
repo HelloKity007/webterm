@@ -1,6 +1,7 @@
 import playwright from '../ui/node_modules/@playwright/test/index.js';
 import { createHash, randomBytes } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
 const { chromium } = playwright;
 const baseURL = (process.env.WEBTERM_BASE_URL || '').replace(/\/$/, '');
@@ -8,6 +9,7 @@ const username = process.env.WEBTERM_LOADTEST_USERNAME || '';
 const password = process.env.WEBTERM_LOADTEST_PASSWORD || '';
 const chromePath = process.env.CHROME_PATH || '/usr/bin/google-chrome';
 const timeout = 30000;
+const selectionFixture = fileURLToPath(new URL('./fixtures/synthetic-selection-tui.mjs', import.meta.url));
 if (!baseURL || !username || !password) throw new Error('missing WebTerm verification environment');
 
 async function api(page, token, path, options = {}) {
@@ -215,6 +217,34 @@ try {
   const copied = await page.evaluate(() => navigator.clipboard.readText());
   if (!copied) throw new Error('frontend Copy left the clipboard empty');
 
+  await screen.click({ position: { x: Math.min(80, box.width / 4), y: Math.min(80, box.height / 4) } });
+  await page.keyboard.type(`node ${JSON.stringify(selectionFixture)}`);
+  await page.keyboard.press('Enter');
+  await waitForCapture(sessionName, 'SYNTHETIC_CLI_SELECT_ROW_03');
+  const terminalRows = paneHistory(sessionName, '#{window_height}');
+  const rowHeight = box.height / terminalRows;
+  await page.evaluate(() => { window.__terminalVerificationSends = []; });
+  await page.getByRole('button', { name: '选择并复制' }).click();
+  await page.mouse.move(box.x + 4, box.y + rowHeight * 2.5);
+  await page.mouse.down();
+  await page.mouse.move(box.x + Math.min(410, box.width - 8), box.y + rowHeight * 2.5, { steps: 8 });
+  await page.mouse.up();
+  await page.getByRole('status').filter({ hasText: '已复制' }).waitFor({ state: 'visible', timeout });
+  const tuiCopied = await page.evaluate(() => navigator.clipboard.readText());
+  if (!tuiCopied.includes('SYNTHETIC_CLI_SELECT_ROW_03')) {
+    throw new Error(`select-and-copy mode copied the wrong fullscreen TUI text: ${JSON.stringify(tuiCopied)}`);
+  }
+  const selectionMessages = await page.evaluate(() => window.__terminalVerificationSends);
+  if (selectionMessages.some((message) => message.includes('\\u001b[<'))) {
+    throw new Error(`select-and-copy leaked mouse reports into fullscreen TUI: ${JSON.stringify(selectionMessages)}`);
+  }
+  await page.evaluate((id) => window[`webterm-ws-${id}`](JSON.stringify({ data: '\u0004' })), terminalID);
+  const selectionExitDeadline = Date.now() + 3000;
+  while (Date.now() < selectionExitDeadline && paneCurrentCommand(sessionName) !== 'bash') {
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  if (paneCurrentCommand(sessionName) !== 'bash') throw new Error('synthetic selection TUI did not exit');
+
   const shortcutPasteMarker = `WEBTERM_SHORTCUT_PASTE_${randomBytes(6).toString('hex')}`;
   await page.evaluate((marker) => navigator.clipboard.writeText(marker), shortcutPasteMarker);
   await page.evaluate(() => { window.__terminalVerificationSends = []; });
@@ -313,7 +343,7 @@ try {
   await page.getByText('八分屏（上四下四）', { exact: true }).click();
   await page.waitForFunction(() => document.querySelectorAll('.xterm-screen').length === 8, null, { timeout });
   if (pageErrors.length > 0) throw new Error(`browser errors: ${pageErrors.join(' | ')}`);
-  process.stdout.write(`${JSON.stringify({ defaultPanels: 'collapsed', keyboardInputAndEnter: 'ok', ctrlCInterrupt: 'ok', interruptMessages, plainRightClick: 'frontend-only', outsideClickClose: 'ok', plainLeftSelection: 'ok', copyShortcutBrowserDefault: 'blocked', keyboardCopyPaste: 'single-copy', contextMenuCopyPaste: 'ok', clearCurrentTabHistory: 'ok', tmuxHistoryLimit: paneHistory(sessionName, '#{history_limit}'), ctrlRightClick: 'tmux-mouse-operable', ctrlRightClickMessages, eightPaneGrid: '4x2', pageErrors })}\n`);
+  process.stdout.write(`${JSON.stringify({ defaultPanels: 'collapsed', keyboardInputAndEnter: 'ok', ctrlCInterrupt: 'ok', interruptMessages, plainRightClick: 'frontend-only', outsideClickClose: 'ok', plainLeftSelection: 'ok', fullscreenTuiSelectAndCopy: 'ok-no-mouse-leak', copyShortcutBrowserDefault: 'blocked', keyboardCopyPaste: 'single-copy', contextMenuCopyPaste: 'ok', clearCurrentTabHistory: 'ok', tmuxHistoryLimit: paneHistory(sessionName, '#{history_limit}'), ctrlRightClick: 'tmux-mouse-operable', ctrlRightClickMessages, eightPaneGrid: '4x2', pageErrors })}\n`);
   }
 } finally {
   if (controllerToken && temporaryUserID && page) { try { await api(page, controllerToken, `/api/users/${temporaryUserID}`, { method: 'DELETE' }); } catch { /* cleanup best effort */ } }
