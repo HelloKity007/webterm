@@ -97,3 +97,4 @@ git diff --check             PASS
 - 修正为拖动每一步在调用 `Terminal.select()` 后同步保存文本快照；mouseup 复制函数直接接收快照值。另按 viewport cell 生成 WebTerm 自己的多行半透明选区层，即使 xterm 原生 selection 被清理仍保留视觉反馈；后续 `Ctrl+Shift+C` 与右键复制也会回退到快照。
 - 修正后 fresh 门禁：UI `16 files / 48 tests` PASS；lint/build PASS；`go test ./...` PASS；synthetic CLI history/mouse 仍为 `{"shellMarkers":5000,"historySize":4981,"mouseReports":100,"rawComposerBytes":0}`。Playwright fullscreen fixture 增加视觉快照持续存在断言。
 - 2026-09-04 18:48（America/Adak）部署快照修正版：WebTerm PID `567934`、Caddy PID `567935`；LAN HTTPS health 为 HTTP `200`，首页资源为 `assets/index-BI4xmyEO.js`；未登录 Playwright smoke 为 HTTP `200`、标题正确、无 page/request error。tab 6 仍为运行中的 Claude fullscreen，未重建会话。
+- 用户随后在原 tab 6 长 Claude fullscreen 会话完成真实验收：通过“选择并复制”拖选内容后可成功复制。该会话未重建，验证了文本快照方案可跨 Claude 重绘保留复制内容。
