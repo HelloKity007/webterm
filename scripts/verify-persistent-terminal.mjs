@@ -200,8 +200,8 @@ try {
   const parsedClientSizes = tmuxClients.trim().split('\n').filter(Boolean).map((size) => size.split('x').map(Number));
   const tmuxWindow = tmux(['display-message', '-p', '-t', sessionName, '#{window_width}x#{window_height}']).trim();
   const [tmuxWindowWidth] = tmuxWindow.split('x').map(Number);
-  if (tmuxWindowWidth !== Math.max(...parsedClientSizes.map(([width]) => width))) {
-    throw new Error(`shared tmux window ${tmuxWindow} did not retain the largest browser width: ${tmuxClients.trim()}`);
+  if (tmuxWindowWidth !== Math.min(...parsedClientSizes.map(([width]) => width))) {
+    throw new Error(`shared tmux window ${tmuxWindow} did not fit the smallest browser width: ${tmuxClients.trim()}`);
   }
   await first.page.screenshot({ path: '/tmp/webterm-shared-1920.png' });
   await second.page.screenshot({ path: '/tmp/webterm-shared-3440.png' });
@@ -209,8 +209,8 @@ try {
 
   await sendCommand(first.page, terminalID, `printf '${markerOne}\\n'\r`);
   await waitForCapture(sessionName, markerOne);
-  if (tmux(['show-options', '-t', sessionName, 'window-size']).trim() !== 'window-size largest') {
-    throw new Error('persistent tmux session did not preserve the largest attached client size');
+  if (tmux(['show-options', '-t', sessionName, 'window-size']).trim() !== 'window-size smallest') {
+    throw new Error('persistent tmux session did not keep the prompt visible in the smallest attached client');
   }
   if (tmux(['show-options', '-t', sessionName, 'mouse']).trim() !== 'mouse on') {
     throw new Error('persistent tmux session did not enable mouse forwarding for full-screen applications');
@@ -230,7 +230,7 @@ try {
   await activeTab.locator('span').last().click();
   await waitForSessionGone(sessionName);
   tmux(['has-session', '-t', distractorSessionName]);
-  process.stdout.write(`${JSON.stringify({ persistentSession: sessionName, retainedAcrossReconnect: true, explicitTabCloseTerminatesSession: true, unrelatedSessionRetained: true, windowSize: 'largest', tmuxClients: tmuxClients.trim().split('\n'), tmuxWindow, secondBounds, pageErrors: [] })}\n`);
+  process.stdout.write(`${JSON.stringify({ persistentSession: sessionName, retainedAcrossReconnect: true, explicitTabCloseTerminatesSession: true, unrelatedSessionRetained: true, windowSize: 'smallest', tmuxClients: tmuxClients.trim().split('\n'), tmuxWindow, secondBounds, pageErrors: [] })}\n`);
 } finally {
   if (first) { await first.context.close(); await first.browser.close(); }
   if (second) { await second.context.close(); await second.browser.close(); }

@@ -12,7 +12,7 @@ v1.1 的产品方向成立：WebTerm 的近期核心仍是“同一账号、多�
 
 本版做出以下修正：
 
-1. **共享的是语义布局与远端会话，不是跨尺寸逐像素一致。** 同一 revision 下 pane 树、比例、tab 和会话身份一致；不同 viewport 允许像素尺寸不同。tmux `window-size largest` 下，小客户端只显示大窗口的一部分。
+1. **共享的是语义布局与远端会话，不是跨尺寸逐像素一致。** 同一 revision 下 pane 树、比例、tab 和会话身份一致；不同 viewport 允许像素尺寸不同。共享 tmux window 使用 `window-size smallest`，保证同时在线的最小 pane 仍能看到底部输入区；大客户端允许出现留白。
 2. **会话恢复不等于浏览器 scrollback 原样恢复。** 重连后恢复当前 TTY 画面和远端进程；历史由 tmux history/copy-mode 保留。若要把完整历史重新灌入 xterm，需另立 snapshot/replay 规格。
 3. **布局当前已经持久化在 SQLite。** 现有 `user_layouts`、revision 乐观锁、按用户 LayoutHub 广播和权威 GET 已完成；P0 不重做。
 4. **当前 WS 已鉴权和校验连接权限，但发生在 HTTP 101 之后。** P0 修复点是握手前拒绝、严格 Origin、URL 中长寿命 JWT，以及并发写安全，不是“完全无鉴权”。
@@ -113,6 +113,8 @@ v1.1 的产品方向成立：WebTerm 的近期核心仍是“同一账号、多�
 
 - 普通 wheel 优先遵循当前前台应用申请的 mouse protocol；`Shift+wheel` 提供明确的 terminal/tmux history override，但其行为必须经过实际 tmux/CLI 测试。
 - 右键菜单、文本选择、复制粘贴和 IME 不能因 mouse forwarding 回归；不得把完整或半截 SGR mouse escape 写进 Claude/Codex composer。
+- 同一 session 被不同尺寸客户端同时 attach 时，tmux grid 必须适配最小客户端，底部 composer 不得因大客户端抢占尺寸而被裁掉；大客户端留白是允许的正确性取舍。
+- 提供显式“回到底部并恢复输入”动作：若处于 tmux copy-mode 则取消 copy-mode，否则向前台 CLI 发送原生 `Ctrl+End`；服务端必须重新派生 tmux target。
 - inline/main-screen 的 xterm 滚动是浏览器本地视图，不影响其他端。fullscreen TUI 的原生历史导航可能改变共享 tmux 画面，UI 文档必须说明这是同一共享会话的行为。
 - 断线重连后必须仍能通过 CLI 自身 transcript/session 恢复已保存对话；不承诺浏览器本地 xterm scroll offset 原样恢复。
 

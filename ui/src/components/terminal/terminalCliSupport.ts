@@ -1,5 +1,6 @@
 export const terminalScrollbackLines = 20_000;
 export const launchCodexScrollableAction = 'launch_codex_scrollable';
+export const resumeTerminalInputAction = 'resume_terminal_input';
 
 const replayedHistoryWheelEvents = new WeakSet<Event>();
 

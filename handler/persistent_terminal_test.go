@@ -15,7 +15,7 @@ func TestPersistentTerminalCommandIsStableIsolatedAndShellSafe(t *testing.T) {
 		t.Fatalf("command = %q, want a shell-safe persistent tmux command with 200000 history lines", command)
 	}
 	for _, fragment := range []string{
-		"window-size largest",
+		"window-size smallest",
 		"mouse on",
 		"@webterm_mouse_passthrough on",
 		`#{&&:#{@webterm_mouse_passthrough},#{mouse_any_flag}}`,
@@ -41,6 +41,19 @@ func TestPersistentTerminalCommandIsStableIsolatedAndShellSafe(t *testing.T) {
 	}
 	if command != same || command == otherUser || command == otherTab {
 		t.Fatalf("persistent commands must be stable per tab and isolated: same=%q otherUser=%q otherTab=%q", same, otherUser, otherTab)
+	}
+}
+
+func TestPersistentTerminalResumeInputCommandIsFixedAndScoped(t *testing.T) {
+	command, err := persistentTerminalResumeInputCommand(7, 12, "ssh-12-pane-a; rm -rf /")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !regexp.MustCompile(`^if \[ "\$\(tmux display-message -p -t wt-7-12-[a-f0-9]{16} '#\{pane_in_mode\}'\)" = 1 \]; then tmux send-keys -X -t wt-7-12-[a-f0-9]{16} cancel; else tmux send-keys -t wt-7-12-[a-f0-9]{16} C-End; fi$`).MatchString(command) {
+		t.Fatalf("command = %q, want a fixed copy-mode cancel / Ctrl+End action", command)
+	}
+	if strings.Contains(command, "pane-a") || strings.Contains(command, "rm -rf") {
+		t.Fatalf("unsafe terminal ID leaked into command: %q", command)
 	}
 }
 

@@ -94,7 +94,7 @@ M5 和 M6 在 M4 契约稳定后可并行开发，但合并前分别在最新共
 
 ## 5. M1 — Codex/Claude CLI 历史回看（最高优先级阻塞阶段）
 
-实施状态（2026-09-04）：代码与 synthetic tmux/TUI 回归已完成；真实 CLI 浏览器门禁待执行。证据见 `2026-09-04-webterm-cli-history-evidence.md`。
+实施状态（2026-09-04）：代码与 synthetic tmux/TUI 回归已完成；真实用户已确认 Claude fullscreen 历史 wheel/PgUp 可用。不同尺寸并发 attach、恢复输入和 CLI 复制粘贴优化已实现，待用户复验。证据见 `2026-09-04-webterm-cli-history-evidence.md`。
 
 ### 先做诊断矩阵
 

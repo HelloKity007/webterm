@@ -4,6 +4,9 @@ import { colors, font } from '../../theme/tokens';
 interface Props {
   onClose: () => void;
   onLaunchCodexScrollable: () => void;
+  onResumeInput: () => void;
+  onCopySelection: () => void;
+  onPaste: () => void;
 }
 
 const keyStyle = {
@@ -20,7 +23,12 @@ function Key({ children }: { children: string }) {
   return <kbd style={keyStyle}>{children}</kbd>;
 }
 
-export default function TerminalHistoryHelp({ onClose, onLaunchCodexScrollable }: Props) {
+const actionStyle = {
+  padding: '5px 9px', border: '1px solid var(--c-accent)', borderRadius: 4,
+  background: colors.accentDim, color: colors.text, cursor: 'pointer', fontSize: font.sm,
+} as const;
+
+export default function TerminalHistoryHelp({ onClose, onLaunchCodexScrollable, onResumeInput, onCopySelection, onPaste }: Props) {
   return (
     <section aria-label={t('term_history_title')} style={{
       position: 'absolute', top: 30, right: 8, zIndex: 20,
@@ -40,6 +48,18 @@ export default function TerminalHistoryHelp({ onClose, onLaunchCodexScrollable }
         <strong>{t('term_history_tmux')}</strong>
         <div>{t('term_history_tmux_hint')}</div>
         <div><Key>Shift</Key> + {t('term_history_wheel')} · <Key>q</Key> / <Key>Esc</Key> {t('term_history_exit')}</div>
+        <button type="button" onClick={onResumeInput} style={{ ...actionStyle, marginTop: 6 }}>
+          {t('term_history_resume_input')}
+        </button>
+      </div>
+
+      <div style={{ marginBottom: 10 }}>
+        <strong>{t('term_history_clipboard')}</strong>
+        <div>{t('term_history_clipboard_hint')}</div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
+          <button type="button" onClick={onCopySelection} style={actionStyle}>{t('term_copy')}</button>
+          <button type="button" onClick={onPaste} style={actionStyle}>{t('term_paste')}</button>
+        </div>
       </div>
 
       <div style={{ marginBottom: 10 }}>
@@ -52,10 +72,9 @@ export default function TerminalHistoryHelp({ onClose, onLaunchCodexScrollable }
       <div style={{ marginBottom: 10 }}>
         <strong>Codex CLI</strong>
         <div>{t('term_history_codex_hint')} <Key>Ctrl+T</Key></div>
-        <button type="button" onClick={onLaunchCodexScrollable} style={{
-          marginTop: 6, padding: '5px 9px', border: '1px solid var(--c-accent)', borderRadius: 4,
-          background: colors.accentDim, color: colors.text, cursor: 'pointer', fontSize: font.sm,
-        }}>{t('term_history_codex_launch')}</button>
+        <button type="button" onClick={onLaunchCodexScrollable} style={{ ...actionStyle, marginTop: 6 }}>
+          {t('term_history_codex_launch')}
+        </button>
       </div>
 
       <div style={{ color: colors.warning }}>{t('term_history_shared')}</div>

@@ -19,6 +19,8 @@ const en: Record<string, string> = {
   term_history: 'History', term_history_title: 'Terminal / CLI history', term_history_close: 'Close history help',
   term_history_tmux: 'Terminal and tmux history', term_history_tmux_hint: 'Wheel up enters tmux copy mode; Shift+wheel forces the negotiated wheel path.',
   term_history_wheel: 'wheel', term_history_exit: 'exits history mode',
+  term_history_resume_input: 'Return to bottom and resume input', term_history_resume_sent: 'Exited tmux history mode or sent Ctrl+End to the CLI',
+  term_history_clipboard: 'Copy and paste inside CLIs', term_history_clipboard_hint: 'Drag to select terminal text, then press Copy or Ctrl+Shift+C. Paste with the button below, the context menu, or Ctrl+Shift+V.',
   term_history_claude_mode: 'For long sessions, switch to fullscreen:', term_history_claude_keys: 'Review with wheel or keys:',
   term_history_claude_transcript: 'Open transcript; write transcript to terminal scrollback:',
   term_history_codex_hint: 'The default TUI transcript is:', term_history_codex_launch: 'Launch scrollable mode from idle shell',

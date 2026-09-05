@@ -18,6 +18,7 @@ import { deliverTerminalBytes } from './terminalOutput';
 import TerminalHistoryHelp from './TerminalHistoryHelp';
 import {
   launchCodexScrollableAction,
+  resumeTerminalInputAction,
   routeTerminalHistoryWheel,
   terminalActionMessage,
   terminalScrollbackLines,
@@ -388,6 +389,13 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
     termRef.current?.focus();
   }, [showClipboardNotice]);
 
+  const resumeTerminalInput = useCallback(() => {
+    sendRef.current(terminalActionMessage(resumeTerminalInputAction));
+    showClipboardNotice(t('term_history_resume_sent'));
+    setHistoryHelpOpen(false);
+    termRef.current?.focus();
+  }, [showClipboardNotice]);
+
   // ZMODEM (sz/rz) support
   useEffect(() => {
     const makeSentry = (): ZSentry => {
@@ -560,7 +568,10 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
         <TerminalHistoryHelp onClose={() => {
           setHistoryHelpOpen(false);
           termRef.current?.focus();
-        }} onLaunchCodexScrollable={launchCodexScrollable} />
+        }} onLaunchCodexScrollable={launchCodexScrollable}
+          onResumeInput={resumeTerminalInput}
+          onCopySelection={() => { void copyCurrentSelection(); }}
+          onPaste={() => { void pasteFromClipboard(); }} />
       )}
       {clipboardNotice && (
         <div role="status" style={{
@@ -611,6 +622,10 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
             {
               label: t('term_history_title'),
               action: () => setHistoryHelpOpen(true),
+            },
+            {
+              label: t('term_history_resume_input'),
+              action: resumeTerminalInput,
             },
             {
               label: t('term_history_codex_launch'),

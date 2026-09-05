@@ -64,3 +64,13 @@ git diff --check             PASS
 - 修复未改写用户 tmux 配置：WebTerm session 使用 `@webterm_mouse_passthrough=on` 标记，WheelUp wrapper 仅在“标记存在且前台程序申请 mouse”时透传；未标记 session 和普通 shell 保持原绑定语义。
 - 隔离回归先显式安装同类 legacy WheelUp 绑定，再验证 5,000 行 shell history 与 fullscreen synthetic TUI 100/100 mouse reports，结果通过。
 - 2026-09-04 17:42 重新部署修正版；LAN HTTPS health 再次为 HTTP `200`。现存八个 `wt-*` session 已在线补充标记，没有 kill、重建或清空会话。
+
+## 不同尺寸并发 attach 与 CLI 输入/剪贴板优化
+
+- 用户在同一共享布局同时保留 8-pane 小窗口和较大单 pane/tab。现场 `tmux list-clients` 显示同一 session 同时存在 `44x19` 与 `94x30` 客户端（另一个 session 还存在 `103x40`）；原 `window-size largest` 把共享 grid 设为大客户端尺寸，小 pane 只显示左上区域，Claude 底部 composer 因而在可视区之外。这不是历史丢失或 Claude 退出。
+- session sizing 改为 `window-size smallest`：所有同时在线客户端都能看到完整共享 grid 和底部输入区；较大客户端在小 pane 在线期间允许留白。现有 tmux session 可在线修改，无需 kill 或新建。
+- 新增受控 `resume_terminal_input` WS action。服务端只使用派生 session 名：处于 tmux copy-mode 时执行 `send-keys -X cancel`，否则发送 Claude/Codex 原生 `Ctrl+End`，用于回到底部继续输入。
+- “终端 / CLI 历史”面板新增明确的复制、粘贴和恢复输入按钮；复制仍基于 xterm 选区，粘贴通过浏览器 Clipboard API 后交给 xterm paste，保留右键菜单与 `Ctrl+Shift+C/V` 入口。
+- 现存八个 WebTerm session 已在线设置为 `window-size smallest`，没有 kill、重建或清空；tab 6 对应 pane 现场仍为 `pane_current_command=claude`、`alternate_on=1`，共享 window 已变为最小客户端可完整显示的 `44x18`。
+- 2026-09-04 18:15（America/Adak）重新构建并部署优化版：WebTerm PID `273941`、Caddy PID `273942`；后端 health 正常，LAN HTTPS health 为 HTTP `200`，首页资源为 `assets/index-Bn1Ckjjj.js`。
+- 优化后 fresh 门禁：`go test ./...` PASS；UI `16 files / 45 tests` PASS；lint/build PASS；synthetic CLI 为 `{"shellMarkers":5000,"historySize":4982,"mouseReports":100,"rawComposerBytes":0}`。真实 tab 6 composer 与复制粘贴由用户继续验收。

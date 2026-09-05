@@ -31,6 +31,8 @@
 - 鉴权：现有 JWT `token` query 参数；浏览器不能在 WebSocket 握手中附带 `Authorization` header。
 - 必填 query：`terminal_id`，即已持久化布局中的 tab ID。
 - 行为：服务端以当前应用用户、连接 ID 和 `terminal_id` 派生受控 tmux 名称，执行 `tmux new-session -A -s …`。关闭所有浏览器只会 detach；重开相同 tab 会 attach 到同一 shell。
+- 共享尺寸：同一 session 有多个不同大小的浏览器/pane 同时 attach 时使用 tmux `window-size smallest`，保证最小客户端仍能看到底部输入区；大客户端允许出现留白。
+- 固定控制 action：`clear_history`、`launch_codex_scrollable`、`resume_terminal_input`。服务端重新派生 tmux target，不接受客户端给出的 session 名或 shell 命令；恢复输入会取消 tmux copy-mode，否则发送 `Ctrl+End` 给前台 CLI。
 - 前提：SSH 目标机必须安装 `tmux`。用户在 shell 中执行 `exit`，或远端管理员执行 `tmux kill-session`，会终止该持久终端。
 - 隔离：不同应用用户、连接或 tab ID 绝不复用 tmux 名称；`terminal_id` 不直接插入 shell 命令。
 
