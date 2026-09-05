@@ -17,9 +17,10 @@ import Zmodem from 'zmodem.js/src/zmodem_browser.js';
 import { deliverTerminalBytes } from './terminalOutput';
 import TerminalHistoryHelp from './TerminalHistoryHelp';
 import {
+  createTerminalWheelState,
   launchCodexScrollableAction,
   resumeTerminalInputAction,
-  routeTerminalHistoryWheel,
+  routeTerminalWheel,
   terminalActionMessage,
   terminalScrollbackLines,
 } from './terminalCliSupport';
@@ -84,6 +85,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
   const [historyHelpOpen, setHistoryHelpOpen] = useState(false);
   const contextSelectionRef = useRef('');
   const mouseStateRef = useRef(createTerminalMouseState());
+  const wheelStateRef = useRef(createTerminalWheelState());
   const clipboardNoticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const rules = useHighlightRules();
   const rulesRef = useRef(rules);
@@ -207,7 +209,13 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
     const searchAddon = new SearchAddon();
     term.loadAddon(fitAddon);
     term.loadAddon(searchAddon);
-    term.attachCustomWheelEventHandler(routeTerminalHistoryWheel);
+    term.attachCustomWheelEventHandler((event) => routeTerminalWheel(event, {
+      alternateScreen: term.buffer.active.type === 'alternate',
+      state: wheelStateRef.current,
+      sendPage: (direction) => {
+        sendRef.current(JSON.stringify({ data: direction === 'up' ? '\x1b[5~' : '\x1b[6~' }));
+      },
+    }));
 
     // Ctrl+C: send SIGINT (0x03)
     term.attachCustomKeyEventHandler((e) => {

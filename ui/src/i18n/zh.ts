@@ -17,7 +17,7 @@ const zh: Record<string, string> = {
   term_disconnected: '连接已断开', term_reconnecting: '连接已断开，正在重连...',
   term_find_placeholder: '查找...',
   term_history: '历史', term_history_title: '终端 / CLI 历史', term_history_close: '关闭历史帮助',
-  term_history_tmux: '普通终端与 tmux 历史', term_history_tmux_hint: '滚轮向上进入 tmux copy-mode；Shift+滚轮会强制走已协商的滚轮通道。',
+  term_history_tmux: '普通终端与 tmux 历史', term_history_tmux_hint: '普通滚轮按当前程序处理；Claude 等全屏长会话卡顿时，Shift+滚轮使用限速的 PageUp/PageDown 逐页回看。',
   term_history_wheel: '滚轮', term_history_exit: '退出历史模式',
   term_history_resume_input: '回到底部并恢复输入', term_history_resume_sent: '已退出 tmux 历史模式，或向 CLI 发送 Ctrl+End',
   term_history_clipboard: 'CLI 内复制与粘贴', term_history_clipboard_hint: '拖动选择终端文字后点复制；也可用 Ctrl+Shift+C。粘贴可点下方按钮、右键菜单或 Ctrl+Shift+V。',

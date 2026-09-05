@@ -74,3 +74,13 @@ git diff --check             PASS
 - 现存八个 WebTerm session 已在线设置为 `window-size smallest`，没有 kill、重建或清空；tab 6 对应 pane 现场仍为 `pane_current_command=claude`、`alternate_on=1`，共享 window 已变为最小客户端可完整显示的 `44x18`。
 - 2026-09-04 18:15（America/Adak）重新构建并部署优化版：WebTerm PID `273941`、Caddy PID `273942`；后端 health 正常，LAN HTTPS health 为 HTTP `200`，首页资源为 `assets/index-Bn1Ckjjj.js`。
 - 优化后 fresh 门禁：`go test ./...` PASS；UI `16 files / 45 tests` PASS；lint/build PASS；synthetic CLI 为 `{"shellMarkers":5000,"historySize":4982,"mouseReports":100,"rawComposerBytes":0}`。真实 tab 6 composer 与复制粘贴由用户继续验收。
+
+## Claude fullscreen 长会话滚动背压
+
+- 用户复验确认输入框恢复；短 Claude 会话可滚到开头，但 tab 6 长会话持续向上滚动会暂时卡住，先下滚再上滚才能继续。
+- 只读现场检查：tab 6 为 `pane_current_command=claude`、`pane_in_mode=0`、`alternate_on=1`、`mouse_any_flag=1`、`history_size=0`，排除 tmux copy-mode 与 tmux history 边界。
+- 当前 Claude Code 为 2.1.246。上游 `anthropics/claude-code#80033` 记录 2.1.216 引入 fullscreen scroll stutter，`#84712` 记录长会话整屏 repaint 累积后单次 wheel 可延迟 1–3 秒；两项目前均未给出已发布修复。
+- 用户继续测试期间，普通滚轮在未部署任何新代码时自行恢复并可到达会话开头，进一步证明是临时 repaint 卡顿而非历史断层。
+- WebTerm 兼容收窄为无侵入兜底：普通 wheel 保持不变；`Shift+wheel` 在 alternate-screen 使用 120ms 限速的标准 `PageUp/PageDown` 序列，main-screen 仍走 tmux history 路径。
+- fresh 门禁：UI `16 files / 46 tests` PASS；lint/build PASS；`go test ./...` PASS；synthetic CLI 为 `{"shellMarkers":5000,"historySize":4981,"mouseReports":100,"rawComposerBytes":0}`。
+- 2026-09-04 18:30（America/Adak）部署兜底版：WebTerm PID `396173`、Caddy PID `396174`；LAN HTTPS health 为 HTTP `200`，首页资源为 `assets/index--p3o_U6V.js`。部署后 tab 6 仍为 `claude`、`pane_in_mode=0`、`alternate_on=1`，会话未重建。

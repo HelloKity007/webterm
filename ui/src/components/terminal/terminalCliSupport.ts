@@ -2,16 +2,47 @@ export const terminalScrollbackLines = 20_000;
 export const launchCodexScrollableAction = 'launch_codex_scrollable';
 export const resumeTerminalInputAction = 'resume_terminal_input';
 
+const alternatePageIntervalMs = 120;
+
+export interface TerminalWheelState {
+  lastPageAt: number;
+  lastPageDirection: number;
+}
+
+interface TerminalWheelOptions {
+  alternateScreen?: boolean;
+  state?: TerminalWheelState;
+  sendPage?: (direction: 'up' | 'down') => void;
+}
+
+export function createTerminalWheelState(): TerminalWheelState {
+  return { lastPageAt: 0, lastPageDirection: 0 };
+}
+
 const replayedHistoryWheelEvents = new WeakSet<Event>();
 
 /**
- * xterm encodes Shift in mouse reports. tmux consequently sees an unbound
- * S-WheelUpPane instead of its normal WheelUpPane history/application route.
- * Replay the browser event without Shift and let xterm generate the negotiated
- * mouse protocol; never synthesize terminal escape bytes ourselves.
+ * In a fullscreen alternate buffer, Shift+wheel becomes rate-limited
+ * PageUp/PageDown so long Claude sessions can bypass expensive per-line mouse
+ * repaints. On the main screen, xterm would encode Shift in mouse reports and
+ * tmux would see an unbound S-WheelUpPane, so replay without Shift and let xterm
+ * generate the negotiated protocol; never synthesize mouse escape bytes.
  */
-export function routeTerminalHistoryWheel(event: WheelEvent): boolean {
+export function routeTerminalHistoryWheel(event: WheelEvent, options: TerminalWheelOptions = {}): boolean {
   if (replayedHistoryWheelEvents.has(event) || !event.shiftKey) return true;
+
+  const direction = event.deltaY < 0 ? -1 : event.deltaY > 0 ? 1 : 0;
+  if (options.alternateScreen && options.state && options.sendPage && direction !== 0) {
+    event.preventDefault();
+    event.stopPropagation();
+    const now = Date.now();
+    if (direction !== options.state.lastPageDirection || now - options.state.lastPageAt >= alternatePageIntervalMs) {
+      options.state.lastPageAt = now;
+      options.state.lastPageDirection = direction;
+      options.sendPage(direction < 0 ? 'up' : 'down');
+    }
+    return false;
+  }
 
   event.preventDefault();
   event.stopPropagation();
@@ -41,6 +72,10 @@ export function routeTerminalHistoryWheel(event: WheelEvent): boolean {
   replayedHistoryWheelEvents.add(replay);
   event.target.dispatchEvent(replay);
   return false;
+}
+
+export function routeTerminalWheel(event: WheelEvent, options: TerminalWheelOptions = {}): boolean {
+  return event.shiftKey ? routeTerminalHistoryWheel(event, options) : true;
 }
 
 export function terminalActionMessage(action: string): string {

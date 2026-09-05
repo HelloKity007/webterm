@@ -111,7 +111,7 @@ v1.1 的产品方向成立：WebTerm 的近期核心仍是“同一账号、多�
 
 #### CLI-4 鼠标、选择与多端语义
 
-- 普通 wheel 优先遵循当前前台应用申请的 mouse protocol；`Shift+wheel` 提供明确的 terminal/tmux history override，但其行为必须经过实际 tmux/CLI 测试。
+- 普通 wheel 优先遵循当前前台应用申请的 mouse protocol，不改变短会话和触控板手感。`Shift+wheel` 在 fullscreen TUI 中提供限速 `PageUp/PageDown` 兜底，在 main screen 中保留 terminal/tmux history override。
 - 右键菜单、文本选择、复制粘贴和 IME 不能因 mouse forwarding 回归；不得把完整或半截 SGR mouse escape 写进 Claude/Codex composer。
 - 同一 session 被不同尺寸客户端同时 attach 时，tmux grid 必须适配最小客户端，底部 composer 不得因大客户端抢占尺寸而被裁掉；大客户端留白是允许的正确性取舍。
 - 提供显式“回到底部并恢复输入”动作：若处于 tmux copy-mode 则取消 copy-mode，否则向前台 CLI 发送原生 `Ctrl+End`；服务端必须重新派生 tmux target。

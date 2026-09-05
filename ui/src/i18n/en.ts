@@ -17,7 +17,7 @@ const en: Record<string, string> = {
   term_disconnected: 'Disconnected', term_reconnecting: 'Disconnected, reconnecting...',
   term_find_placeholder: 'Find...',
   term_history: 'History', term_history_title: 'Terminal / CLI history', term_history_close: 'Close history help',
-  term_history_tmux: 'Terminal and tmux history', term_history_tmux_hint: 'Wheel up enters tmux copy mode; Shift+wheel forces the negotiated wheel path.',
+  term_history_tmux: 'Terminal and tmux history', term_history_tmux_hint: 'Normal wheel follows the active application. If a long fullscreen CLI stalls, Shift+wheel uses rate-limited PageUp/PageDown.',
   term_history_wheel: 'wheel', term_history_exit: 'exits history mode',
   term_history_resume_input: 'Return to bottom and resume input', term_history_resume_sent: 'Exited tmux history mode or sent Ctrl+End to the CLI',
   term_history_clipboard: 'Copy and paste inside CLIs', term_history_clipboard_hint: 'Drag to select terminal text, then press Copy or Ctrl+Shift+C. Paste with the button below, the context menu, or Ctrl+Shift+V.',

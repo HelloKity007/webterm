@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest';
-import { launchCodexScrollableAction, resumeTerminalInputAction, routeTerminalHistoryWheel, terminalActionMessage, terminalScrollbackLines } from './terminalCliSupport';
+import { createTerminalWheelState, launchCodexScrollableAction, resumeTerminalInputAction, routeTerminalHistoryWheel, routeTerminalWheel, terminalActionMessage, terminalScrollbackLines } from './terminalCliSupport';
 
 describe('terminal CLI history support', () => {
   it('replays Shift+wheel without Shift so xterm and tmux use the negotiated wheel path', () => {
@@ -28,6 +28,23 @@ describe('terminal CLI history support', () => {
 
     expect(routeTerminalHistoryWheel(event)).toBe(true);
     expect(event.defaultPrevented).toBe(false);
+  });
+
+  it('turns Shift+wheel into rate-limited PageUp/PageDown in alternate-screen TUIs', () => {
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(2_000);
+    const state = createTerminalWheelState();
+    const sendPage = vi.fn();
+    const up = new WheelEvent('wheel', { cancelable: true, shiftKey: true, deltaY: -120 });
+    const repeatedUp = new WheelEvent('wheel', { cancelable: true, shiftKey: true, deltaY: -120 });
+    const down = new WheelEvent('wheel', { cancelable: true, shiftKey: true, deltaY: 120 });
+
+    expect(routeTerminalWheel(up, { alternateScreen: true, state, sendPage })).toBe(false);
+    clock.mockReturnValue(2_010);
+    expect(routeTerminalWheel(repeatedUp, { alternateScreen: true, state, sendPage })).toBe(false);
+    expect(routeTerminalWheel(down, { alternateScreen: true, state, sendPage })).toBe(false);
+    expect(sendPage.mock.calls).toEqual([['up'], ['down']]);
+    expect(up.defaultPrevented).toBe(true);
+    clock.mockRestore();
   });
 
   it('uses a fixed action instead of typing a shell command into the active composer', () => {
