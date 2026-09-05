@@ -22,7 +22,7 @@ const zh: Record<string, string> = {
   term_history_tmux: '普通终端与 tmux 历史', term_history_tmux_hint: '普通滚轮按当前程序处理；Claude 等全屏长会话卡顿时，Shift+滚轮使用限速的 PageUp/PageDown 逐页回看。',
   term_history_wheel: '滚轮', term_history_exit: '退出历史模式',
   term_history_resume_input: '回到底部并恢复输入', term_history_resume_sent: '已退出 tmux 历史模式，或向 CLI 发送 Ctrl+End',
-  term_history_clipboard: 'CLI 内复制与粘贴', term_history_clipboard_hint: '全屏 CLI 建议使用“选择并复制”：开启后拖动，松开即复制且不会把鼠标事件发给 CLI。已有选区也可点复制或按 Ctrl+Shift+C。',
+  term_history_clipboard: 'CLI 内复制与粘贴', term_history_clipboard_hint: '直接拖动即可选择并自动复制，短按仍会交给 CLI；“选择并复制”按钮保留为兼容模式。已有选区也可点复制或按 Ctrl+Shift+C。',
   term_history_claude_mode: '长会话建议切换全屏模式：', term_history_claude_keys: '滚轮或键盘回看：',
   term_history_claude_transcript: '打开 transcript；在 transcript 中写回终端滚动区：',
   term_history_codex_hint: '默认 TUI 使用 transcript：', term_history_codex_launch: '在空闲 shell 启动可回看模式',

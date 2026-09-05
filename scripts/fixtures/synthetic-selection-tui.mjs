@@ -7,7 +7,9 @@ if (!process.stdin.isTTY || typeof process.stdin.setRawMode !== 'function') {
 process.stdin.setRawMode(true);
 process.stdin.resume();
 
+let pendingInput = '';
 let unexpected = '';
+let acceptedClick = false;
 let finished = false;
 
 function finish() {
@@ -20,13 +22,20 @@ function finish() {
 }
 
 process.stdin.on('data', (data) => {
-  const input = data.toString('latin1');
-  if (input.includes('\x04')) {
-    unexpected += input.replace(/\x04/g, '');
-    finish();
-    return;
+  pendingInput += data.toString('latin1');
+  if (!acceptedClick) {
+    const click = /\x1b\[<0;\d+;\d+M\x1b\[<0;\d+;\d+m/.exec(pendingInput);
+    if (click) {
+      pendingInput = pendingInput.slice(0, click.index) + pendingInput.slice(click.index + click[0].length);
+      acceptedClick = true;
+      process.stdout.write('\x1b[14;1HSYNTHETIC_CLI_CLICK_OK');
+    }
   }
-  unexpected += input;
+  if (pendingInput.includes('\x04')) {
+    unexpected += pendingInput.replace(/\x04/g, '');
+    pendingInput = '';
+    finish();
+  }
 });
 
 process.stdout.write('\x1b[?1049h\x1b[2J\x1b[H');
@@ -36,6 +45,7 @@ for (let row = 1; row <= 12; row += 1) {
 process.stdout.write('\x1b[?1000h\x1b[?1006h');
 
 const timeout = setTimeout(() => {
-  unexpected += 'timeout';
+  unexpected += pendingInput + 'timeout';
+  pendingInput = '';
   finish();
 }, 15_000);

@@ -31,13 +31,17 @@ import {
   getTerminalGridPosition,
   getTerminalSelectionRange,
   getTerminalSelectionRows,
+  isForwardedTerminalPointerEvent,
+  isTerminalSelectionDrag,
   pasteTerminalText,
+  replayTerminalLeftClick,
   routeTerminalClipboardShortcut,
   routeTerminalControlShortcut,
   routeTerminalContextMenu,
   routeTerminalMouseDown,
   routeTerminalMouseMove,
   routeTerminalMouseUp,
+  shouldPersistTerminalSelection,
 } from './terminalInteractions';
 
 interface Props {
@@ -56,6 +60,15 @@ interface ZTransfer { accept: () => Promise<void>; get_payloads: () => unknown; 
 interface ZSession { type: 'send' | 'receive'; on: (event: string, callback: (value?: ZTransfer) => void) => void; start: () => void; abort: () => void; }
 interface ZDetection { deny: () => void; confirm: () => ZSession; }
 type TerminalSendRegistry = Window & Record<string, (data: string) => void>;
+
+interface PendingLeftGesture {
+  anchor: { col: number; row: number };
+  clientX: number;
+  clientY: number;
+  detail: number;
+  target: EventTarget;
+  selecting: boolean;
+}
 
 function hexToRgb(hex: string): string {
   const r = parseInt(hex.slice(1, 3), 16);
@@ -87,11 +100,13 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
   const [historyHelpOpen, setHistoryHelpOpen] = useState(false);
   const [selectionCopyArmed, setSelectionCopyArmed] = useState(false);
   const [selectionOverlayRows, setSelectionOverlayRows] = useState<Array<{ row: number; startColumn: number; endColumn: number }>>([]);
+  const [selectionOverlaySize, setSelectionOverlaySize] = useState<{ cols: number; rows: number } | null>(null);
   const contextSelectionRef = useRef('');
   const mouseStateRef = useRef(createTerminalMouseState());
   const wheelStateRef = useRef(createTerminalWheelState());
   const selectionCopyArmedRef = useRef(false);
   const selectionAnchorRef = useRef<{ col: number; row: number } | null>(null);
+  const pendingLeftGestureRef = useRef<PendingLeftGesture | null>(null);
   const selectionSnapshotRef = useRef('');
   const clipboardNoticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const rules = useHighlightRules();
@@ -216,6 +231,34 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       selectionSnapshotRef.current = termRef.current?.getSelection() || '';
       return;
     }
+    if (
+      event.button === 0
+      && !event.ctrlKey
+      && !event.shiftKey
+      && !event.altKey
+      && !mouseStateRef.current.tmuxMenuActive
+      && !isForwardedTerminalPointerEvent(event.nativeEvent)
+    ) {
+      const anchor = terminalCellAt(event.clientX, event.clientY);
+      if (anchor && event.target) {
+        event.preventDefault();
+        event.stopPropagation();
+        pendingLeftGestureRef.current = {
+          anchor,
+          clientX: event.clientX,
+          clientY: event.clientY,
+          detail: event.detail || 1,
+          target: event.target,
+          selecting: false,
+        };
+        selectionAnchorRef.current = anchor;
+        selectionSnapshotRef.current = '';
+        setSelectionOverlayRows([]);
+        termRef.current?.clearSelection();
+        termRef.current?.focus();
+        return;
+      }
+    }
     routeTerminalMouseDown(event, mouseStateRef.current, {
       focusTerminal: focusTerminalAfterPointer,
       releaseTmuxMenuAt,
@@ -229,6 +272,26 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       extendSelectionCopy(event.clientX, event.clientY);
       return;
     }
+    const pending = pendingLeftGestureRef.current;
+    if (pending && !isForwardedTerminalPointerEvent(event.nativeEvent)) {
+      if ((event.buttons & 1) !== 1) {
+        pendingLeftGestureRef.current = null;
+        selectionAnchorRef.current = null;
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      if (!pending.selecting && isTerminalSelectionDrag(
+        { x: pending.clientX, y: pending.clientY },
+        { x: event.clientX, y: event.clientY },
+      )) {
+        pending.selecting = true;
+        termRef.current?.select(pending.anchor.col, pending.anchor.row, 1);
+        selectionSnapshotRef.current = termRef.current?.getSelection() || '';
+      }
+      if (pending.selecting) extendSelectionCopy(event.clientX, event.clientY);
+      return;
+    }
     routeTerminalMouseMove(event, mouseStateRef.current, { moveTmuxMenuAt });
   }, [extendSelectionCopy, moveTmuxMenuAt]);
 
@@ -240,17 +303,59 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       const anchor = selectionAnchorRef.current;
       const selected = extendSelectionCopy(event.clientX, event.clientY);
       if (term && selected) {
-        const viewportY = term.buffer.active.viewportY;
-        setSelectionOverlayRows(getTerminalSelectionRows(
-          { col: anchor.col, row: anchor.row - viewportY },
-          { col: selected.focus.col, row: selected.focus.row - viewportY },
-          term.cols,
-        ));
+        if (shouldPersistTerminalSelection(term.buffer.active.type)) {
+          const viewportY = term.buffer.active.viewportY;
+          setSelectionOverlaySize({ cols: term.cols, rows: term.rows });
+          setSelectionOverlayRows(getTerminalSelectionRows(
+            { col: anchor.col, row: anchor.row - viewportY },
+            { col: selected.focus.col, row: selected.focus.row - viewportY },
+            term.cols,
+          ));
+        } else {
+          term.clearSelection();
+          setSelectionOverlayRows([]);
+        }
       }
       selectionAnchorRef.current = null;
       selectionCopyArmedRef.current = false;
       setSelectionCopyArmed(false);
       void copySelectionText(selected?.text || selectionSnapshotRef.current);
+      return;
+    }
+    const pending = pendingLeftGestureRef.current;
+    if (pending && event.button === 0 && !isForwardedTerminalPointerEvent(event.nativeEvent)) {
+      event.preventDefault();
+      event.stopPropagation();
+      const selecting = pending.selecting || isTerminalSelectionDrag(
+        { x: pending.clientX, y: pending.clientY },
+        { x: event.clientX, y: event.clientY },
+      );
+      const selected = selecting ? extendSelectionCopy(event.clientX, event.clientY) : null;
+      if (selecting && selected && termRef.current) {
+        if (shouldPersistTerminalSelection(termRef.current.buffer.active.type)) {
+          const viewportY = termRef.current.buffer.active.viewportY;
+          setSelectionOverlaySize({ cols: termRef.current.cols, rows: termRef.current.rows });
+          setSelectionOverlayRows(getTerminalSelectionRows(
+            { col: pending.anchor.col, row: pending.anchor.row - viewportY },
+            { col: selected.focus.col, row: selected.focus.row - viewportY },
+            termRef.current.cols,
+          ));
+        } else {
+          termRef.current.clearSelection();
+          setSelectionOverlayRows([]);
+        }
+      }
+      pendingLeftGestureRef.current = null;
+      selectionAnchorRef.current = null;
+      if (selecting) {
+        void copySelectionText(selected?.text || selectionSnapshotRef.current);
+      } else {
+        replayTerminalLeftClick(
+          pending.target,
+          { x: pending.clientX, y: pending.clientY, detail: pending.detail },
+          { x: event.clientX, y: event.clientY },
+        );
+      }
       return;
     }
     routeTerminalMouseUp(event, mouseStateRef.current, { focusTerminal: focusTerminalAfterPointer });
@@ -666,7 +771,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
           setContextMenu(position);
         })}
       />
-      {selectionOverlayRows.length > 0 && termRef.current && (
+      {selectionOverlayRows.length > 0 && selectionOverlaySize && (
         <div className="terminal-selection-snapshot" aria-hidden="true" style={{
           position: 'absolute', inset: '0 6px', zIndex: 11,
           pointerEvents: 'none', overflow: 'hidden',
@@ -674,12 +779,13 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
           {selectionOverlayRows.map((selectionRow) => (
             <div key={`${selectionRow.row}-${selectionRow.startColumn}-${selectionRow.endColumn}`} style={{
               position: 'absolute',
-              top: `${selectionRow.row * 100 / termRef.current!.rows}%`,
-              height: `${100 / termRef.current!.rows}%`,
-              left: `${selectionRow.startColumn * 100 / termRef.current!.cols}%`,
-              width: `${(selectionRow.endColumn - selectionRow.startColumn) * 100 / termRef.current!.cols}%`,
+              top: `${selectionRow.row * 100 / selectionOverlaySize.rows}%`,
+              height: `${100 / selectionOverlaySize.rows}%`,
+              left: `${selectionRow.startColumn * 100 / selectionOverlaySize.cols}%`,
+              width: `${(selectionRow.endColumn - selectionRow.startColumn) * 100 / selectionOverlaySize.cols}%`,
               background: getTheme(themeName || 'Dracula').selectionBackground,
               outline: '1px solid var(--c-accent)',
+              opacity: 0.28,
             }} />
           ))}
         </div>

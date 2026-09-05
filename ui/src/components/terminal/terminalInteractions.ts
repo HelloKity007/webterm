@@ -36,6 +36,51 @@ interface TerminalClipboardShortcutActions {
 
 const forwardedTerminalPointerEvents = new WeakSet<Event>();
 
+export function isForwardedTerminalPointerEvent(event: Event | undefined): boolean {
+  return Boolean(event && forwardedTerminalPointerEvents.has(event));
+}
+
+export function isTerminalSelectionDrag(
+  start: { x: number; y: number },
+  current: { x: number; y: number },
+  threshold = 5,
+): boolean {
+  return Math.hypot(current.x - start.x, current.y - start.y) >= threshold;
+}
+
+export function shouldPersistTerminalSelection(bufferType: 'normal' | 'alternate'): boolean {
+  return bufferType === 'alternate';
+}
+
+export function replayTerminalLeftClick(
+  target: EventTarget,
+  press: { x: number; y: number; detail?: number },
+  release: { x: number; y: number },
+): void {
+  const common = {
+    bubbles: true,
+    cancelable: true,
+    button: 0,
+    detail: press.detail || 1,
+  };
+  const down = new MouseEvent('mousedown', {
+    ...common,
+    buttons: 1,
+    clientX: press.x,
+    clientY: press.y,
+  });
+  const up = new MouseEvent('mouseup', {
+    ...common,
+    buttons: 0,
+    clientX: release.x,
+    clientY: release.y,
+  });
+  forwardedTerminalPointerEvents.add(down);
+  forwardedTerminalPointerEvents.add(up);
+  target.dispatchEvent(down);
+  target.dispatchEvent(up);
+}
+
 export interface TerminalMouseState {
   tmuxMenuActive: boolean;
   selectionDragActive: boolean;

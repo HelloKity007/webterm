@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest';
-import { clearTerminalHistory, copyTerminalText, createTerminalMouseState, getTerminalGridPosition, getTerminalSelectionRange, getTerminalSelectionRows, pasteTerminalText, routeTerminalClipboardShortcut, routeTerminalControlShortcut, routeTerminalContextMenu, routeTerminalMouseDown, routeTerminalMouseMove, routeTerminalMouseUp } from './terminalInteractions';
+import { clearTerminalHistory, copyTerminalText, createTerminalMouseState, getTerminalGridPosition, getTerminalSelectionRange, getTerminalSelectionRows, isForwardedTerminalPointerEvent, isTerminalSelectionDrag, pasteTerminalText, replayTerminalLeftClick, routeTerminalClipboardShortcut, routeTerminalControlShortcut, routeTerminalContextMenu, routeTerminalMouseDown, routeTerminalMouseMove, routeTerminalMouseUp, shouldPersistTerminalSelection } from './terminalInteractions';
 
 describe('terminal right-click routing', () => {
   it('keeps a plain right-click in the frontend and blocks tmux mouse handling', () => {
@@ -121,6 +121,34 @@ describe('terminal right-click routing', () => {
 });
 
 describe('terminal text selection routing', () => {
+  it('distinguishes a click from a direct selection drag using a small movement threshold', () => {
+    expect(isTerminalSelectionDrag({ x: 10, y: 10 }, { x: 13, y: 13 })).toBe(false);
+    expect(isTerminalSelectionDrag({ x: 10, y: 10 }, { x: 15, y: 10 })).toBe(true);
+  });
+
+  it('keeps the visual snapshot only for fullscreen alternate-buffer TUIs', () => {
+    expect(shouldPersistTerminalSelection('normal')).toBe(false);
+    expect(shouldPersistTerminalSelection('alternate')).toBe(true);
+  });
+
+  it('replays a delayed plain click as trusted-to-xterm down/up events', () => {
+    const target = document.createElement('div');
+    const forwarded: Array<[string, number, number, boolean]> = [];
+    target.addEventListener('mousedown', (event) => forwarded.push([
+      event.type, event.buttons, event.detail, isForwardedTerminalPointerEvent(event),
+    ]));
+    target.addEventListener('mouseup', (event) => forwarded.push([
+      event.type, event.buttons, event.detail, isForwardedTerminalPointerEvent(event),
+    ]));
+
+    replayTerminalLeftClick(target, { x: 10, y: 20, detail: 2 }, { x: 11, y: 21 });
+
+    expect(forwarded).toEqual([
+      ['mousedown', 1, 2, true],
+      ['mouseup', 0, 2, true],
+    ]);
+  });
+
   it('turns a plain left press into xterm force-selection without sending the original to tmux', () => {
     const target = document.createElement('div');
     const forwarded = vi.fn();

@@ -98,3 +98,14 @@ git diff --check             PASS
 - 修正后 fresh 门禁：UI `16 files / 48 tests` PASS；lint/build PASS；`go test ./...` PASS；synthetic CLI history/mouse 仍为 `{"shellMarkers":5000,"historySize":4981,"mouseReports":100,"rawComposerBytes":0}`。Playwright fullscreen fixture 增加视觉快照持续存在断言。
 - 2026-09-04 18:48（America/Adak）部署快照修正版：WebTerm PID `567934`、Caddy PID `567935`；LAN HTTPS health 为 HTTP `200`，首页资源为 `assets/index-BI4xmyEO.js`；未登录 Playwright smoke 为 HTTP `200`、标题正确、无 page/request error。tab 6 仍为运行中的 Claude fullscreen，未重建会话。
 - 用户随后在原 tab 6 长 Claude fullscreen 会话完成真实验收：通过“选择并复制”拖选内容后可成功复制。该会话未重建，验证了文本快照方案可跨 Claude 重绘保留复制内容。
+
+## Fullscreen CLI 直接拖选复制
+
+- 为省去先点“选择并复制”的步骤，普通左键按下先进入 5px 手势判定：短按会向 xterm 重放完整的 mouse down/up，Claude/Codex 的点击仍可用；超过阈值则直接走已验收的 viewport cell 文本快照，松开自动复制且不向远端 TUI 泄漏鼠标报告。
+- 显式“选择并复制”按钮仍保留为兼容兜底；`Ctrl+drag` 等带修饰键的操作保持交给 xterm/TUI。
+- fresh 门禁：UI `16 files / 50 tests` PASS；lint/build PASS；`go test ./...` PASS。浏览器交互 fixture 已改为先验证 fullscreen TUI 短按收到完整 SGR click，再验证无预先点击按钮的直接拖选不会泄漏 SGR mouse；当前环境未提供独立测试账号，部署后的登录态 fixture 待用户真实会话复验。
+- 2026-09-04 18:59（America/Adak）部署：WebTerm PID `666594`、Caddy PID `666595`；LAN HTTPS health 为 HTTP `200`，首页资源为 `assets/index-CJvdZtme.js`。匿名桌面与 375px 移动端 Playwright smoke 均为 HTTP `200`、标题正确、无 page/request error；无视觉基线，因此视觉回归结论为 INCONCLUSIVE。现有 Claude/Codex tmux pane 均仍存活。
+- 用户复验发现 Bash/main-screen 复制后错误保留了为 Claude 重绘准备的快照层，且不透明背景遮住文字。修正为 main-screen 自动复制后立即清除 xterm 选区且不生成快照层；只有 alternate-screen fullscreen TUI 保留快照视觉反馈，并将覆盖层设为 `0.45` 透明度，避免遮挡前景文字。
+- 修正后 UI `16 files / 51 tests`、lint、build 全部 PASS。2026-09-04 19:09（America/Adak）重新部署：WebTerm PID `779536`、Caddy PID `779537`，LAN health HTTP `200`，首页资源为 `assets/index-CkqG2ty5.js`；原 Claude alternate-screen pane 仍存活。
+- 用户确认 main-screen 自动清除与 fullscreen 文字可见行为正常，并要求进一步提高透明度；快照覆盖层 opacity 从 `0.45` 调淡至 `0.28`。
+- 调淡后 UI `16 files / 51 tests`、lint、build 全部 PASS；部署进程为 WebTerm PID `911803`、Caddy PID `911805`，LAN health HTTP `200`，首页资源为 `assets/index-BT8fFUcj.js`。

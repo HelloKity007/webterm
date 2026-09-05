@@ -186,8 +186,9 @@ try {
   await page.mouse.down();
   await page.mouse.move(box.x + Math.min(500, box.width - 8), box.y + 15, { steps: 8 });
   await page.mouse.up();
-  if (await page.locator('.xterm-selection div').count() === 0) {
-    throw new Error('plain left drag did not create an xterm selection');
+  await page.getByRole('status').filter({ hasText: '已复制' }).waitFor({ state: 'visible', timeout });
+  if (await page.locator('.terminal-selection-snapshot > div').count() !== 0 || await page.locator('.xterm-selection div').count() !== 0) {
+    throw new Error('normal-buffer selection remained visible after automatic copy');
   }
 
   await page.evaluate(() => {
@@ -223,23 +224,24 @@ try {
   await waitForCapture(sessionName, 'SYNTHETIC_CLI_SELECT_ROW_03');
   const terminalRows = paneHistory(sessionName, '#{window_height}');
   const rowHeight = box.height / terminalRows;
+  await screen.click({ position: { x: Math.min(80, box.width / 4), y: rowHeight * 0.5 } });
+  await waitForCapture(sessionName, 'SYNTHETIC_CLI_CLICK_OK');
   await page.evaluate(() => { window.__terminalVerificationSends = []; });
-  await page.getByRole('button', { name: '选择并复制' }).click();
   await page.mouse.move(box.x + 4, box.y + rowHeight * 2.5);
   await page.mouse.down();
   await page.mouse.move(box.x + Math.min(410, box.width - 8), box.y + rowHeight * 2.5, { steps: 8 });
   await page.mouse.up();
   await page.getByRole('status').filter({ hasText: '已复制' }).waitFor({ state: 'visible', timeout });
   if (await page.locator('.terminal-selection-snapshot > div').count() === 0) {
-    throw new Error('select-and-copy did not preserve a visual snapshot after mouse release');
+    throw new Error('direct TUI drag did not preserve a visual snapshot after mouse release');
   }
   const tuiCopied = await page.evaluate(() => navigator.clipboard.readText());
   if (!tuiCopied.includes('SYNTHETIC_CLI_SELECT_ROW_03')) {
-    throw new Error(`select-and-copy mode copied the wrong fullscreen TUI text: ${JSON.stringify(tuiCopied)}`);
+    throw new Error(`direct TUI drag copied the wrong fullscreen TUI text: ${JSON.stringify(tuiCopied)}`);
   }
   const selectionMessages = await page.evaluate(() => window.__terminalVerificationSends);
   if (selectionMessages.some((message) => message.includes('\\u001b[<'))) {
-    throw new Error(`select-and-copy leaked mouse reports into fullscreen TUI: ${JSON.stringify(selectionMessages)}`);
+    throw new Error(`direct TUI drag leaked mouse reports into fullscreen TUI: ${JSON.stringify(selectionMessages)}`);
   }
   await page.evaluate((id) => window[`webterm-ws-${id}`](JSON.stringify({ data: '\u0004' })), terminalID);
   const selectionExitDeadline = Date.now() + 3000;
