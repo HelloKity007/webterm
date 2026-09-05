@@ -21,6 +21,33 @@ make build          # build frontend + Go binary
 ./scripts/lan-up.sh  # serves LAN HTTPS on :9443 through Caddy
 ```
 
+## Dual-environment release
+
+- Production: `https://192.168.11.87:9443/`
+- Release test: `https://192.168.11.87:9444/`
+
+Deploy a committed candidate from a clean `dev-*` branch:
+
+```bash
+./scripts/release-deploy.sh
+./scripts/release-status.sh
+```
+
+After manual acceptance, bind approval to that exact commit, create/push the corresponding `rb-*` branch at the same commit, and promote the already-tested binary:
+
+```bash
+./scripts/release-approve.sh
+./scripts/release-promote.sh
+```
+
+Rollback replaces only the production binary:
+
+```bash
+./scripts/release-rollback.sh
+```
+
+The release-test database is a private snapshot of production data. Existing terminal IDs therefore attach to the same remote tmux sessions, while test layout/user changes stay outside the production database. Closing a tab in release-test never kills its shared tmux session.
+
 Default admin: `admin` / `admin`
 
 ## Tech Stack

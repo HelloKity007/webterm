@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/rand"
 	"embed"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -30,6 +31,10 @@ var frontendDist embed.FS
 
 func main() {
 	configPath := flag.String("config", "config.yaml", "path to config file")
+	listenAddr := flag.String("listen-addr", "", "override loopback listen address")
+	databasePath := flag.String("database", "webterm.db", "path to SQLite database")
+	deploymentEnvironment := flag.String("environment", "production", "deployment environment name")
+	preserveTerminalSessions := flag.Bool("preserve-terminal-sessions", false, "do not kill shared tmux sessions when tabs close")
 	showVersion := flag.Bool("version", false, "print version and exit")
 	flag.Parse()
 
@@ -42,10 +47,16 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to load config: %v", err)
 	}
+	if *listenAddr != "" {
+		cfg.ListenAddr = *listenAddr
+		if err := cfg.Validate(); err != nil {
+			log.Fatalf("invalid listen address override: %v", err)
+		}
+	}
 	sshmgr.SetStrictHostKeyCheck(cfg.SSHHostKeyCheck)
 	sshmgr.SetKnownHostsPath(cfg.SSHKnownHosts)
 
-	st, err := store.New("webterm.db")
+	st, err := store.New(*databasePath)
 	if err != nil {
 		log.Fatalf("failed to open database: %v", err)
 	}
@@ -84,7 +95,10 @@ func main() {
 	connH := &handler.ConnectionHandler{Store: st, Pool: pool, AESCipher: aesCipher}
 	quickConnectH := &handler.QuickConnectHandler{Store: st}
 	layoutH := &handler.LayoutHandler{Store: st, Hub: handler.NewLayoutHub()}
-	wsH := &handler.WSHandler{Store: st, Pool: pool, AESCipher: aesCipher}
+	wsH := &handler.WSHandler{
+		Store: st, Pool: pool, AESCipher: aesCipher,
+		PreserveTerminalSessions: *preserveTerminalSessions,
+	}
 
 	mux.Handle("GET /api/connections", auth.Middleware(http.HandlerFunc(connH.List)))
 	mux.Handle("POST /api/connections", auth.Middleware(http.HandlerFunc(connH.Create)))
@@ -120,12 +134,17 @@ func main() {
 	mux.Handle("/ws/local-fs", auth.Middleware(websocket.Handler(handler.HandleLocalFS)))
 
 	mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(`{"status":"ok"}`))
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"status":      "ok",
+			"environment": *deploymentEnvironment,
+			"version":     version,
+		})
 	})
 
 	mux.HandleFunc("/", spaHandler())
 
-	log.Printf("webterm starting on %s", cfg.ListenAddr)
+	log.Printf("webterm %s starting on %s (%s, database=%s, preserve_terminal_sessions=%t)", version, cfg.ListenAddr, *deploymentEnvironment, *databasePath, *preserveTerminalSessions)
 	srv := &http.Server{
 		Addr:              cfg.ListenAddr,
 		Handler:           mux,

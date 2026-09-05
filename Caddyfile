@@ -13,3 +13,14 @@ https://:9443 {
 
 	respond "Forbidden" 403
 }
+
+https://:9444 {
+	tls {$LAN_TLS_CERT} {$LAN_TLS_KEY}
+
+	@lan remote_ip 192.168.11.0/24
+	handle @lan {
+		reverse_proxy 127.0.0.1:8889
+	}
+
+	respond "Forbidden" 403
+}

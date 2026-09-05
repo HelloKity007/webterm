@@ -27,6 +27,10 @@ type WSHandler struct {
 	Store     *store.Store
 	Pool      *sshmgr.Pool
 	AESCipher *crypto.AESCipher
+	// PreserveTerminalSessions makes a release-test environment safe to use
+	// with production tmux names: closing a test tab removes only test layout
+	// state and never kills the shared remote session.
+	PreserveTerminalSessions bool
 	// RunTerminalCommand is overridden by handler tests to replace remote SSH I/O.
 	RunTerminalCommand func(*store.Connection, string) error
 }
@@ -93,6 +97,11 @@ func (h *WSHandler) CloseTerminalSession(w http.ResponseWriter, r *http.Request)
 	command, err := persistentTerminalCloseCommand(user.UserID, connID, r.URL.Query().Get("terminal_id"))
 	if err != nil {
 		http.Error(w, `{"error":"invalid terminal"}`, http.StatusBadRequest)
+		return
+	}
+	if h.PreserveTerminalSessions {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status":"preserved"}`))
 		return
 	}
 	if err := h.runTerminalCommand(connection, command); err != nil {

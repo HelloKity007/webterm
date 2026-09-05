@@ -1,0 +1,83 @@
+package scripts
+
+import (
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+func TestReleaseScriptsHaveValidShellSyntax(t *testing.T) {
+	files := []string{
+		"lan-lib.sh",
+		"release-lib.sh",
+		"release-deploy.sh",
+		"release-approve.sh",
+		"release-promote.sh",
+		"release-rollback.sh",
+		"release-status.sh",
+	}
+	for _, file := range files {
+		t.Run(file, func(t *testing.T) {
+			cmd := exec.Command("bash", "-n", file)
+			cmd.Dir = "."
+			if output, err := cmd.CombinedOutput(); err != nil {
+				t.Fatalf("bash -n %s: %v\n%s", file, err, output)
+			}
+		})
+	}
+}
+
+func TestDualEnvironmentRoutesUseSeparateLoopbackBackends(t *testing.T) {
+	caddyfile, err := os.ReadFile(filepath.Join("..", "Caddyfile"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	contents := string(caddyfile)
+	for _, expected := range []string{
+		"https://:9443",
+		"reverse_proxy 127.0.0.1:8888",
+		"https://:9444",
+		"reverse_proxy 127.0.0.1:8889",
+	} {
+		if !strings.Contains(contents, expected) {
+			t.Fatalf("Caddyfile is missing %q", expected)
+		}
+	}
+}
+
+func TestReleasePromotionIsApprovalAndReleaseBranchGated(t *testing.T) {
+	promote, err := os.ReadFile("release-promote.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	contents := string(promote)
+	for _, expected := range []string{
+		"RELEASE_APPROVED_SHA",
+		"approval does not match the current candidate",
+		"release_exact_rb_ref",
+		"lan_stop_pid webterm",
+	} {
+		if !strings.Contains(contents, expected) {
+			t.Fatalf("release-promote.sh is missing safety gate %q", expected)
+		}
+	}
+}
+
+func TestReleaseRuntimePreservesSharedTmuxSessions(t *testing.T) {
+	lanLibrary, err := os.ReadFile("lan-lib.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	contents := string(lanLibrary)
+	for _, expected := range []string{
+		"-listen-addr 127.0.0.1:8889",
+		"-environment release-test",
+		"-preserve-terminal-sessions",
+	} {
+		if !strings.Contains(contents, expected) {
+			t.Fatalf("release-test start command is missing %q", expected)
+		}
+	}
+}

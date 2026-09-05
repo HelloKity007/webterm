@@ -1,5 +1,5 @@
 const zh: Record<string, string> = {
-  app_title: 'webterm', logout: '退出', app_slogan: '基于 Web 的 SSH/SFTP/数据库终端管理器',
+  app_title: 'webterm', logout: '退出', app_slogan: '基于 Web 的 SSH/SFTP/数据库终端管理器', release_test_badge: '发布测试环境',
   activity_ssh: 'SSH 终端', activity_sftp: 'SFTP 文件', activity_database: '数据库', activity_config: '配置管理',
   sidebar_ssh: 'SSH 主机', sidebar_sftp: 'SFTP 文件', sidebar_database: '数据库',
   sidebar_search: '搜索主机名、IP、标签...', sidebar_new_conn: '新建连接', sidebar_new_group: '新建分组',

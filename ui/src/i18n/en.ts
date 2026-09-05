@@ -1,5 +1,5 @@
 const en: Record<string, string> = {
-  app_title: 'webterm', logout: 'Logout', app_slogan: 'Web-based SSH/SFTP/Database Terminal Manager',
+  app_title: 'webterm', logout: 'Logout', app_slogan: 'Web-based SSH/SFTP/Database Terminal Manager', release_test_badge: 'RELEASE TEST',
   activity_ssh: 'SSH Terminal', activity_sftp: 'SFTP Files', activity_database: 'Database', activity_config: 'Config',
   sidebar_ssh: 'SSH Hosts', sidebar_sftp: 'SFTP Files', sidebar_database: 'Database',
   sidebar_search: 'Search name, IP, tag...', sidebar_new_conn: 'New Connection', sidebar_new_group: 'New Group',

@@ -18,8 +18,35 @@
 
 ```bash
 make build          # 构建前端 + Go 二进制
-./webterm            # 默认监听 :8888（参见 config.yaml）
+./scripts/lan-up.sh  # 通过 Caddy 在 LAN HTTPS :9443 提供生产服务
 ```
+
+## 双环境发布
+
+- 生产环境：`https://192.168.11.87:9443/`
+- 发布测试环境：`https://192.168.11.87:9444/`
+
+从干净的 `dev-*` 分支部署已提交的候选版本：
+
+```bash
+./scripts/release-deploy.sh
+./scripts/release-status.sh
+```
+
+人工验收后，将批准记录绑定到该 commit，创建并推送指向同一 commit 的 `rb-*` 分支，再提升已经测试过的同一二进制：
+
+```bash
+./scripts/release-approve.sh
+./scripts/release-promote.sh
+```
+
+需要回滚时只替换生产二进制：
+
+```bash
+./scripts/release-rollback.sh
+```
+
+发布测试数据库是生产库的一致性快照，因此既有 terminal ID 会连接到相同的远端 tmux 会话，但测试布局和用户数据修改不会写入生产库。测试环境关闭标签页也不会杀掉共享 tmux 会话。
 
 默认管理员：`admin` / `admin`
 
