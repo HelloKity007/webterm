@@ -81,6 +81,28 @@ export function getTerminalSelectionRange(
   };
 }
 
+export function getTerminalSelectionRows(
+  anchor: { col: number; row: number },
+  focus: { col: number; row: number },
+  cols: number,
+): Array<{ row: number; startColumn: number; endColumn: number }> {
+  const anchorIndex = anchor.row * cols + anchor.col;
+  const focusIndex = focus.row * cols + focus.col;
+  const startIndex = Math.min(anchorIndex, focusIndex);
+  const endIndex = Math.max(anchorIndex, focusIndex);
+  const startRow = Math.floor(startIndex / cols);
+  const endRow = Math.floor(endIndex / cols);
+  const rows = [];
+  for (let row = startRow; row <= endRow; row += 1) {
+    rows.push({
+      row,
+      startColumn: row === startRow ? startIndex % cols : 0,
+      endColumn: row === endRow ? endIndex % cols + 1 : cols,
+    });
+  }
+  return rows;
+}
+
 export function routeTerminalClipboardShortcut(
   event: TerminalKeyboardEvent,
   actions: TerminalClipboardShortcutActions,

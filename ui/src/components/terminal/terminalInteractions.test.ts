@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest';
-import { clearTerminalHistory, copyTerminalText, createTerminalMouseState, getTerminalGridPosition, getTerminalSelectionRange, pasteTerminalText, routeTerminalClipboardShortcut, routeTerminalControlShortcut, routeTerminalContextMenu, routeTerminalMouseDown, routeTerminalMouseMove, routeTerminalMouseUp } from './terminalInteractions';
+import { clearTerminalHistory, copyTerminalText, createTerminalMouseState, getTerminalGridPosition, getTerminalSelectionRange, getTerminalSelectionRows, pasteTerminalText, routeTerminalClipboardShortcut, routeTerminalControlShortcut, routeTerminalContextMenu, routeTerminalMouseDown, routeTerminalMouseMove, routeTerminalMouseUp } from './terminalInteractions';
 
 describe('terminal right-click routing', () => {
   it('keeps a plain right-click in the frontend and blocks tmux mouse handling', () => {
@@ -208,6 +208,14 @@ describe('terminal pointer coordinates', () => {
   it('maps and clamps a browser position to one-based terminal cells', () => {
     expect(getTerminalGridPosition({ x: 50, y: 25 }, { left: 0, top: 0, width: 100, height: 50 }, 10, 5)).toEqual({ col: 6, row: 3 });
     expect(getTerminalGridPosition({ x: 999, y: -10 }, { left: 0, top: 0, width: 100, height: 50 }, 10, 5)).toEqual({ col: 10, row: 1 });
+  });
+
+  it('builds persistent visual rows for a multiline selection', () => {
+    expect(getTerminalSelectionRows({ col: 8, row: 1 }, { col: 2, row: 3 }, 10)).toEqual([
+      { row: 1, startColumn: 8, endColumn: 10 },
+      { row: 2, startColumn: 0, endColumn: 10 },
+      { row: 3, startColumn: 0, endColumn: 3 },
+    ]);
   });
 
   it('creates a linear xterm range in either drag direction', () => {

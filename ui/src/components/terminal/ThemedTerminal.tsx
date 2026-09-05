@@ -30,6 +30,7 @@ import {
   createTerminalMouseState,
   getTerminalGridPosition,
   getTerminalSelectionRange,
+  getTerminalSelectionRows,
   pasteTerminalText,
   routeTerminalClipboardShortcut,
   routeTerminalControlShortcut,
@@ -85,11 +86,13 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
   const [clipboardNotice, setClipboardNotice] = useState('');
   const [historyHelpOpen, setHistoryHelpOpen] = useState(false);
   const [selectionCopyArmed, setSelectionCopyArmed] = useState(false);
+  const [selectionOverlayRows, setSelectionOverlayRows] = useState<Array<{ row: number; startColumn: number; endColumn: number }>>([]);
   const contextSelectionRef = useRef('');
   const mouseStateRef = useRef(createTerminalMouseState());
   const wheelStateRef = useRef(createTerminalWheelState());
   const selectionCopyArmedRef = useRef(false);
   const selectionAnchorRef = useRef<{ col: number; row: number } | null>(null);
+  const selectionSnapshotRef = useRef('');
   const clipboardNoticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const rules = useHighlightRules();
   const rulesRef = useRef(rules);
@@ -124,10 +127,15 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
     clipboardNoticeTimerRef.current = setTimeout(() => setClipboardNotice(''), 2500);
   }, []);
 
-  const copyCurrentSelection = useCallback(async () => {
-    const result = await copyTerminalText(termRef.current?.getSelection() || '', navigator.clipboard);
-    showClipboardNotice(result === 'ok' ? t('term_copied') : result === 'empty' ? t('term_copy_empty') : t('term_copy_failed'));
+  const copySelectionText = useCallback(async (text: string) => {
+    const result = await copyTerminalText(text, navigator.clipboard);
+    showClipboardNotice(result === 'ok' ? `${t('term_copied')} (${text.length})` : result === 'empty' ? t('term_copy_empty') : t('term_copy_failed'));
   }, [showClipboardNotice]);
+
+  const copyCurrentSelection = useCallback(async () => {
+    const text = termRef.current?.getSelection() || selectionSnapshotRef.current;
+    await copySelectionText(text);
+  }, [copySelectionText]);
 
   const pasteFromClipboard = useCallback(async () => {
     const result = await pasteTerminalText(navigator.clipboard, (text) => termRef.current?.paste(text));
@@ -140,6 +148,8 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
     selectionAnchorRef.current = null;
     setSelectionCopyArmed(armed);
     if (armed) {
+      selectionSnapshotRef.current = '';
+      setSelectionOverlayRows([]);
       termRef.current?.clearSelection();
       showClipboardNotice(t('term_select_copy_hint'));
     } else {
@@ -164,9 +174,12 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
     const term = termRef.current;
     const anchor = selectionAnchorRef.current;
     const focus = terminalCellAt(clientX, clientY);
-    if (!term || !anchor || !focus) return;
+    if (!term || !anchor || !focus) return null;
     const range = getTerminalSelectionRange(anchor, focus, term.cols);
     term.select(range.startColumn, range.startRow, range.length);
+    const text = term.getSelection();
+    if (text) selectionSnapshotRef.current = text;
+    return { focus, text: text || selectionSnapshotRef.current };
   }, [terminalCellAt]);
 
   const sendTmuxMenuPointer = useCallback((position: { x: number; y: number }, code: number, suffix: 'M' | 'm') => {
@@ -200,6 +213,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       if (!cell) return;
       selectionAnchorRef.current = cell;
       termRef.current?.select(cell.col, cell.row, 1);
+      selectionSnapshotRef.current = termRef.current?.getSelection() || '';
       return;
     }
     routeTerminalMouseDown(event, mouseStateRef.current, {
@@ -222,15 +236,25 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
     if (selectionCopyArmedRef.current && selectionAnchorRef.current && event.button === 0) {
       event.preventDefault();
       event.stopPropagation();
-      extendSelectionCopy(event.clientX, event.clientY);
+      const term = termRef.current;
+      const anchor = selectionAnchorRef.current;
+      const selected = extendSelectionCopy(event.clientX, event.clientY);
+      if (term && selected) {
+        const viewportY = term.buffer.active.viewportY;
+        setSelectionOverlayRows(getTerminalSelectionRows(
+          { col: anchor.col, row: anchor.row - viewportY },
+          { col: selected.focus.col, row: selected.focus.row - viewportY },
+          term.cols,
+        ));
+      }
       selectionAnchorRef.current = null;
       selectionCopyArmedRef.current = false;
       setSelectionCopyArmed(false);
-      void copyCurrentSelection();
+      void copySelectionText(selected?.text || selectionSnapshotRef.current);
       return;
     }
     routeTerminalMouseUp(event, mouseStateRef.current, { focusTerminal: focusTerminalAfterPointer });
-  }, [copyCurrentSelection, extendSelectionCopy, focusTerminalAfterPointer]);
+  }, [copySelectionText, extendSelectionCopy, focusTerminalAfterPointer]);
 
   useEffect(() => () => {
     if (clipboardNoticeTimerRef.current) clearTimeout(clipboardNoticeTimerRef.current);
@@ -607,6 +631,8 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
         sendTextAsBinary(data);
         return;
       }
+      selectionSnapshotRef.current = '';
+      setSelectionOverlayRows([]);
       const isSource = myTabId === broadcastSourceId;
       const isTarget = broadcastScope !== 'off' && !isSource;
 
@@ -636,10 +662,28 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
         onMouseUpCapture={handleSurfaceMouseUp}
         onKeyDownCapture={() => { mouseStateRef.current.tmuxMenuActive = false; }}
         onContextMenuCapture={(e) => routeTerminalContextMenu(e, (position) => {
-          contextSelectionRef.current = termRef.current?.getSelection() || '';
+          contextSelectionRef.current = termRef.current?.getSelection() || selectionSnapshotRef.current;
           setContextMenu(position);
         })}
       />
+      {selectionOverlayRows.length > 0 && termRef.current && (
+        <div className="terminal-selection-snapshot" aria-hidden="true" style={{
+          position: 'absolute', inset: '0 6px', zIndex: 11,
+          pointerEvents: 'none', overflow: 'hidden',
+        }}>
+          {selectionOverlayRows.map((selectionRow) => (
+            <div key={`${selectionRow.row}-${selectionRow.startColumn}-${selectionRow.endColumn}`} style={{
+              position: 'absolute',
+              top: `${selectionRow.row * 100 / termRef.current!.rows}%`,
+              height: `${100 / termRef.current!.rows}%`,
+              left: `${selectionRow.startColumn * 100 / termRef.current!.cols}%`,
+              width: `${(selectionRow.endColumn - selectionRow.startColumn) * 100 / termRef.current!.cols}%`,
+              background: getTheme(themeName || 'Dracula').selectionBackground,
+              outline: '1px solid var(--c-accent)',
+            }} />
+          ))}
+        </div>
+      )}
       <button type="button" aria-pressed={selectionCopyArmed} aria-label={t('term_select_copy')}
         title={selectionCopyArmed ? t('term_select_copy_cancel') : t('term_select_copy')}
         onClick={() => setSelectionCopyMode(!selectionCopyArmedRef.current)} style={{

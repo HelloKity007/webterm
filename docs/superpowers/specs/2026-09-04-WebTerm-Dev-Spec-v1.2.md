@@ -113,7 +113,7 @@ v1.1 的产品方向成立：WebTerm 的近期核心仍是“同一账号、多�
 
 - 普通 wheel 优先遵循当前前台应用申请的 mouse protocol，不改变短会话和触控板手感。`Shift+wheel` 在 fullscreen TUI 中提供限速 `PageUp/PageDown` 兜底，在 main screen 中保留 terminal/tmux history override。
 - 右键菜单、文本选择、复制粘贴和 IME 不能因 mouse forwarding 回归；不得把完整或半截 SGR mouse escape 写进 Claude/Codex composer。
-- fullscreen CLI 必须提供显式“选择并复制”模式：WebTerm 直接按当前 xterm viewport 的终端单元格建立线性选区，拖动期间不向远端发送 mouse report，松开后在同一用户手势内写入浏览器剪贴板；不得依赖 CLI 是否支持原生选择。
+- fullscreen CLI 必须提供显式“选择并复制”模式：WebTerm 直接按当前 xterm viewport 的终端单元格建立线性选区，拖动期间不向远端发送 mouse report，并持续保存文本快照；松开后在同一用户手势内复制该快照，同时保留独立视觉选区，不能依赖 CLI 重绘后 xterm 原生选区仍存在。
 - 同一 session 被不同尺寸客户端同时 attach 时，tmux grid 必须适配最小客户端，底部 composer 不得因大客户端抢占尺寸而被裁掉；大客户端留白是允许的正确性取舍。
 - 提供显式“回到底部并恢复输入”动作：若处于 tmux copy-mode 则取消 copy-mode，否则向前台 CLI 发送原生 `Ctrl+End`；服务端必须重新派生 tmux target。
 - inline/main-screen 的 xterm 滚动是浏览器本地视图，不影响其他端。fullscreen TUI 的原生历史导航可能改变共享 tmux 画面，UI 文档必须说明这是同一共享会话的行为。

@@ -230,6 +230,9 @@ try {
   await page.mouse.move(box.x + Math.min(410, box.width - 8), box.y + rowHeight * 2.5, { steps: 8 });
   await page.mouse.up();
   await page.getByRole('status').filter({ hasText: '已复制' }).waitFor({ state: 'visible', timeout });
+  if (await page.locator('.terminal-selection-snapshot > div').count() === 0) {
+    throw new Error('select-and-copy did not preserve a visual snapshot after mouse release');
+  }
   const tuiCopied = await page.evaluate(() => navigator.clipboard.readText());
   if (!tuiCopied.includes('SYNTHETIC_CLI_SELECT_ROW_03')) {
     throw new Error(`select-and-copy mode copied the wrong fullscreen TUI text: ${JSON.stringify(tuiCopied)}`);
