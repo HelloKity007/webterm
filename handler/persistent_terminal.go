@@ -35,8 +35,8 @@ func persistentTerminalPanelSessionName(userID, workspaceIndex, panelNumber int6
 	if len(terminalID) > maxTerminalIDBytes {
 		return "", errors.New("terminal_id is too long")
 	}
-	if userID < 0 || userID > 99 || workspaceIndex < 1 || workspaceIndex > 99 || panelNumber < 1 || panelNumber > 99 {
-		return "", errors.New("user, workspace, and panel numbers must be between 0 and 99")
+	if userID < 0 || workspaceIndex < 1 || panelNumber < 1 {
+		return "", errors.New("user, workspace, and panel numbers must be positive")
 	}
 	digest := sha256.Sum256([]byte(terminalID))
 	return fmt.Sprintf("wt%02d-%02d-%02d-%x", userID, workspaceIndex, panelNumber, digest[:8]), nil
