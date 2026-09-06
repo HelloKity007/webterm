@@ -28,8 +28,8 @@ export function sharedGridForViewport(announced: TerminalGrid, viewportWidth: nu
 
 const sharedGridTitle = /^webterm-grid:(\d+)x(\d+)$/;
 
-// tmux reports the window content height. WebTerm forces the tmux status line
-// on, so the browser PTY needs one additional row for the complete client view.
+// tmux reports the window content height. WebTerm hides the tmux status line,
+// so the reported row count is already the complete browser client view.
 export function parseSharedTerminalGridTitle(title: string): TerminalGrid | null {
   const match = sharedGridTitle.exec(title);
   if (!match) return null;
@@ -38,7 +38,7 @@ export function parseSharedTerminalGridTitle(title: string): TerminalGrid | null
   if (!Number.isInteger(cols) || !Number.isInteger(windowRows) || cols < 2 || cols > 1000 || windowRows < 1 || windowRows > 499) {
     return null;
   }
-  return { cols, rows: windowRows + 1 };
+  return { cols, rows: windowRows };
 }
 
 function round(value: number, precision = 3): number {

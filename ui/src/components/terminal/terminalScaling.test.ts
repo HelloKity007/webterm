@@ -3,7 +3,7 @@ import { calculateTerminalScale, defaultSharedTerminalGrid, parseSharedTerminalG
 
 describe('parseSharedTerminalGridTitle', () => {
   it('converts the tmux content height to the complete client height', () => {
-    expect(parseSharedTerminalGridTitle('webterm-grid:350x61')).toEqual({ cols: 350, rows: 62 });
+    expect(parseSharedTerminalGridTitle('webterm-grid:350x61')).toEqual({ cols: 350, rows: 61 });
   });
 
   it('ignores unrelated and unreasonable terminal titles', () => {
