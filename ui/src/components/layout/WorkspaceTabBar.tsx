@@ -50,6 +50,7 @@ export default function WorkspaceTabBar({ tabs, activeWorkspaceTabId, onSelect, 
                 value={editingName}
                 onChange={(event) => setEditingName(event.target.value)}
                 onMouseDown={(event) => event.stopPropagation()}
+                onPointerDown={(event) => event.stopPropagation()}
                 onClick={(event) => event.stopPropagation()}
                 onDoubleClick={(event) => event.stopPropagation()}
                 onBlur={finishRename}

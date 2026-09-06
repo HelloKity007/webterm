@@ -154,7 +154,13 @@ async function closeWorkspace(workspaceID: string) {
 
 function addWorkspace(mode: WorkspaceCreateMode) {
   syncActiveWorkspaceLayout();
-  const created = createWorkspaceTab(workspaceState, activeWorkspaceTabID, mode, nextLayoutID);
+  const { connections, dbConnections } = useConnectionStore.getState();
+  const connectionNames = new Map<string, string>([
+    ...connections.map((connection) => [`ssh:${connection.id}`, connection.name] as const),
+    ...dbConnections.map((connection) => [`database:${connection.id}`, connection.name] as const),
+  ]);
+  const created = createWorkspaceTab(workspaceState, activeWorkspaceTabID, mode, nextLayoutID,
+    (tab) => connectionNames.get(`${tab.type}:${tab.connId}`) || (tab.type === 'ssh' ? 'SSH' : 'Database'));
   workspaceState = created.value;
   activeWorkspaceTabID = created.workspace.id;
   restoreLayout(created.workspace.layout);

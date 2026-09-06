@@ -22,6 +22,7 @@ export interface PersistedWorkspace {
 }
 
 export type WorkspaceIDFactory = (prefix: string) => string;
+export type WorkspaceTabTitleFactory = (tab: Tab) => string;
 
 let fallbackID = 0;
 
@@ -91,11 +92,12 @@ export function createWorkspaceTab(
   sourceWorkspaceID: string,
   mode: WorkspaceCreateMode = 'blank',
   idFactory: WorkspaceIDFactory = defaultIDFactory,
+  titleFactory?: WorkspaceTabTitleFactory,
 ): { value: PersistedWorkspace; workspace: WorkspaceTab } {
   const nextIndex = value.workspaceTabs.reduce((highest, workspace) => Math.max(highest, workspace.index), 0) + 1;
   const source = value.workspaceTabs.find((workspace) => workspace.id === sourceWorkspaceID) || value.workspaceTabs[0];
   const layout = mode === 'copy' && source
-    ? cloneLayoutWithNewIdentity(source.layout, idFactory)
+    ? cloneLayoutWithNewIdentity(source.layout, idFactory, titleFactory)
     : blankLayoutWithNewIdentity(idFactory);
   const workspace: WorkspaceTab = {
     id: idFactory('workspace'),
@@ -128,7 +130,7 @@ function blankLayoutWithNewIdentity(idFactory: WorkspaceIDFactory): PersistedLay
   };
 }
 
-function cloneLayoutWithNewIdentity(layout: PersistedLayout, idFactory: WorkspaceIDFactory): PersistedLayout {
+function cloneLayoutWithNewIdentity(layout: PersistedLayout, idFactory: WorkspaceIDFactory, titleFactory?: WorkspaceTabTitleFactory): PersistedLayout {
   const paneIDs = new Map<string, string>();
   const tabIDs = new Map<string, string>();
   const cloneTree = (node: LayoutNode): LayoutNode => {
@@ -151,7 +153,7 @@ function cloneLayoutWithNewIdentity(layout: PersistedLayout, idFactory: Workspac
     const tabs = pane.tabs.map((tab): Tab => {
       const tabID = idFactory(tab.type === 'ssh' ? 'ssh' : 'database');
       tabIDs.set(tab.id, tabID);
-      return { ...tab, id: tabID };
+      return { ...tab, id: tabID, title: titleFactory?.(tab) || (tab.type === 'ssh' ? 'SSH' : 'Database') };
     });
     panes[paneID] = {
       tabs,

@@ -57,7 +57,7 @@ export default function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab, onR
             }} />
           )}
           <div
-            draggable
+            draggable={editingTabID !== tab.id}
             onDragStart={(e) => {
               e.dataTransfer.setData('text/plain', JSON.stringify({ id: tab.id, title: tab.title, type: tab.type, connId: tab.connId }));
               e.dataTransfer.effectAllowed = 'move';
@@ -79,14 +79,16 @@ export default function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab, onR
                 value={editingTitle}
                 onClick={(e) => e.stopPropagation()}
                 onMouseDown={(e) => e.stopPropagation()}
+                onPointerDown={(e) => e.stopPropagation()}
                 onDoubleClick={(e) => e.stopPropagation()}
+                onDragStart={(e) => e.preventDefault()}
                 onChange={(e) => setEditingTitle(e.target.value)}
                 onBlur={finishRename}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') { e.preventDefault(); finishRename(); }
                   if (e.key === 'Escape') { e.preventDefault(); setEditingTabID(null); }
                 }}
-                style={{ width: 112, border: 'none', borderRadius: 3, padding: '1px 4px', fontSize: font.md, color: colors.text, background: colors.bgInput }}
+                style={{ width: 112, border: 'none', borderRadius: 3, padding: '1px 4px', fontSize: font.md, color: colors.text, background: colors.bgInput, userSelect: 'text' }}
               />
             ) : `${tab.labelNumber ?? idx + 1}: ${tab.title}`}
             <span aria-label={t('tab_close')} onClick={(e) => { e.stopPropagation(); if (window.confirm(t('tab_close_confirm'))) onCloseTab(tab.id); }}
