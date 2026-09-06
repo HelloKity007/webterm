@@ -26,8 +26,8 @@ function percentile(values, percentileValue) {
   return sorted[Math.min(sorted.length - 1, Math.ceil(sorted.length * percentileValue) - 1)];
 }
 
-function tmuxSessionName(userID, connectionID, terminalID) {
-  return `wt-${userID}-${connectionID}-${createHash('sha256').update(terminalID).digest('hex').slice(0, 16)}`;
+function tmuxSessionName(userID, workspaceIndex, panelNumber, terminalID) {
+  return `wt${String(userID).padStart(2, '0')}-${String(workspaceIndex).padStart(2, '0')}-${String(panelNumber).padStart(2, '0')}-${createHash('sha256').update(terminalID).digest('hex').slice(0, 16)}`;
 }
 
 function removeTemporaryTmuxSessions(sessionNames) {
@@ -180,7 +180,7 @@ try {
   const quickConnection = await api(controlPage, token, '/api/quick-connect/local', { method: 'POST', body: '{}' });
   const initialLayout = makeLayout(quickConnection.connection.id, totalPanes - 1);
   temporaryTmuxSessions = Object.values(makeLayout(quickConnection.connection.id, totalPanes).panes)
-    .flatMap((pane) => pane.tabs.map((tab) => tmuxSessionName(loadTestUserID, quickConnection.connection.id, tab.id)));
+    .flatMap((pane) => pane.tabs.map((tab) => tmuxSessionName(loadTestUserID, 1, tab.labelNumber || 1, tab.id)));
   const initialSave = await api(controlPage, token, '/api/layout', {
     method: 'PUT', body: JSON.stringify({ schema_version: 1, revision: originalLayout.revision, layout: initialLayout }),
   });

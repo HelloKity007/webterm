@@ -24,6 +24,24 @@ func persistentTerminalSessionName(userID, connectionID int64, terminalID string
 	return fmt.Sprintf("wt-%d-%d-%x", userID, connectionID, digest[:8]), nil
 }
 
+// persistentTerminalPanelSessionName keeps the user prefix for isolation and
+// exposes the workspace and panel numbers for easy tmux/operator inspection.
+// Example: wt01-01-02-<terminal-hash>.
+func persistentTerminalPanelSessionName(userID, workspaceIndex, panelNumber int64, terminalID string) (string, error) {
+	terminalID = strings.TrimSpace(terminalID)
+	if terminalID == "" {
+		return "", errors.New("terminal_id is required for persistent sessions")
+	}
+	if len(terminalID) > maxTerminalIDBytes {
+		return "", errors.New("terminal_id is too long")
+	}
+	if userID < 0 || userID > 99 || workspaceIndex < 1 || workspaceIndex > 99 || panelNumber < 1 || panelNumber > 99 {
+		return "", errors.New("user, workspace, and panel numbers must be between 0 and 99")
+	}
+	digest := sha256.Sum256([]byte(terminalID))
+	return fmt.Sprintf("wt%02d-%02d-%02d-%x", userID, workspaceIndex, panelNumber, digest[:8]), nil
+}
+
 // persistentTerminalCommand derives a tmux command without inserting any
 // caller-provided text into the remote shell command line.
 func persistentTerminalCommand(userID, connectionID int64, terminalID string) (string, error) {

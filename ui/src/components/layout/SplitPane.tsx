@@ -141,8 +141,8 @@ async function closeWorkspace(workspaceID: string) {
   if (!workspace) return;
   const terminalIDs = Object.values(workspace.layout.panes).flatMap((pane) => pane.tabs
     .filter((tab) => tab.type === 'ssh' && tab.connId)
-    .map((tab) => ({ connId: tab.connId!, tabId: tab.id })));
-  await Promise.all(terminalIDs.map(({ connId, tabId }) => closeTerminalSession(connId, tabId).catch((error) => {
+    .map((tab) => ({ connId: tab.connId!, tabId: tab.id, panelNumber: tab.labelNumber || 1 })));
+  await Promise.all(terminalIDs.map(({ connId, tabId, panelNumber }) => closeTerminalSession(connId, tabId, workspace.index, panelNumber).catch((error) => {
     console.error('Failed to close workspace terminal session:', error);
   })));
   const remaining = workspaceState.workspaceTabs.filter((candidate) => candidate.id !== workspaceID);
@@ -442,8 +442,8 @@ function doEightPaneSplit(targetID: string, activeTab: Tab): boolean {
 }
 
 // Leaf pane component — always mounted, just hidden when not in layout
-function LeafPane({ nodeId, onActiveSshChange, isInSplit }: {
-  nodeId: string; onActiveSshChange?: (connId: number | null, tabId: string | null) => void; isInSplit: boolean;
+function LeafPane({ nodeId, onActiveSshChange, isInSplit, workspaceIndex }: {
+  nodeId: string; onActiveSshChange?: (connId: number | null, tabId: string | null) => void; isInSplit: boolean; workspaceIndex: number;
 }) {
   const [tabs, setTabs] = useState<Tab[]>(() => {
     return paneTabsCache.get(nodeId) || [];
@@ -510,7 +510,7 @@ function LeafPane({ nodeId, onActiveSshChange, isInSplit }: {
   const closeTab = (id: string) => {
     const tab = tabs.find((candidate) => candidate.id === id);
     if (tab?.type === 'ssh' && tab.connId) {
-      void closeTerminalSession(tab.connId, tab.id).catch((error) => {
+      void closeTerminalSession(tab.connId, tab.id, workspaceIndex, tab.labelNumber ?? tabs.findIndex((candidate) => candidate.id === tab.id) + 1).catch((error) => {
         console.error('Failed to close persistent terminal session:', error);
       });
     }
@@ -628,7 +628,7 @@ function LeafPane({ nodeId, onActiveSshChange, isInSplit }: {
           <div key={tab.id} style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
             {tab.type === 'ssh' && tab.connId && (
               <Suspense fallback={<div style={{ padding: 12, fontSize: font.md, color: colors.textMuted }}>Loading…</div>}>
-                <TerminalTab connId={tab.connId} myTabId={tab.id} paneTabs={tabs} extraMenuItems={[
+                <TerminalTab connId={tab.connId} myTabId={tab.id} paneTabs={tabs} workspaceIndex={workspaceIndex} panelNumber={tab.labelNumber ?? tabs.findIndex((candidate) => candidate.id === tab.id) + 1} extraMenuItems={[
                   { label: t('term_split_h'), action: () => handleSplit('horizontal') },
                   { label: t('term_split_v'), action: () => handleSplit('vertical') },
                   { label: t('term_split_quad'), action: handleQuadSplit },
@@ -651,7 +651,7 @@ function LeafPane({ nodeId, onActiveSshChange, isInSplit }: {
 }
 
 // Top-level grid container — ALL panes are direct children with stable keys
-function GridContainer({ onActiveSshChange }: { onActiveSshChange?: (connId: number | null, tabId: string | null) => void }) {
+function GridContainer({ onActiveSshChange, workspaceIndex }: { onActiveSshChange?: (connId: number | null, tabId: string | null) => void; workspaceIndex: number }) {
   const [, forceUpdate] = useState(0);
 
   // Subscribe before passive effects load the saved layout, otherwise a fast
@@ -691,7 +691,7 @@ function GridContainer({ onActiveSshChange }: { onActiveSshChange?: (connId: num
             display: cell ? 'flex' : 'none',
             overflow: 'hidden',
           }}>
-            <LeafPane key={`${id}-${layoutRestoreVersion}`} nodeId={id} onActiveSshChange={onActiveSshChange} isInSplit={isInSplit && cellMap.has(id)} />
+            <LeafPane key={`${id}-${layoutRestoreVersion}`} nodeId={id} onActiveSshChange={onActiveSshChange} isInSplit={isInSplit && cellMap.has(id)} workspaceIndex={workspaceIndex} />
           </div>
         );
       })}
@@ -982,7 +982,7 @@ export default function SplitPane({ onActiveSshChange }: { onActiveSshChange?: (
       onCreate={addWorkspace}
       onClose={(workspaceID) => { void closeWorkspace(workspaceID); }}
     />
-    <GridContainer onActiveSshChange={onActiveSshChange} />
+    <GridContainer onActiveSshChange={onActiveSshChange} workspaceIndex={workspaceState.workspaceTabs.find((workspace) => workspace.id === activeWorkspaceTabID)?.index || 1} />
     {layoutMessage && <div role="status" style={{ position: 'fixed', right: 16, bottom: 16, zIndex: 20, padding: '8px 12px', borderRadius: 4, background: colors.bgRaised, border: `1px solid ${colors.border}`, color: colors.text, fontSize: font.md }}>{layoutMessage}</div>}
   </>;
 }

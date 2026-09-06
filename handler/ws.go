@@ -10,6 +10,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 	"unicode/utf8"
 
@@ -33,6 +34,28 @@ type WSHandler struct {
 	PreserveTerminalSessions bool
 	// RunTerminalCommand is overridden by handler tests to replace remote SSH I/O.
 	RunTerminalCommand func(*store.Connection, string) error
+}
+
+func applyPanelSessionName(command string, userID, connectionID int64, terminalID, workspaceRaw, panelRaw string) string {
+	workspaceIndex, workspaceErr := strconv.ParseInt(workspaceRaw, 10, 64)
+	panelNumber, panelErr := strconv.ParseInt(panelRaw, 10, 64)
+	if workspaceErr != nil || panelErr != nil || workspaceIndex < 1 || panelNumber < 1 {
+		return command
+	}
+	current, err := persistentTerminalPanelSessionName(userID, workspaceIndex, panelNumber, terminalID)
+	if err != nil {
+		return command
+	}
+	legacy, err := persistentTerminalSessionName(userID, connectionID, terminalID)
+	if err != nil {
+		return command
+	}
+	if current == legacy {
+		return command
+	}
+	command = strings.ReplaceAll(command, legacy, current)
+	migrate := fmt.Sprintf("(tmux has-session -t %s 2>/dev/null || (tmux has-session -t %s 2>/dev/null && tmux rename-session -t %s %s) || true) && ", current, legacy, legacy, current)
+	return migrate + command
 }
 
 func (h *WSHandler) runTerminalCommand(connection *store.Connection, command string) error {
@@ -94,7 +117,8 @@ func (h *WSHandler) CloseTerminalSession(w http.ResponseWriter, r *http.Request)
 		http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden)
 		return
 	}
-	command, err := persistentTerminalCloseCommand(user.UserID, connID, r.URL.Query().Get("terminal_id"))
+	terminalID := r.URL.Query().Get("terminal_id")
+	command, err := persistentTerminalCloseCommand(user.UserID, connID, terminalID)
 	if err != nil {
 		http.Error(w, `{"error":"invalid terminal"}`, http.StatusBadRequest)
 		return
@@ -104,6 +128,7 @@ func (h *WSHandler) CloseTerminalSession(w http.ResponseWriter, r *http.Request)
 		_, _ = w.Write([]byte(`{"status":"preserved"}`))
 		return
 	}
+	command = applyPanelSessionName(command, user.UserID, connID, terminalID, r.URL.Query().Get("workspace_index"), r.URL.Query().Get("panel_number"))
 	if err := h.runTerminalCommand(connection, command); err != nil {
 		http.Error(w, `{"error":"failed to close terminal"}`, http.StatusBadGateway)
 		return
@@ -201,6 +226,8 @@ func (h *WSHandler) HandleSSH(conn *websocket.Conn) {
 		sendErr(conn, err.Error())
 		return
 	}
+	workspaceIndex := conn.Request().URL.Query().Get("workspace_index")
+	panelNumber := conn.Request().URL.Query().Get("panel_number")
 	codexScrollableCommand, err := persistentTerminalCodexScrollableCommand(user.UserID, connID, terminalID)
 	if err != nil {
 		sendErr(conn, err.Error())
@@ -216,6 +243,11 @@ func (h *WSHandler) HandleSSH(conn *websocket.Conn) {
 		sendErr(conn, err.Error())
 		return
 	}
+	tmuxCommand = applyPanelSessionName(tmuxCommand, user.UserID, connID, terminalID, workspaceIndex, panelNumber)
+	clearCommand = applyPanelSessionName(clearCommand, user.UserID, connID, terminalID, workspaceIndex, panelNumber)
+	codexScrollableCommand = applyPanelSessionName(codexScrollableCommand, user.UserID, connID, terminalID, workspaceIndex, panelNumber)
+	resumeInputCommand = applyPanelSessionName(resumeInputCommand, user.UserID, connID, terminalID, workspaceIndex, panelNumber)
+	followInputCommand = applyPanelSessionName(followInputCommand, user.UserID, connID, terminalID, workspaceIndex, panelNumber)
 
 	maxSessions := connInfo.MaxSessions
 	if maxSessions < 1 {

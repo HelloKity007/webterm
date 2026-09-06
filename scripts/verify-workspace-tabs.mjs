@@ -16,8 +16,8 @@ if (!baseURL || !username || !password) {
   throw new Error('set WEBTERM_BASE_URL, WEBTERM_LOADTEST_USERNAME and WEBTERM_LOADTEST_PASSWORD');
 }
 
-function terminalSessionName(userID, connectionID, terminalID) {
-  return `wt-${userID}-${connectionID}-${createHash('sha256').update(terminalID).digest('hex').slice(0, 16)}`;
+function terminalSessionName(userID, workspaceIndex, panelNumber, terminalID) {
+  return `wt${String(userID).padStart(2, '0')}-${String(workspaceIndex).padStart(2, '0')}-${String(panelNumber).padStart(2, '0')}-${createHash('sha256').update(terminalID).digest('hex').slice(0, 16)}`;
 }
 
 function tmuxHasSession(sessionName) {
@@ -227,7 +227,7 @@ try {
   const connection = await api(controlPage, token, '/api/quick-connect/local', { method: 'POST', body: '{}' });
   const connectionID = connection.connection.id;
   const originalTerminalIDs = Array.from({ length: 8 }, () => `workspace-original-${randomBytes(8).toString('hex')}`);
-  originalSessionNames = originalTerminalIDs.map((terminalID) => terminalSessionName(temporaryUserID, connectionID, terminalID));
+  originalSessionNames = originalTerminalIDs.map((terminalID, index) => terminalSessionName(temporaryUserID, 1, index + 1, terminalID));
   const current = await api(controlPage, token, '/api/layout');
   await api(controlPage, token, '/api/layout', {
     method: 'PUT',
@@ -285,7 +285,7 @@ try {
   if (copiedTerminalIDs.length !== 8 || copiedTerminalIDs.some((terminalID) => originalTerminalIDs.includes(terminalID))) {
     throw new Error('copied 8-pane workspace reused an original terminalID');
   }
-  copiedSessionNames = copiedTerminalIDs.map((terminalID) => terminalSessionName(temporaryUserID, connectionID, terminalID));
+  copiedSessionNames = copiedTerminalIDs.map((terminalID, index) => terminalSessionName(temporaryUserID, 3, index + 1, terminalID));
   await first.page.waitForFunction((terminalID) => typeof window[`webterm-ws-${terminalID}`] === 'function', copiedTerminalIDs[0], { timeout });
   for (const sessionName of copiedSessionNames) await waitForTmuxSession(sessionName);
 

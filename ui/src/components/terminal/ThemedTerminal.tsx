@@ -56,6 +56,8 @@ interface Props {
   extraMenuItems?: { label: string; action: () => void }[];
   tabs?: import('../../store/layout').Tab[];
   myTabId?: string;
+  workspaceIndex?: number;
+  panelNumber?: number;
 }
 
 type Octets = Uint8Array | ArrayBuffer;
@@ -95,7 +97,7 @@ function highlightText(text: string, rules: HighlightRule[]): string {
   return text;
 }
 
-export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMenuItems, tabs, myTabId }: Props) {
+export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMenuItems, tabs, myTabId, workspaceIndex, panelNumber }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const [termKey, setTermKey] = useState(0);
@@ -667,7 +669,8 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
 
   const token = localStorage.getItem('token') || '';
   const terminalID = myTabId || '';
-  const wsUrl = `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws/ssh/${connId}?token=${encodeURIComponent(token)}&terminal_id=${encodeURIComponent(terminalID)}`;
+  const layoutQuery = workspaceIndex && panelNumber ? `&workspace_index=${workspaceIndex}&panel_number=${panelNumber}` : '';
+  const wsUrl = `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws/ssh/${connId}?token=${encodeURIComponent(token)}&terminal_id=${encodeURIComponent(terminalID)}${layoutQuery}`;
 
   const { send } = useWebSocket({
     url: wsUrl,

@@ -12,8 +12,8 @@ const timeout = 60000;
 
 if (!baseURL || !username || !password) throw new Error('set WEBTERM_BASE_URL, WEBTERM_LOADTEST_USERNAME and WEBTERM_LOADTEST_PASSWORD');
 
-function tmuxSessionName(userID, connectionID, terminalID) {
-  return `wt-${userID}-${connectionID}-${createHash('sha256').update(terminalID).digest('hex').slice(0, 16)}`;
+function tmuxSessionName(userID, workspaceIndex, panelNumber, terminalID) {
+  return `wt${String(userID).padStart(2, '0')}-${String(workspaceIndex).padStart(2, '0')}-${String(panelNumber).padStart(2, '0')}-${createHash('sha256').update(terminalID).digest('hex').slice(0, 16)}`;
 }
 
 function tmux(args) {
@@ -199,8 +199,8 @@ try {
   const connection = await api(controlPage, token, '/api/quick-connect/local', { method: 'POST', body: '{}' });
   const terminalID = `persistent-tab-${randomBytes(8).toString('hex')}`;
   const distractorID = `persistent-other-${randomBytes(8).toString('hex')}`;
-  sessionName = tmuxSessionName(loadTestUserID, connection.connection.id, terminalID);
-  distractorSessionName = tmuxSessionName(loadTestUserID, connection.connection.id, distractorID);
+  sessionName = tmuxSessionName(loadTestUserID, 1, 1, terminalID);
+  distractorSessionName = tmuxSessionName(loadTestUserID, 1, 2, distractorID);
   const current = await api(controlPage, token, '/api/layout');
   await api(controlPage, token, '/api/layout', { method: 'PUT', body: JSON.stringify({ schema_version: 1, revision: current.revision, layout: twoTerminalLayout(connection.connection.id, terminalID, distractorID) }) });
 

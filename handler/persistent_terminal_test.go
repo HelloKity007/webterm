@@ -6,6 +6,23 @@ import (
 	"testing"
 )
 
+func TestPersistentTerminalPanelSessionNameIncludesUserTabAndPanel(t *testing.T) {
+	name, err := persistentTerminalPanelSessionName(1, 1, 2, "ssh-12-pane-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !regexp.MustCompile(`^wt01-01-02-[a-f0-9]{16}$`).MatchString(name) {
+		t.Fatalf("name = %q, want wt01-01-02-<hash>", name)
+	}
+}
+
+func TestApplyPanelSessionNameMigratesLegacyName(t *testing.T) {
+	command := applyPanelSessionName("tmux kill-session -t wt-1-2-fe257cc3cbdcf77f 2>/dev/null || true", 1, 2, "terminal-a", "1", "2")
+	if !strings.Contains(command, "wt01-01-02-") || !strings.Contains(command, "tmux rename-session") {
+		t.Fatalf("command = %q, want new panel name and legacy migration", command)
+	}
+}
+
 func TestPersistentTerminalCommandIsStableIsolatedAndShellSafe(t *testing.T) {
 	command, err := persistentTerminalCommand(7, 12, "ssh-12-pane-a; rm -rf /")
 	if err != nil {
