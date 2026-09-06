@@ -534,12 +534,12 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
 
         const nativeGrid = { cols: term.cols, rows: term.rows };
         const useSmallViewportBaseline = window.innerWidth < smallViewportWidth;
-        const targetGrid = sharedGrid ? {
-          cols: Math.max(nativeGrid.cols, sharedGrid.cols),
-          rows: Math.max(nativeGrid.rows, sharedGrid.rows),
-        } : useSmallViewportBaseline ? {
-          cols: Math.max(nativeGrid.cols, defaultSharedTerminalGrid.cols),
-          rows: Math.max(nativeGrid.rows, defaultSharedTerminalGrid.rows),
+        const viewportGrid = sharedGrid
+          ? sharedGridForViewport(sharedGrid, window.innerWidth)
+          : (useSmallViewportBaseline ? defaultSharedTerminalGrid : null);
+        const targetGrid = viewportGrid ? {
+          cols: Math.max(nativeGrid.cols, viewportGrid.cols),
+          rows: Math.max(nativeGrid.rows, viewportGrid.rows),
         } : nativeGrid;
         const screen = term.element?.querySelector<HTMLElement>('.xterm-screen');
         const nativeCellWidth = screen && nativeGrid.cols > 0
