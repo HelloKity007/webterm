@@ -13,7 +13,10 @@ export interface TerminalScaleOptions {
 // Give a small-only client a deterministic shared grid. A larger client can
 // still grow this target through the authoritative tmux title announcement.
 export const defaultSharedTerminalGrid: TerminalGrid = { cols: 240, rows: 60 };
-export const smallViewportWidth = 1280;
+// Treat a normal 1920-wide display as the small side of the shared-grid
+// contract; high-resolution displays (for example 2560/4K) remain the large
+// authority. The caller also considers the current browser viewport.
+export const smallViewportWidth = 2400;
 
 export function sharedGridForViewport(announced: TerminalGrid, viewportWidth: number): TerminalGrid {
   if (viewportWidth >= smallViewportWidth) return announced;

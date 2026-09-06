@@ -18,7 +18,8 @@ describe('calculateTerminalScale', () => {
     expect(defaultSharedTerminalGrid).toEqual({ cols: 240, rows: 60 });
     expect(sharedGridForViewport({ cols: 100, rows: 30 }, 1193)).toEqual({ cols: 240, rows: 60 });
     expect(sharedGridForViewport({ cols: 350, rows: 62 }, 1193)).toEqual({ cols: 350, rows: 62 });
-    expect(sharedGridForViewport({ cols: 100, rows: 30 }, 1920)).toEqual({ cols: 100, rows: 30 });
+    expect(sharedGridForViewport({ cols: 100, rows: 30 }, 1920)).toEqual({ cols: 240, rows: 60 });
+    expect(sharedGridForViewport({ cols: 100, rows: 30 }, 2560)).toEqual({ cols: 100, rows: 30 });
   });
   it('keeps the configured font for a native-size shared grid', () => {
     expect(calculateTerminalScale({ cols: 350, rows: 62 }, { cols: 350, rows: 62 }, 14, 8)).toEqual({

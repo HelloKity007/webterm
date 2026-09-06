@@ -533,9 +533,10 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
         fitAddon.fit();
 
         const nativeGrid = { cols: term.cols, rows: term.rows };
-        const useSmallViewportBaseline = window.innerWidth < smallViewportWidth;
+        const displayWidth = Math.max(window.innerWidth, window.screen?.width || 0);
+        const useSmallViewportBaseline = displayWidth < smallViewportWidth;
         const viewportGrid = sharedGrid
-          ? sharedGridForViewport(sharedGrid, window.innerWidth)
+          ? sharedGridForViewport(sharedGrid, displayWidth)
           : (useSmallViewportBaseline ? defaultSharedTerminalGrid : null);
         const targetGrid = viewportGrid ? {
           cols: Math.max(nativeGrid.cols, viewportGrid.cols),
