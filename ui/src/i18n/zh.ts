@@ -8,7 +8,7 @@ const zh: Record<string, string> = {
   sidebar_expand: '展开侧边栏', sidebar_collapse: '收起侧边栏',
   menu_edit: '编辑', menu_copy: '复制', menu_delete: '删除', menu_move_to: '移动到分组',
   menu_rename_group: '重命名分组', menu_delete_group: '删除分组',
-  tab_new: '新建标签', broadcast_off: '广播', broadcast_pane: '当前分屏', broadcast_all: '所有标签',
+  tab_new: '新建标签', tab_no_connections: '暂无 SSH 连接', broadcast_off: '广播', broadcast_pane: '当前分屏', broadcast_all: '所有标签',
   broadcast_toggle: '点击切换广播范围',
   workspace_tabs: '工作区标签', workspace_name: '工作区名称', workspace_new: '新建工作区',
   workspace_create: '创建工作区', workspace_create_mode: '选择新建方式', workspace_blank: '空白工作区', workspace_copy: '复制当前布局',

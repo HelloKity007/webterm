@@ -12,6 +12,7 @@ interface Props {
   onCloseTab: (id: string) => void;
   onRenameTab?: (id: string, title: string) => void;
   onReceiveTab?: (tab: Tab) => void;
+  onAddTab?: () => void;
   filterType?: string;
 }
 
@@ -21,7 +22,7 @@ const scopeLabels: Record<BroadcastScope, string> = {
   all: t('broadcast_all'),
 };
 
-export default function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab, onRenameTab, onReceiveTab, filterType }: Props) {
+export default function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab, onRenameTab, onReceiveTab, onAddTab, filterType }: Props) {
   const filtered = filterType ? tabs.filter((t) => t.type === filterType) : tabs;
   const broadcastScope = useLayoutStore((s) => s.broadcastScope);
   const setBroadcastScope = useLayoutStore((s) => s.setBroadcastScope);
@@ -77,6 +78,7 @@ export default function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab, onR
                 aria-label="标签名称"
                 value={editingTitle}
                 onClick={(e) => e.stopPropagation()}
+                onMouseDown={(e) => e.stopPropagation()}
                 onDoubleClick={(e) => e.stopPropagation()}
                 onChange={(e) => setEditingTitle(e.target.value)}
                 onBlur={finishRename}
@@ -108,6 +110,10 @@ export default function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab, onR
         }}
         style={{ flex: 1, alignSelf: 'stretch', minWidth: 4, background: dragOverAdd ? 'rgba(0,122,204,0.3)' : 'transparent' }}
       />
+      {onAddTab && (
+        <button type="button" aria-label={t('tab_new')} title={t('tab_new')} onClick={(e) => { e.stopPropagation(); onAddTab(); }}
+          style={{ width: 24, height: 24, flexShrink: 0, border: `1px solid ${colors.border}`, borderRadius: 4, cursor: 'pointer', color: colors.accent, background: colors.bg, fontSize: font.lg, lineHeight: '20px', padding: 0 }}>+</button>
+      )}
       {(!filterType || filterType === 'ssh') && (
         <span onClick={cycleScope} title={t("broadcast_toggle")}
           style={{

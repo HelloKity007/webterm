@@ -27,6 +27,8 @@ describe('WorkspaceTabBar', () => {
 
     fireEvent.doubleClick(screen.getByRole('tab', { name: '1: workspace' }));
     const input = screen.getByRole('textbox', { name: '工作区名称' });
+    fireEvent.mouseDown(input);
+    expect(input).toBeTruthy();
     fireEvent.change(input, { target: { value: 'production' } });
     fireEvent.keyDown(input, { key: 'Enter' });
     expect(onRename).toHaveBeenCalledWith('workspace-1', 'production');

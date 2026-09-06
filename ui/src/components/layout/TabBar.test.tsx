@@ -4,15 +4,18 @@ import { describe, expect, it, vi } from 'vitest';
 import TabBar from './TabBar';
 
 describe('TabBar', () => {
-  it('does not render a new-tab button because SSH hosts open by double-clicking the sidebar', () => {
+  it('renders a pane new-tab button when requested', () => {
+    const onAddTab = vi.fn();
     render(<TabBar
       tabs={[{ id: 'ssh-1', type: 'ssh', title: '本机', connId: 1 }]}
       activeTabId="ssh-1"
       onSelectTab={() => {}}
       onCloseTab={() => {}}
+      onAddTab={onAddTab}
     />);
 
-    expect(screen.queryAllByRole('button')).toHaveLength(0);
+    fireEvent.click(screen.getByRole('button', { name: '新建标签' }));
+    expect(onAddTab).toHaveBeenCalledTimes(1);
   });
 
   it('keeps a fixed tab number while a double-click renames only the title', () => {

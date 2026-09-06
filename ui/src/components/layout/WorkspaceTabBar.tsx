@@ -48,6 +48,9 @@ export default function WorkspaceTabBar({ tabs, activeWorkspaceTabId, onSelect, 
                 maxLength={256}
                 value={editingName}
                 onChange={(event) => setEditingName(event.target.value)}
+                onMouseDown={(event) => event.stopPropagation()}
+                onClick={(event) => event.stopPropagation()}
+                onDoubleClick={(event) => event.stopPropagation()}
                 onBlur={finishRename}
                 onKeyDown={(event) => {
                   if (event.key === 'Enter') { event.preventDefault(); finishRename(); }

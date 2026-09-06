@@ -410,6 +410,7 @@ function LeafPane({ nodeId, onActiveSshChange, isInSplit }: {
   const [activeTabId, setActiveTabId] = useState<string | null>(() => {
     return paneActiveCache.get(nodeId) || null;
   });
+  const [showAddMenu, setShowAddMenu] = useState(false);
   const drainTabQueue = useLayoutStore((s) => s.drainTabQueue);
   const queuedTabs = useLayoutStore((s) => s.newTabQueue);
   const focusedPaneId = useLayoutStore((s) => s.focusedPaneId);
@@ -449,6 +450,21 @@ function LeafPane({ nodeId, onActiveSshChange, isInSplit }: {
   const handleReceiveTab = (tab: Tab) => {
     setTabs((prev) => { if (prev.find((t) => t.id === tab.id)) return prev; return [...prev, tab]; });
     setActiveTabId(tab.id); notifyTabMoved(tab.id);
+  };
+  const addConnectionTab = (connId: number) => {
+    const connection = connections.find((conn) => conn.id === connId);
+    if (!connection) return;
+    const tab: Tab = {
+      id: nextLayoutID(`ssh-${connection.id}`),
+      type: 'ssh',
+      title: connection.name,
+      connId: connection.id,
+      labelNumber: nextTabLabelNumber(),
+    };
+    setTabs((prev) => [...prev, tab]);
+    setActiveTabId(tab.id);
+    setFocusedPane(nodeId);
+    setShowAddMenu(false);
   };
   const closeTab = (id: string) => {
     const tab = tabs.find((candidate) => candidate.id === id);
@@ -549,10 +565,23 @@ function LeafPane({ nodeId, onActiveSshChange, isInSplit }: {
 
   return (
     <div onClick={() => setFocusedPane(nodeId)} style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0, minHeight: 0 }}>
-      {tabs.length > 0 && (
+      <div style={{ position: 'relative', flexShrink: 0 }}>
         <TabBar tabs={tabs} activeTabId={activeTabId} onSelectTab={setActiveTabId} onCloseTab={closeTab} onRenameTab={renameTab} filterType="ssh"
-          onReceiveTab={handleReceiveTab} />
-      )}
+          onReceiveTab={handleReceiveTab} onAddTab={() => setShowAddMenu((open) => !open)} />
+        {showAddMenu && (
+          <div role="menu" aria-label={t('tab_new')} onClick={(event) => event.stopPropagation()}
+            style={{ position: 'absolute', zIndex: 25, right: 8, top: 34, minWidth: 190, maxWidth: 280, maxHeight: 260, overflowY: 'auto', padding: 6, border: `1px solid ${colors.border}`, borderRadius: 5, boxShadow: '0 8px 24px rgba(0,0,0,.35)', background: colors.bgRaised }}>
+            {connections.length === 0 ? (
+              <div style={{ padding: '8px 10px', color: colors.textMuted, fontSize: font.md }}>{t('tab_no_connections')}</div>
+            ) : connections.map((connection) => (
+              <button key={connection.id} type="button" role="menuitem" onClick={() => addConnectionTab(connection.id)}
+                style={{ display: 'block', width: '100%', padding: '7px 10px', border: 0, borderRadius: 3, textAlign: 'left', cursor: 'pointer', color: colors.text, background: 'transparent', fontSize: font.md }}>
+                {connection.name}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
       <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
         {tabs.filter((tab) => tab.id === activeTabId).map((tab) => (
           <div key={tab.id} style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>

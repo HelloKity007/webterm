@@ -8,7 +8,7 @@ const en: Record<string, string> = {
   sidebar_expand: 'Expand Sidebar', sidebar_collapse: 'Collapse Sidebar',
   menu_edit: 'Edit', menu_copy: 'Duplicate', menu_delete: 'Delete', menu_move_to: 'Move to Group',
   menu_rename_group: 'Rename Group', menu_delete_group: 'Delete Group',
-  tab_new: 'New Tab', broadcast_off: 'Broadcast', broadcast_pane: 'This Pane', broadcast_all: 'All Tabs',
+  tab_new: 'New Tab', tab_no_connections: 'No SSH connections', broadcast_off: 'Broadcast', broadcast_pane: 'This Pane', broadcast_all: 'All Tabs',
   broadcast_toggle: 'Toggle broadcast',
   workspace_tabs: 'Workspace tabs', workspace_name: 'Workspace name', workspace_new: 'New workspace',
   workspace_create: 'Create workspace', workspace_create_mode: 'Choose how to create it', workspace_blank: 'Blank workspace', workspace_copy: 'Copy current layout',
