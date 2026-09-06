@@ -110,7 +110,7 @@ select:focus, input:focus, textarea:focus, button:focus-visible, [role="button"]
 .terminal-root, .terminal-surface { background: #1f211f !important; }
 .terminal-surface .xterm { background: #1f211f; color: #c7d8c8; }
 .terminal-surface .xterm-viewport { background: #1f211f !important; }
-.terminal-surface .xterm-screen { background: repeating-linear-gradient(to bottom, #202320 0, #202320 19px, #1d1f1d 20px, #1d1f1d 21px); }
+.terminal-surface .xterm-screen { background: #1f211f; }
 .terminal-tabbar > div[draggable="true"] { color: #3d5b42 !important; }
 .terminal-tabbar > div[draggable="true"]:hover { background: #a9d2aa !important; color: #203523 !important; }
 .workspace-tabs [role="tab"]:hover { background: #a9d2aa !important; color: #203523 !important; }
