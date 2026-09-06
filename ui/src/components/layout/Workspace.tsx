@@ -3,7 +3,6 @@ import ActivityBar from './ActivityBar';
 import Sidebar from './Sidebar';
 import MainArea from './MainArea';
 import SettingsPanel from '../config/SettingsPanel';
-import HeaderSearch from './HeaderSearch';
 import Icon from '../common/Icon';
 import { useLayoutStore } from '../../store/layout';
 import { t } from '../../i18n';
@@ -30,9 +29,6 @@ export default function Workspace() {
 
   return (
     <div className="app-shell" style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
-      <div className="app-header" aria-label="工具栏" style={{ height: 34, padding: '0 10px', background: colors.bg, borderBottom: '1px solid var(--c-border)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: font.md }}>
-        <HeaderSearch />
-      </div>
       <div className="app-body" style={{ flex: 1, display: 'flex', overflow: 'hidden', position: 'relative' }}>
         <ActivityBar onOpenSettings={() => setShowSettings(true)} sidebarCollapsed={sidebarCollapsed} onToggleSidebar={() => setSidebarCollapsed(!sidebarCollapsed)} />
         <Sidebar collapsed={sidebarCollapsed} width={sidebarWidth} />

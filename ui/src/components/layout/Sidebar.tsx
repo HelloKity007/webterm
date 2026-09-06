@@ -10,6 +10,7 @@ import CustomSelect from '../common/CustomSelect';
 import { apiPost, apiPut, apiDelete } from '../../api/client';
 import { t, getLang, setLang } from '../../i18n';
 import Icon from '../common/Icon';
+import HeaderSearch from './HeaderSearch';
 import { colors, font } from '../../theme/tokens';
 
 type SidebarConnection = Connection | DbConnection;
@@ -253,6 +254,7 @@ export default function Sidebar({ collapsed, width }: { collapsed: boolean; widt
         )}
       </div>
       {!collapsed && (<>
+        <div className="sidebar-search"><HeaderSearch /></div>
         {tagFilter && (
           <div style={{ padding: '0 8px 4px', display: 'flex', alignItems: 'center', gap: 4 }}>
             <span style={{ fontSize: font.xs, color: colors.accent, background: colors.accentDim, padding: '1px 6px', borderRadius: 4 }}>
