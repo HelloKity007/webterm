@@ -33,7 +33,7 @@ func TestPersistentTerminalCommandIsStableIsolatedAndShellSafe(t *testing.T) {
 	}
 	for _, fragment := range []string{
 		"window-size largest",
-		"status on",
+		"status off",
 		"set-titles on",
 		`set-titles-string 'webterm-grid:#{window_width}x#{window_height}'`,
 		`client-attached[200]`,

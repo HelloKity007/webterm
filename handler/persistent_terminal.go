@@ -49,18 +49,10 @@ func persistentTerminalCommand(userID, connectionID int64, terminalID string) (s
 	if err != nil {
 		return "", err
 	}
-	// tmux has one grid per shared window. Size it to the largest attached browser
-	// so the large-screen workspace is filled. The terminal title broadcasts that
-	// canonical grid to every browser; smaller browsers render the same full grid
-	// with an adaptive font instead of showing a cropped viewport. Bottom-follow
-	// hooks remain as a fallback while a browser is attaching or resizing.
-	// Mouse mode is set
-	// on this WebTerm session (rather than globally) so wheel events are forwarded
-	// to full-screen applications such as Claude Code and otherwise enter tmux
-	// copy mode for shell scrollback. Some user configs override WheelUpPane without
-	// checking mouse_any_flag. Tag WebTerm sessions and install a conditional wrapper
-	// that preserves that legacy behavior for every untagged/non-mouse pane.
-	return fmt.Sprintf("tmux start-server \\; set-option -g history-limit %d && (tmux has-session -t %s 2>/dev/null || tmux new-session -d -s %s) && tmux set-option -t %s window-size largest && tmux set-option -t %s status on && tmux set-option -t %s set-titles on && tmux set-option -t %s set-titles-string 'webterm-grid:#{window_width}x#{window_height}' && tmux set-hook -t %s 'client-attached[200]' 'set-option -t %s window-size largest; refresh-client -D -t \"#{hook_client}\" 9999' && tmux set-hook -t %s 'client-resized[200]' 'set-option -t %s window-size largest; refresh-client -D -t \"#{hook_client}\" 9999' && tmux set-hook -w -t %s 'window-resized[200]' 'run-shell \"tmux list-clients -t %s | cut -d: -f1 | xargs -r -I{} tmux refresh-client -D -t {} 9999\"' && tmux set-option -t %s mouse on && tmux set-option -t %s @webterm_mouse_passthrough on && tmux bind-key -n -T root WheelUpPane if-shell -F '#{&&:#{@webterm_mouse_passthrough},#{mouse_any_flag}}' 'send-keys -M' 'if-shell -F \"#{pane_in_mode}\" \"send-keys -M\" \"copy-mode -e; send-keys -M\"' && exec tmux attach-session -t %s", terminalHistoryLines, sessionName, sessionName, sessionName, sessionName, sessionName, sessionName, sessionName, sessionName, sessionName, sessionName, sessionName, sessionName, sessionName, sessionName, sessionName), nil
+	// Keep the shared tmux grid and mouse behavior, but hide tmux's own status
+	// line: WebTerm already provides the tab/panel chrome and the status line
+	// otherwise appears as an unexplained green bar at the bottom of every pane.
+	return fmt.Sprintf("tmux start-server \\; set-option -g history-limit %d && (tmux has-session -t %s 2>/dev/null || tmux new-session -d -s %s) && tmux set-option -t %s window-size largest && tmux set-option -t %s status off && tmux set-option -t %s set-titles on && tmux set-option -t %s set-titles-string 'webterm-grid:#{window_width}x#{window_height}' && tmux set-hook -t %s 'client-attached[200]' 'set-option -t %s window-size largest; refresh-client -D -t \"#{hook_client}\" 9999' && tmux set-hook -t %s 'client-resized[200]' 'set-option -t %s window-size largest; refresh-client -D -t \"#{hook_client}\" 9999' && tmux set-hook -w -t %s 'window-resized[200]' 'run-shell \"tmux list-clients -t %s | cut -d: -f1 | xargs -r -I{} tmux refresh-client -D -t {} 9999\"' && tmux set-option -t %s mouse on && tmux set-option -t %s @webterm_mouse_passthrough on && tmux bind-key -n -T root WheelUpPane if-shell -F '#{&&:#{@webterm_mouse_passthrough},#{mouse_any_flag}}' 'send-keys -M' 'if-shell -F \"#{pane_in_mode}\" \"send-keys -M\" \"copy-mode -e; send-keys -M\"' && exec tmux attach-session -t %s", terminalHistoryLines, sessionName, sessionName, sessionName, sessionName, sessionName, sessionName, sessionName, sessionName, sessionName, sessionName, sessionName, sessionName, sessionName, sessionName, sessionName), nil
 }
 
 func persistentTerminalFollowInputCommand(userID, connectionID int64, terminalID string) (string, error) {
