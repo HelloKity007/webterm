@@ -31,7 +31,6 @@ import {
   createTerminalMouseState,
   getTerminalGridPosition,
   getTerminalSelectionRange,
-  getTerminalSelectionRows,
   isForwardedTerminalPointerEvent,
   isTerminalSelectionDrag,
   pasteTerminalText,
@@ -43,7 +42,6 @@ import {
   routeTerminalMouseMove,
   routeTerminalMouseUp,
   shouldAutoFocusTerminal,
-  shouldPersistTerminalSelection,
 } from './terminalInteractions';
 import { calculateTerminalScale, defaultSharedTerminalGrid, parseSharedTerminalGridTitle, sharedGridForViewport, smallViewportWidth, type TerminalGrid } from './terminalScaling';
 import { getSharedTerminalGrid, setSharedTerminalGrid } from './terminalGridCache';
@@ -105,8 +103,6 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
   const [clipboardNotice, setClipboardNotice] = useState('');
   const [historyHelpOpen, setHistoryHelpOpen] = useState(false);
   const [, setSelectionCopyArmed] = useState(false);
-  const [selectionOverlayRows, setSelectionOverlayRows] = useState<Array<{ row: number; startColumn: number; endColumn: number }>>([]);
-  const [selectionOverlaySize, setSelectionOverlaySize] = useState<{ cols: number; rows: number } | null>(null);
   const contextSelectionRef = useRef('');
   const mouseStateRef = useRef(createTerminalMouseState());
   const wheelStateRef = useRef(createTerminalWheelState());
@@ -171,7 +167,6 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
     setSelectionCopyArmed(armed);
     if (armed) {
       selectionSnapshotRef.current = '';
-      setSelectionOverlayRows([]);
       termRef.current?.clearSelection();
       showClipboardNotice(t('term_select_copy_hint'));
     } else {
@@ -227,6 +222,19 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
     requestAnimationFrame(() => termRef.current?.focus());
   }, []);
 
+  // Copying should not leave a translucent visual selection behind. xterm can
+  // repaint its native selection after React's mouse-up handler, so clear it
+  // again on the next paints and task turn.
+  const clearVisualSelection = useCallback(() => {
+    const clear = () => termRef.current?.clearSelection();
+    clear();
+    requestAnimationFrame(() => {
+      clear();
+      requestAnimationFrame(clear);
+    });
+    setTimeout(clear, 0);
+  }, []);
+
   const handleSurfaceMouseDown = useCallback((event: ReactMouseEvent<HTMLDivElement>) => {
     if (selectionCopyArmedRef.current && event.button === 0) {
       event.preventDefault();
@@ -260,7 +268,6 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
         };
         selectionAnchorRef.current = anchor;
         selectionSnapshotRef.current = '';
-        setSelectionOverlayRows([]);
         termRef.current?.clearSelection();
         termRef.current?.focus();
         return;
@@ -307,23 +314,9 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       event.preventDefault();
       event.stopPropagation();
       const term = termRef.current;
-      const anchor = selectionAnchorRef.current;
       const selected = extendSelectionCopy(event.clientX, event.clientY);
       if (term && selected) {
-        if (shouldPersistTerminalSelection(term.buffer.active.type)) {
-          const viewportY = term.buffer.active.viewportY;
-          setSelectionOverlaySize({ cols: term.cols, rows: term.rows });
-          setSelectionOverlayRows(getTerminalSelectionRows(
-            { col: anchor.col, row: anchor.row - viewportY },
-            { col: selected.focus.col, row: selected.focus.row - viewportY },
-            term.cols,
-          ));
-        } else {
-          term.clearSelection();
-          setSelectionOverlayRows([]);
-          setSelectionOverlaySize(null);
-          requestAnimationFrame(() => term.clearSelection());
-        }
+        clearVisualSelection();
       }
       selectionAnchorRef.current = null;
       selectionCopyArmedRef.current = false;
@@ -340,22 +333,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
         { x: event.clientX, y: event.clientY },
       );
       const selected = selecting ? extendSelectionCopy(event.clientX, event.clientY) : null;
-      if (selecting && selected && termRef.current) {
-        if (shouldPersistTerminalSelection(termRef.current.buffer.active.type)) {
-          const viewportY = termRef.current.buffer.active.viewportY;
-          setSelectionOverlaySize({ cols: termRef.current.cols, rows: termRef.current.rows });
-          setSelectionOverlayRows(getTerminalSelectionRows(
-            { col: pending.anchor.col, row: pending.anchor.row - viewportY },
-            { col: selected.focus.col, row: selected.focus.row - viewportY },
-            termRef.current.cols,
-          ));
-        } else {
-          termRef.current.clearSelection();
-          setSelectionOverlayRows([]);
-          setSelectionOverlaySize(null);
-          requestAnimationFrame(() => termRef.current?.clearSelection());
-        }
-      }
+      if (selecting && selected && termRef.current) clearVisualSelection();
       pendingLeftGestureRef.current = null;
       selectionAnchorRef.current = null;
       if (selecting) {
@@ -370,7 +348,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       return;
     }
     routeTerminalMouseUp(event, mouseStateRef.current, { focusTerminal: focusTerminalAfterPointer });
-  }, [copySelectionText, extendSelectionCopy, focusTerminalAfterPointer]);
+  }, [clearVisualSelection, copySelectionText, extendSelectionCopy, focusTerminalAfterPointer]);
 
   useEffect(() => () => {
     if (clipboardNoticeTimerRef.current) clearTimeout(clipboardNoticeTimerRef.current);
@@ -893,7 +871,6 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
         inputViewportFollowedRef.current = true;
       }
       selectionSnapshotRef.current = '';
-      setSelectionOverlayRows([]);
       const isSource = myTabId === broadcastSourceId;
       const isTarget = broadcastScope !== 'off' && !isSource;
 
@@ -927,25 +904,6 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
           setContextMenu(position);
         })}
       />
-      {selectionOverlayRows.length > 0 && selectionOverlaySize && (
-        <div className="terminal-selection-snapshot" aria-hidden="true" style={{
-          position: 'absolute', inset: '0 6px', zIndex: 11,
-          pointerEvents: 'none', overflow: 'hidden',
-        }}>
-          {selectionOverlayRows.map((selectionRow) => (
-            <div key={`${selectionRow.row}-${selectionRow.startColumn}-${selectionRow.endColumn}`} style={{
-              position: 'absolute',
-              top: `${selectionRow.row * 100 / selectionOverlaySize.rows}%`,
-              height: `${100 / selectionOverlaySize.rows}%`,
-              left: `${selectionRow.startColumn * 100 / selectionOverlaySize.cols}%`,
-              width: `${(selectionRow.endColumn - selectionRow.startColumn) * 100 / selectionOverlaySize.cols}%`,
-              background: getTheme(themeName || 'XTerminal Green').selectionBackground,
-              outline: '1px solid var(--c-accent)',
-              opacity: 0.28,
-            }} />
-          ))}
-        </div>
-      )}
       <button type="button" aria-label={t('term_history_title')} title={t('term_history_title')}
         onClick={() => setHistoryHelpOpen((open) => !open)} style={{
           position: 'absolute', top: 5, right: 11, zIndex: 12,
