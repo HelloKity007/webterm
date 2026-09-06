@@ -10,6 +10,11 @@ export interface TerminalScaleOptions {
   scale: number;
 }
 
+// Give a small-only client a deterministic shared grid. A larger client can
+// still grow this target through the authoritative tmux title announcement.
+export const defaultSharedTerminalGrid: TerminalGrid = { cols: 240, rows: 60 };
+export const smallViewportWidth = 1280;
+
 const sharedGridTitle = /^webterm-grid:(\d+)x(\d+)$/;
 
 // tmux reports the window content height. WebTerm forces the tmux status line

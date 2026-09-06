@@ -47,6 +47,18 @@ describe('terminal CLI history support', () => {
     clock.mockRestore();
   });
 
+  it('uses the rate-limited page fallback for ordinary alternate-screen wheel input', () => {
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(3_000);
+    const state = createTerminalWheelState();
+    const sendPage = vi.fn();
+    const event = new WheelEvent('wheel', { cancelable: true, deltaY: -80 });
+
+    expect(routeTerminalWheel(event, { alternateScreen: true, state, sendPage })).toBe(false);
+    expect(event.defaultPrevented).toBe(true);
+    expect(sendPage).toHaveBeenCalledWith('up');
+    clock.mockRestore();
+  });
+
   it('uses a fixed action instead of typing a shell command into the active composer', () => {
     expect(terminalActionMessage(launchCodexScrollableAction)).toBe('{"action":"launch_codex_scrollable"}');
     expect(terminalActionMessage(resumeTerminalInputAction)).toBe('{"action":"resume_terminal_input"}');

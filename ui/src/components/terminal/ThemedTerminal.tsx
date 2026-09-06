@@ -45,7 +45,7 @@ import {
   shouldAutoFocusTerminal,
   shouldPersistTerminalSelection,
 } from './terminalInteractions';
-import { calculateTerminalScale, parseSharedTerminalGridTitle, type TerminalGrid } from './terminalScaling';
+import { calculateTerminalScale, defaultSharedTerminalGrid, parseSharedTerminalGridTitle, smallViewportWidth, type TerminalGrid } from './terminalScaling';
 import { getSharedTerminalGrid, setSharedTerminalGrid } from './terminalGridCache';
 
 interface Props {
@@ -533,9 +533,13 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
         fitAddon.fit();
 
         const nativeGrid = { cols: term.cols, rows: term.rows };
+        const useSmallViewportBaseline = window.innerWidth < smallViewportWidth;
         const targetGrid = sharedGrid ? {
           cols: Math.max(nativeGrid.cols, sharedGrid.cols),
           rows: Math.max(nativeGrid.rows, sharedGrid.rows),
+        } : useSmallViewportBaseline ? {
+          cols: Math.max(nativeGrid.cols, defaultSharedTerminalGrid.cols),
+          rows: Math.max(nativeGrid.rows, defaultSharedTerminalGrid.rows),
         } : nativeGrid;
         const screen = term.element?.querySelector<HTMLElement>('.xterm-screen');
         const nativeCellWidth = screen && nativeGrid.cols > 0
@@ -575,24 +579,26 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
 
         if (targetGrid.cols !== nativeGrid.cols || targetGrid.rows !== nativeGrid.rows) {
           pendingScreenScaleFrame = requestAnimationFrame(() => {
-            pendingScreenScaleFrame = null;
-            const surface = ref.current;
-            const scaledScreen = term.element?.querySelector<HTMLElement>('.xterm-screen');
-            if (!surface || !scaledScreen) return;
-            const surfaceStyle = getComputedStyle(surface);
-            const availableWidth = surface.clientWidth - parseFloat(surfaceStyle.paddingLeft) - parseFloat(surfaceStyle.paddingRight);
-            const availableHeight = surface.clientHeight;
-            const screenRect = scaledScreen.getBoundingClientRect();
-            if (availableWidth <= 0 || availableHeight <= 0 || screenRect.width <= 0 || screenRect.height <= 0) return;
-            // Browser font rasterisation rounds cell dimensions to device
-            // pixels. Correct only that residual error so the complete last
-            // row/column is visible and the scaled grid fills the small pane.
-            const screenScaleX = availableWidth / screenRect.width;
-            const screenScaleY = availableHeight / screenRect.height;
-            scaledScreen.style.transformOrigin = 'top left';
-            scaledScreen.style.transform = `scale(${screenScaleX}, ${screenScaleY})`;
-            surface.dataset.screenScaleX = screenScaleX.toFixed(3);
-            surface.dataset.screenScaleY = screenScaleY.toFixed(3);
+            pendingScreenScaleFrame = requestAnimationFrame(() => {
+              pendingScreenScaleFrame = null;
+              const surface = ref.current;
+              const scaledScreen = term.element?.querySelector<HTMLElement>('.xterm-screen');
+              if (!surface || !scaledScreen) return;
+              const surfaceStyle = getComputedStyle(surface);
+              const availableWidth = surface.clientWidth - parseFloat(surfaceStyle.paddingLeft) - parseFloat(surfaceStyle.paddingRight);
+              const availableHeight = surface.clientHeight;
+              const screenRect = scaledScreen.getBoundingClientRect();
+              if (availableWidth <= 0 || availableHeight <= 0 || screenRect.width <= 0 || screenRect.height <= 0) return;
+              // Wait one extra paint for xterm's canvas/scroll-area dimensions;
+              // measuring immediately after resize can apply a stale scale and
+              // leave a partially painted screen with blank space.
+              const screenScaleX = availableWidth / screenRect.width;
+              const screenScaleY = availableHeight / screenRect.height;
+              scaledScreen.style.transformOrigin = 'top left';
+              scaledScreen.style.transform = `scale(${screenScaleX}, ${screenScaleY})`;
+              surface.dataset.screenScaleX = screenScaleX.toFixed(3);
+              surface.dataset.screenScaleY = screenScaleY.toFixed(3);
+            });
           });
         }
 
@@ -615,10 +621,9 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
     const titleDisposable = term.onTitleChange((title) => {
       const announcedGrid = parseSharedTerminalGridTitle(title);
       if (!announcedGrid) return;
-      const nextGrid = sharedGrid ? {
-        cols: Math.max(sharedGrid.cols, announcedGrid.cols),
-        rows: Math.max(sharedGrid.rows, announcedGrid.rows),
-      } : announcedGrid;
+      // tmux's window-size largest title is authoritative. Do not retain a
+      // stale larger grid after a client detaches or a pane is resized.
+      const nextGrid = announcedGrid;
       if (sharedGrid?.cols === nextGrid.cols && sharedGrid.rows === nextGrid.rows) return;
       sharedGrid = nextGrid;
       if (myTabId) setSharedTerminalGrid(myTabId, nextGrid);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { calculateTerminalScale, parseSharedTerminalGridTitle } from './terminalScaling';
+import { calculateTerminalScale, defaultSharedTerminalGrid, parseSharedTerminalGridTitle } from './terminalScaling';
 
 describe('parseSharedTerminalGridTitle', () => {
   it('converts the tmux content height to the complete client height', () => {
@@ -14,6 +14,9 @@ describe('parseSharedTerminalGridTitle', () => {
 });
 
 describe('calculateTerminalScale', () => {
+  it('provides a deterministic small-viewport baseline', () => {
+    expect(defaultSharedTerminalGrid).toEqual({ cols: 240, rows: 60 });
+  });
   it('keeps the configured font for a native-size shared grid', () => {
     expect(calculateTerminalScale({ cols: 350, rows: 62 }, { cols: 350, rows: 62 }, 14, 8)).toEqual({
       fontSize: 14,
