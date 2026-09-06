@@ -142,9 +142,17 @@ async function closeWorkspace(workspaceID: string) {
   const terminalIDs = Object.values(workspace.layout.panes).flatMap((pane) => pane.tabs
     .filter((tab) => tab.type === 'ssh' && tab.connId)
     .map((tab) => ({ connId: tab.connId!, tabId: tab.id, panelNumber: tab.labelNumber || 1 })));
-  await Promise.all(terminalIDs.map(({ connId, tabId, panelNumber }) => closeTerminalSession(connId, tabId, workspace.index, panelNumber).catch((error) => {
-    console.error('Failed to close workspace terminal session:', error);
-  })));
+  const cleanupResults = await Promise.all(terminalIDs.map(async ({ connId, tabId, panelNumber }) => {
+    try {
+      await closeTerminalSession(connId, tabId, workspace.index, panelNumber);
+      return true;
+    } catch (error) {
+      console.error('Failed to close workspace terminal session; keeping workspace open:', error);
+      return false;
+    }
+  }));
+  // Keep the workspace reference when any tmux cleanup failed so the user can retry.
+  if (cleanupResults.some((success) => !success)) return;
   const remaining = workspaceState.workspaceTabs.filter((candidate) => candidate.id !== workspaceID);
   workspaceState = { workspaceTabs: remaining };
   if (activeWorkspaceTabID === workspaceID) activeWorkspaceTabID = remaining[0].id;
@@ -507,12 +515,15 @@ function LeafPane({ nodeId, onActiveSshChange, isInSplit, workspaceIndex }: {
     setFocusedPane(nodeId);
     setShowAddMenu(false);
   };
-  const closeTab = (id: string) => {
+  const closeTab = async (id: string) => {
     const tab = tabs.find((candidate) => candidate.id === id);
     if (tab?.type === 'ssh' && tab.connId) {
-      void closeTerminalSession(tab.connId, tab.id, workspaceIndex, tab.labelNumber ?? tabs.findIndex((candidate) => candidate.id === tab.id) + 1).catch((error) => {
-        console.error('Failed to close persistent terminal session:', error);
-      });
+      try {
+        await closeTerminalSession(tab.connId, tab.id, workspaceIndex, tab.labelNumber ?? tabs.findIndex((candidate) => candidate.id === tab.id) + 1);
+      } catch (error) {
+        console.error('Failed to close persistent terminal session; keeping tab open:', error);
+        return;
+      }
     }
     setTabs((prev) => {
       const next = prev.filter((t) => t.id !== id);
