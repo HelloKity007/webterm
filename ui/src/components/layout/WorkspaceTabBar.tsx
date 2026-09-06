@@ -16,7 +16,7 @@ export default function WorkspaceTabBar({ tabs, activeWorkspaceTabId, onSelect, 
   const [editingID, setEditingID] = useState<string | null>(null);
   const [editingName, setEditingName] = useState('');
   const [showCreate, setShowCreate] = useState(false);
-  const [createMode, setCreateMode] = useState<WorkspaceCreateMode>('blank');
+  const [createMode, setCreateMode] = useState<WorkspaceCreateMode>('copy');
   const cancelRenameRef = useRef(false);
 
   const beginRename = (workspace: WorkspaceTab) => {
@@ -30,7 +30,7 @@ export default function WorkspaceTabBar({ tabs, activeWorkspaceTabId, onSelect, 
     setEditingID(null);
   };
   const openCreate = () => {
-    setCreateMode('blank');
+    setCreateMode('copy');
     setShowCreate(true);
   };
 

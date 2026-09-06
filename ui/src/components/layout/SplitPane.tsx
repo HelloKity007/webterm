@@ -17,6 +17,7 @@ import { useWebSocket } from '../../hooks/useWebSocket';
 import { replaceLeafWithEightPaneGrid } from './layoutPresets';
 import { closeTerminalSession } from '../../api/terminalSessions';
 import WorkspaceTabBar from './WorkspaceTabBar';
+import { getSharedTerminalGrid, setSharedTerminalGrid } from '../terminal/terminalGridCache';
 import {
   createWorkspaceTab,
   emptyPersistedWorkspace,
@@ -154,6 +155,7 @@ async function closeWorkspace(workspaceID: string) {
 
 function addWorkspace(mode: WorkspaceCreateMode) {
   syncActiveWorkspaceLayout();
+  const sourceWorkspace = workspaceState.workspaceTabs.find((workspace) => workspace.id === activeWorkspaceTabID);
   const { connections, dbConnections } = useConnectionStore.getState();
   const connectionNames = new Map<string, string>([
     ...connections.map((connection) => [`ssh:${connection.id}`, connection.name] as const),
@@ -161,6 +163,20 @@ function addWorkspace(mode: WorkspaceCreateMode) {
   ]);
   const created = createWorkspaceTab(workspaceState, activeWorkspaceTabID, mode, nextLayoutID,
     (tab) => connectionNames.get(`${tab.type}:${tab.connId}`) || (tab.type === 'ssh' ? 'SSH' : 'Database'));
+  if (mode === 'copy' && sourceWorkspace) {
+    const sourceByLabel = new Map<number, string>();
+    for (const pane of Object.values(sourceWorkspace.layout.panes)) {
+      for (const tab of pane.tabs) if (tab.labelNumber) sourceByLabel.set(tab.labelNumber, tab.id);
+    }
+    for (const pane of Object.values(created.workspace.layout.panes)) {
+      for (const tab of pane.tabs) {
+        if (!tab.labelNumber) continue;
+        const sourceID = sourceByLabel.get(tab.labelNumber);
+        const grid = sourceID ? getSharedTerminalGrid(sourceID) : null;
+        if (grid) setSharedTerminalGrid(tab.id, grid);
+      }
+    }
+  }
   workspaceState = created.value;
   activeWorkspaceTabID = created.workspace.id;
   restoreLayout(created.workspace.layout);

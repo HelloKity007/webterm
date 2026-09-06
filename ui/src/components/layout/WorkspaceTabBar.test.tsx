@@ -49,7 +49,8 @@ describe('WorkspaceTabBar', () => {
     render(<WorkspaceTabBar tabs={tabs} activeWorkspaceTabId="workspace-1" onSelect={vi.fn()} onRename={vi.fn()} onCreate={onCreate} />);
 
     fireEvent.click(screen.getByRole('button', { name: '新建工作区' }));
-    expect(screen.getByRole('radio', { name: '空白工作区' })).toHaveProperty('checked', true);
+    expect(screen.getByRole('radio', { name: '复制当前布局' })).toHaveProperty('checked', true);
+    fireEvent.click(screen.getByRole('radio', { name: '空白工作区' }));
     fireEvent.click(screen.getByRole('button', { name: '创建工作区' }));
     expect(onCreate).toHaveBeenCalledWith('blank');
 

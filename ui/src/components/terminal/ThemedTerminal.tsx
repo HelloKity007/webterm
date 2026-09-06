@@ -46,6 +46,7 @@ import {
   shouldPersistTerminalSelection,
 } from './terminalInteractions';
 import { calculateTerminalScale, parseSharedTerminalGridTitle, type TerminalGrid } from './terminalScaling';
+import { getSharedTerminalGrid, setSharedTerminalGrid } from './terminalGridCache';
 
 interface Props {
   connId: number;
@@ -63,7 +64,6 @@ interface ZTransfer { accept: () => Promise<void>; get_payloads: () => unknown; 
 interface ZSession { type: 'send' | 'receive'; on: (event: string, callback: (value?: ZTransfer) => void) => void; start: () => void; abort: () => void; }
 interface ZDetection { deny: () => void; confirm: () => ZSession; }
 type TerminalSendRegistry = Window & Record<string, (data: string) => void>;
-const sharedTerminalGridCache = new Map<string, TerminalGrid>();
 
 interface PendingLeftGesture {
   anchor: { col: number; row: number };
@@ -495,7 +495,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
     });
 
     let resizingForSharedGrid = false;
-    let sharedGrid: TerminalGrid | null = myTabId ? sharedTerminalGridCache.get(myTabId) || null : null;
+    let sharedGrid: TerminalGrid | null = myTabId ? getSharedTerminalGrid(myTabId) : null;
     let pendingFitFrame: number | null = null;
     let pendingScreenScaleFrame: number | null = null;
 
@@ -569,7 +569,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
         ref.current.dataset.screenScaleX = '1.000';
         ref.current.dataset.screenScaleY = '1.000';
         sharedGrid = targetGrid;
-        if (myTabId) sharedTerminalGridCache.set(myTabId, targetGrid);
+        if (myTabId) setSharedTerminalGrid(myTabId, targetGrid);
 
         if (targetGrid.cols !== nativeGrid.cols || targetGrid.rows !== nativeGrid.rows) {
           pendingScreenScaleFrame = requestAnimationFrame(() => {
@@ -619,7 +619,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       } : announcedGrid;
       if (sharedGrid?.cols === nextGrid.cols && sharedGrid.rows === nextGrid.rows) return;
       sharedGrid = nextGrid;
-      if (myTabId) sharedTerminalGridCache.set(myTabId, nextGrid);
+      if (myTabId) setSharedTerminalGrid(myTabId, nextGrid);
       scheduleFit();
     });
 
@@ -713,7 +713,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       // fallback PTY size (especially after a layout or tab-title update).
       const term = termRef.current;
       if (term && term.cols > 1 && term.rows > 0) {
-        const cachedGrid = terminalID ? sharedTerminalGridCache.get(terminalID) : null;
+        const cachedGrid = terminalID ? getSharedTerminalGrid(terminalID) : null;
         sendNow(JSON.stringify({
           cols: Math.max(term.cols, cachedGrid?.cols || 0),
           rows: Math.max(term.rows, cachedGrid?.rows || 0),
