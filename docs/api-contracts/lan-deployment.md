@@ -30,18 +30,18 @@
 ## `GET /ws/ssh/{connection_id}`
 
 - 鉴权：现有 JWT `token` query 参数；浏览器不能在 WebSocket 握手中附带 `Authorization` header。
-- 必填 query：`terminal_id`，即已持久化布局中的 tab ID。
-- 行为：服务端以当前应用用户、连接 ID 和 `terminal_id` 派生受控 tmux 名称，执行 `tmux new-session -A -s …`。关闭所有浏览器只会 detach；重开相同 tab 会 attach 到同一 shell。
+- 必填 query：`terminal_id`，即已持久化布局中的 tab ID；`workspace_index` 和 `panel_number` 用于生成可读名称。
+- 行为：服务端以用户、Workspace/Tab 编号、Panel 编号和 `terminal_id` 派生受控 tmux 名称 `wt<user两位>-<workspace两位>-<panel两位>-<hash>`，执行 `tmux new-session -A -s …`。旧格式会在首次连接时自动迁移。关闭所有浏览器只会 detach；重开相同 tab 会 attach 到同一 shell。
 - 共享尺寸：同一 session 有多个不同大小的浏览器/pane 同时 attach 时使用 tmux `window-size largest`，由最大客户端决定并铺满共享 grid。tmux 通过受控 terminal title 广播权威 grid；较小浏览器以自适应字号和单元格间距显示完整 grid，不裁切右侧或底部。
 - 固定控制 action：`clear_history`、`launch_codex_scrollable`、`resume_terminal_input`、`follow_terminal_input`。服务端重新派生 tmux target，不接受客户端给出的 session 名或 shell 命令；恢复输入会取消 tmux copy-mode，否则发送 `Ctrl+End` 给前台 CLI；视口跟随只把同 session 的较小客户端移到底部，不向前台程序键入内容。
 - 前提：SSH 目标机必须安装 `tmux`。用户在 shell 中执行 `exit`，或远端管理员执行 `tmux kill-session`，会终止该持久终端。
-- 隔离：不同应用用户、连接或 tab ID 绝不复用 tmux 名称；`terminal_id` 不直接插入 shell 命令。
+- 隔离：用户编号和 terminal hash 保持会话隔离；`terminal_id` 不直接插入 shell 命令。
 
 ## `DELETE /api/terminal-sessions/{connection_id}`
 
 - 鉴权：现有 JWT `Authorization: Bearer …`。
-- 必填 query：`terminal_id`，即用户明确关闭的 tab ID。
-- 行为：幂等终止该用户、连接和 tab 唯一对应的 tmux session；所有 attach 到它的 SSH/WebSocket 会话随后结束并释放。只关闭浏览器或网络断开不会调用此接口。
+- 必填 query：`terminal_id`，即用户明确关闭的 tab ID；新客户端同时发送 `workspace_index` 和 `panel_number`。
+- 行为：幂等终止对应的 tmux session；所有 attach 到它的 SSH/WebSocket 会话随后结束并释放。只关闭浏览器或网络断开不会调用此接口。
 - 隔离：服务端重新派生受控 tmux 名称，绝不接受客户端提供的 tmux session 名。
 
 ## Connection resource extension
