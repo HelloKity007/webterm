@@ -5,15 +5,11 @@ import MainArea from './MainArea';
 import SettingsPanel from '../config/SettingsPanel';
 import HeaderSearch from './HeaderSearch';
 import Icon from '../common/Icon';
-import { useAuthStore } from '../../store/auth';
 import { useLayoutStore } from '../../store/layout';
-import { t, getLang, setLang } from '../../i18n';
+import { t } from '../../i18n';
 import { colors, font } from '../../theme/tokens';
 
 export default function Workspace() {
-  const user = useAuthStore((s) => s.user);
-  const token = useAuthStore((s) => s.token);
-  const logout = useAuthStore((s) => s.logout);
   const [showSettings, setShowSettings] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
   const statusConn = useLayoutStore((s) => s.statusConn);
@@ -34,27 +30,8 @@ export default function Workspace() {
 
   return (
     <div className="app-shell" style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
-      <div className="app-header" style={{ height: 36, padding: '0 12px', background: colors.bg, borderBottom: '1px solid var(--c-border)', display: 'flex', alignItems: 'center', flexShrink: 0, fontSize: font.md }}>
-        <span className="brand-mark" style={{ color: colors.accent, fontWeight: 700, fontSize: font.lg, fontFamily: '"JetBrains Mono", "JetBrains Maple Mono", Consolas, monospace', textShadow: '0 0 8px var(--c-accent-mid)', flexShrink: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
-          <Icon name="terminal" size={16} color={colors.accent} style={{ filter: 'drop-shadow(0 0 6px var(--c-accent-mid))' }} /> WEBTERM
-        </span>
+      <div className="app-header" aria-label="工具栏" style={{ height: 34, padding: '0 10px', background: colors.bg, borderBottom: '1px solid var(--c-border)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: font.md }}>
         <HeaderSearch />
-        {/* Right side */}
-        <span style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-          <span onClick={() => { const lang = getLang() === 'zh' ? 'en' : 'zh'; setLang(lang); window.location.reload(); }}
-            className="header-btn"
-            style={{ color: colors.textMuted, cursor: 'pointer', userSelect: 'none', padding: '2px 8px', borderRadius: 4, border: '1px solid var(--c-border)', textAlign: 'center', flexShrink: 0 }}>
-            {getLang() === 'zh' ? 'EN' : '中'}
-          </span>
-          <span className="header-btn user-chip"
-            style={{ color: user ? colors.text : colors.textMuted, flexShrink: 0, padding: '2px 8px', borderRadius: 4, border: '1px solid var(--c-border)' }}>
-            {user?.username || t('not_logged_in')}
-          </span>
-          <button onClick={token ? logout : undefined} className="header-btn logout-btn"
-            style={{ background: 'transparent', color: token ? colors.textMuted : colors.border, border: '1px solid var(--c-border)', padding: '2px 10px', borderRadius: 4, cursor: token ? 'pointer' : 'default', flexShrink: 0, opacity: token ? 1 : 0.4 }}>
-            {t('logout')}
-          </button>
-        </span>
       </div>
       <div className="app-body" style={{ flex: 1, display: 'flex', overflow: 'hidden', position: 'relative' }}>
         <ActivityBar onOpenSettings={() => setShowSettings(true)} sidebarCollapsed={sidebarCollapsed} onToggleSidebar={() => setSidebarCollapsed(!sidebarCollapsed)} />
@@ -64,7 +41,7 @@ export default function Workspace() {
         {!sidebarCollapsed && (
           <div onMouseDown={onSidebarResizeStart}
             style={{
-              position: 'absolute', left: 44 + sidebarWidth - 3, top: 0, bottom: 0,
+              position: 'absolute', left: 38 + sidebarWidth - 3, top: 0, bottom: 0,
               width: 6, cursor: 'col-resize', zIndex: 10,
               display: 'flex', alignItems: 'center', justifyContent: 'center',
             }}

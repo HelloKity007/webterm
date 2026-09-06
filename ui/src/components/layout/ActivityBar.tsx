@@ -31,7 +31,7 @@ export default function ActivityBar({ onOpenSettings, sidebarCollapsed, onToggle
 
   return (
     <div className="activity-rail" style={{
-      width: 44, background: colors.bg, display: 'flex', flexDirection: 'column', borderRight: '1px solid var(--c-border)',
+      width: 38, background: colors.bg, display: 'flex', flexDirection: 'column', borderRight: '1px solid var(--c-border)',
       alignItems: 'center', paddingTop: 4, gap: 4, flexShrink: 0,
     }}>
       <div className="activity-btn" title={sidebarCollapsed ? t('sidebar_expand') : t('sidebar_collapse')} onClick={() => { if (token) onToggleSidebar(); }}

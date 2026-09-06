@@ -8,7 +8,7 @@ import DbConnectionForm from '../config/DbConnectionForm';
 import ContextMenu from '../common/ContextMenu';
 import CustomSelect from '../common/CustomSelect';
 import { apiPost, apiPut, apiDelete } from '../../api/client';
-import { t } from '../../i18n';
+import { t, getLang, setLang } from '../../i18n';
 import Icon from '../common/Icon';
 import { colors, font } from '../../theme/tokens';
 
@@ -56,6 +56,8 @@ export default function Sidebar({ collapsed, width }: { collapsed: boolean; widt
   const typeStr = isSsh ? 'ssh' : 'database';
 
   const token = useAuthStore((s) => s.token);
+  const user = useAuthStore((s) => s.user);
+  const logout = useAuthStore((s) => s.logout);
   useEffect(() => {
     if (!token) return;
     if (activeModule === 'ssh' || activeModule === 'sftp') {
@@ -280,6 +282,18 @@ export default function Sidebar({ collapsed, width }: { collapsed: boolean; widt
             </>
           )}
           {isDb && dbConnections.map((c: DbConnection) => renderConnItem(c, true))}
+        </div>
+        <div className="sidebar-account" aria-label="账户与偏好">
+          <span className="sidebar-account-user" title={user?.username || t('not_logged_in')}>
+            <Icon name="user" size={12} />
+            <span>{user?.username || t('not_logged_in')}</span>
+          </span>
+          <button type="button" className="sidebar-account-action" onClick={() => { setLang(getLang() === 'zh' ? 'en' : 'zh'); window.location.reload(); }}>
+            {getLang() === 'zh' ? 'EN' : '中'}
+          </button>
+          <button type="button" className="sidebar-account-action sidebar-account-logout" onClick={logout} disabled={!token}>
+            {t('logout')}
+          </button>
         </div>
         {(isSsh || isDb) && (
           <div style={{ borderTop: '1px solid var(--c-border)', padding: '4px 8px', marginTop: 'auto' }}>

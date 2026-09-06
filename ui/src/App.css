@@ -76,18 +76,24 @@ select:focus, input:focus, textarea:focus, button:focus-visible, [role="button"]
 /* WebTerm OLED workspace skin. Inline component styles remain the source of
    geometry; these rules provide the shared visual language and states. */
 .app-shell { background: var(--c-bg); color: var(--c-text); }
-.app-header { height: 42px !important; padding: 0 16px !important; background: linear-gradient(180deg, #b9dcb9 0%, #a6cfa7 100%) !important; border-bottom-color: #80ad82 !important; }
+.app-header { height: 34px !important; padding: 0 10px !important; background: linear-gradient(180deg, #b9dcb9 0%, #a6cfa7 100%) !important; border-bottom-color: #80ad82 !important; }
 .app-header .brand-mark { letter-spacing: .08em; }
 .app-body { background: #c9e3c9; }
 .app-statusbar { height: 26px !important; background: #b9dcb9 !important; border-top-color: #80ad82 !important; color: var(--c-text-dim) !important; }
 .header-search-shell { height: 30px !important; width: min(420px, 42vw) !important; background: #e6f2e4 !important; border-color: #80ad82 !important; border-radius: 8px !important; }
 .header-search-shell:focus-within { border-color: var(--c-accent) !important; box-shadow: 0 0 0 3px var(--c-accent-dim) !important; }
-.activity-rail { width: 52px !important; background: #b9dcb9 !important; border-right-color: #80ad82 !important; padding-top: 10px !important; gap: 8px !important; }
-.activity-rail .activity-btn { width: 36px !important; height: 36px !important; border-radius: 8px !important; }
+.activity-rail { width: 38px !important; background: #b9dcb9 !important; border-right-color: #80ad82 !important; padding-top: 6px !important; gap: 5px !important; }
+.activity-rail .activity-btn { width: 30px !important; height: 30px !important; border-radius: 7px !important; }
 .activity-rail .activity-btn:hover { background: #a9d2aa !important; color: var(--c-text) !important; }
 .sidebar-shell { background: #c4dfc4 !important; border-right-color: #80ad82 !important; }
 .sidebar-shell [data-sidebar-item]:hover { background: #a9d2aa !important; }
 .sidebar-shell input, .sidebar-shell select { background: #e6f2e4 !important; border-color: #80ad82 !important; }
+.sidebar-account { display: flex; align-items: center; gap: 5px; padding: 7px 8px; border-top: 1px solid #80ad82; color: #3d5b42; min-height: 34px; }
+.sidebar-account-user { min-width: 0; flex: 1; display: flex; align-items: center; gap: 5px; overflow: hidden; font-size: var(--f-sm); }
+.sidebar-account-user span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sidebar-account-action { min-height: 25px; padding: 2px 6px; border: 1px solid #80ad82; border-radius: 4px; background: #d9edd9; color: #3d5b42; cursor: pointer; font-size: var(--f-xs); }
+.sidebar-account-action:hover:not(:disabled) { background: #a9d2aa; color: #203523; }
+.sidebar-account-action:disabled { opacity: .45; cursor: default; }
 .main-area-shell { background: #1f211f; }
 .workspace-tabs, .terminal-tabbar { background: #b9dcb9 !important; border-bottom-color: #80ad82 !important; }
 .workspace-tabs [role="tab"], .terminal-tabbar > div[draggable="true"] { transition: background-color .18s ease, color .18s ease; }
@@ -124,7 +130,7 @@ select:focus, input:focus, textarea:focus, button:focus-visible, [role="button"]
 @media (max-width: 900px) {
   .app-header { padding: 0 10px !important; }
   .header-search-shell { width: min(300px, 40vw) !important; }
-  .activity-rail { width: 46px !important; }
+  .activity-rail { width: 38px !important; }
 }
 @media (max-width: 640px) {
   .header-search-shell { width: 36px !important; padding: 0 9px !important; }
