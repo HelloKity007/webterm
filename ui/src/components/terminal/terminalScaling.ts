@@ -15,6 +15,14 @@ export interface TerminalScaleOptions {
 export const defaultSharedTerminalGrid: TerminalGrid = { cols: 240, rows: 60 };
 export const smallViewportWidth = 1280;
 
+export function sharedGridForViewport(announced: TerminalGrid, viewportWidth: number): TerminalGrid {
+  if (viewportWidth >= smallViewportWidth) return announced;
+  return {
+    cols: Math.max(announced.cols, defaultSharedTerminalGrid.cols),
+    rows: Math.max(announced.rows, defaultSharedTerminalGrid.rows),
+  };
+}
+
 const sharedGridTitle = /^webterm-grid:(\d+)x(\d+)$/;
 
 // tmux reports the window content height. WebTerm forces the tmux status line

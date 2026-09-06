@@ -45,7 +45,7 @@ import {
   shouldAutoFocusTerminal,
   shouldPersistTerminalSelection,
 } from './terminalInteractions';
-import { calculateTerminalScale, defaultSharedTerminalGrid, parseSharedTerminalGridTitle, smallViewportWidth, type TerminalGrid } from './terminalScaling';
+import { calculateTerminalScale, defaultSharedTerminalGrid, parseSharedTerminalGridTitle, sharedGridForViewport, smallViewportWidth, type TerminalGrid } from './terminalScaling';
 import { getSharedTerminalGrid, setSharedTerminalGrid } from './terminalGridCache';
 
 interface Props {
@@ -621,9 +621,11 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
     const titleDisposable = term.onTitleChange((title) => {
       const announcedGrid = parseSharedTerminalGridTitle(title);
       if (!announcedGrid) return;
-      // tmux's window-size largest title is authoritative. Do not retain a
-      // stale larger grid after a client detaches or a pane is resized.
-      const nextGrid = announcedGrid;
+      // tmux's title is authoritative for a connected shared session, but a
+      // small-only client still needs the deterministic baseline. Otherwise
+      // tmux echoes the small client's native grid and immediately erases the
+      // scale that was applied during the first fit.
+      const nextGrid = sharedGridForViewport(announcedGrid, window.innerWidth);
       if (sharedGrid?.cols === nextGrid.cols && sharedGrid.rows === nextGrid.rows) return;
       sharedGrid = nextGrid;
       if (myTabId) setSharedTerminalGrid(myTabId, nextGrid);
