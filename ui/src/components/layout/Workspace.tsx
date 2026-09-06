@@ -33,9 +33,9 @@ export default function Workspace() {
   }, [sidebarWidth]);
 
   return (
-    <div style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
-      <div style={{ height: 36, padding: '0 12px', background: colors.bg, borderBottom: '1px solid var(--c-border)', display: 'flex', alignItems: 'center', flexShrink: 0, fontSize: font.md }}>
-        <span style={{ color: colors.accent, fontWeight: 700, fontSize: font.lg, fontFamily: '"JetBrains Mono", "JetBrains Maple Mono", Consolas, monospace', textShadow: '0 0 8px var(--c-accent-mid)', flexShrink: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
+    <div className="app-shell" style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
+      <div className="app-header" style={{ height: 36, padding: '0 12px', background: colors.bg, borderBottom: '1px solid var(--c-border)', display: 'flex', alignItems: 'center', flexShrink: 0, fontSize: font.md }}>
+        <span className="brand-mark" style={{ color: colors.accent, fontWeight: 700, fontSize: font.lg, fontFamily: '"JetBrains Mono", "JetBrains Maple Mono", Consolas, monospace', textShadow: '0 0 8px var(--c-accent-mid)', flexShrink: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
           <Icon name="terminal" size={16} color={colors.accent} style={{ filter: 'drop-shadow(0 0 6px var(--c-accent-mid))' }} /> WEBTERM
         </span>
         <HeaderSearch />
@@ -46,7 +46,7 @@ export default function Workspace() {
             style={{ color: colors.textMuted, cursor: 'pointer', userSelect: 'none', padding: '2px 8px', borderRadius: 4, border: '1px solid var(--c-border)', textAlign: 'center', flexShrink: 0 }}>
             {getLang() === 'zh' ? 'EN' : '中'}
           </span>
-          <span className="header-btn"
+          <span className="header-btn user-chip"
             style={{ color: user ? colors.text : colors.textMuted, flexShrink: 0, padding: '2px 8px', borderRadius: 4, border: '1px solid var(--c-border)' }}>
             {user?.username || t('not_logged_in')}
           </span>
@@ -56,7 +56,7 @@ export default function Workspace() {
           </button>
         </span>
       </div>
-      <div style={{ flex: 1, display: 'flex', overflow: 'hidden', position: 'relative' }}>
+      <div className="app-body" style={{ flex: 1, display: 'flex', overflow: 'hidden', position: 'relative' }}>
         <ActivityBar onOpenSettings={() => setShowSettings(true)} sidebarCollapsed={sidebarCollapsed} onToggleSidebar={() => setSidebarCollapsed(!sidebarCollapsed)} />
         <Sidebar collapsed={sidebarCollapsed} width={sidebarWidth} />
         <MainArea />
@@ -87,7 +87,7 @@ export default function Workspace() {
         <SettingsPanel onClose={() => setShowSettings(false)} />
       )}
       {/* Global status bar */}
-      <div style={{
+      <div className="app-statusbar" style={{
         height: 22, flexShrink: 0, background: colors.bg, borderTop: '1px solid var(--c-border)',
         display: 'flex', alignItems: 'center', padding: '0 10px',
         fontSize: font.sm, color: colors.accent, gap: 10, lineHeight: '26px',

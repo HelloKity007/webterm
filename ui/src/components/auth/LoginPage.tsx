@@ -43,14 +43,14 @@ export default function LoginPage() {
   };
 
   return (
-    <div style={{
+    <div className="login-shell" style={{
       display: 'flex', alignItems: 'center', justifyContent: 'center',
       minHeight: '100vh', background: 'radial-gradient(circle at 15% 10%, #29345d 0%, transparent 30%), radial-gradient(circle at 85% 85%, #282045 0%, transparent 32%), #111522', position: 'relative', overflow: 'hidden', cursor: 'default',
     }} onClick={() => setTick((n) => n + 1)}>
       <MatrixRain key={tick} fontSize={18} columns={18} opacity={0.45} radial />
       <div style={{ position: 'absolute', width: 460, height: 460, borderRadius: '50%', background: 'rgba(122,162,247,0.11)', filter: 'blur(70px)', top: '-180px', left: '-120px' }} />
       <div style={{ position: 'absolute', width: 360, height: 360, borderRadius: '50%', background: 'rgba(187,154,247,0.10)', filter: 'blur(70px)', right: '-100px', bottom: '-140px' }} />
-      <form onSubmit={handleSubmit} onClick={(e) => e.stopPropagation()} style={{
+      <form className="login-card" onSubmit={handleSubmit} onClick={(e) => e.stopPropagation()} style={{
         background: 'linear-gradient(145deg, rgba(39,46,75,0.91), rgba(20,24,42,0.94))', border: '1px solid rgba(122,162,247,0.28)', borderRadius: 18, backdropFilter: 'blur(18px)',
         padding: 36, width: 420, maxWidth: 'calc(100vw - 40px)',
         display: 'flex', flexDirection: 'column', gap: 18,

@@ -229,7 +229,7 @@ export default function Sidebar({ collapsed, width }: { collapsed: boolean; widt
   };
 
   return (
-    <div style={{ width: collapsed ? 0 : width, flexShrink: 0, fontSize: font.md, display: 'flex', flexDirection: 'column', background: colors.bg, borderRight: '1px solid var(--c-border)', overflow: 'hidden' }}
+    <div className="sidebar-shell" style={{ width: collapsed ? 0 : width, flexShrink: 0, fontSize: font.md, display: 'flex', flexDirection: 'column', background: colors.bg, borderRight: '1px solid var(--c-border)', overflow: 'hidden' }}
       onContextMenu={(e) => {
         if ((e.target as HTMLElement).closest('[data-sidebar-item]')) return;
         e.preventDefault();

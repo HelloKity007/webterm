@@ -81,7 +81,7 @@ export default function MainArea() {
   const show = (m: string) => activeModule === m ? 'flex' : 'none';
 
   return (
-    <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+    <div className="main-area-shell" style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
       {/* SSH module */}
       <div style={{ flex: 1, display: show('ssh'), overflow: 'hidden', position: 'relative' }}>
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 }}>

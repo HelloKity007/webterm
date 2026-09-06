@@ -35,7 +35,7 @@ export default function WorkspaceTabBar({ tabs, activeWorkspaceTabId, onSelect, 
   };
 
   return (
-    <div style={{ position: 'relative', display: 'flex', alignItems: 'center', height: 38, flexShrink: 0, padding: '0 8px', gap: 4, overflow: 'visible', background: colors.bgDeep, borderBottom: `1px solid ${colors.border}` }}>
+    <div className="workspace-tabs" style={{ position: 'relative', display: 'flex', alignItems: 'center', height: 38, flexShrink: 0, padding: '0 8px', gap: 4, overflow: 'visible', background: colors.bgDeep, borderBottom: `1px solid ${colors.border}` }}>
       <div role="tablist" aria-label={t('workspace_tabs')} style={{ display: 'flex', alignItems: 'center', gap: 3, minWidth: 0, overflowX: 'auto', scrollbarWidth: 'thin' }}>
         {tabs.map((workspace) => {
           const label = `${workspace.index}: ${workspace.name}`;

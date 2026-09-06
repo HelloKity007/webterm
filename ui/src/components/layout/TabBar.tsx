@@ -47,7 +47,7 @@ export default function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab, onR
   };
 
   return (
-    <div style={{ display: 'flex', background: colors.bg, height: 36, alignItems: 'center', padding: '0 6px', gap: 2, flexShrink: 0, overflow: 'visible', borderBottom: '1px solid var(--c-border)' }}>
+    <div className="terminal-tabbar" style={{ display: 'flex', background: colors.bg, height: 36, alignItems: 'center', padding: '0 6px', gap: 2, flexShrink: 0, overflow: 'visible', borderBottom: '1px solid var(--c-border)' }}>
       {filtered.map((tab, idx) => (
         <React.Fragment key={tab.id}>
           {idx > 0 && (

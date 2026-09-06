@@ -22,12 +22,12 @@ export default function Modal({ title, onClose, children, width = 600, height = 
   }, [onClose]);
 
   return createPortal(
-    <div style={{
+    <div className="modal-scrim" style={{
       position: 'fixed', inset: 0, zIndex: 10000,
       background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)',
       display: 'flex', alignItems: 'center', justifyContent: 'center',
     }} onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div style={{
+      <div className="modal-card" style={{
         background: 'linear-gradient(150deg, rgba(38,43,67,0.98), rgba(22,25,40,0.98))', borderRadius: 16, width, height,
         maxWidth: 'calc(100vw - 32px)', maxHeight: 'calc(100vh - 32px)', border: '1px solid rgba(122,162,247,0.28)', '--ui-scale': unscaled ? 1 : undefined,
         display: 'flex', flexDirection: 'column', overflow: 'hidden',

@@ -30,7 +30,7 @@ export default function ActivityBar({ onOpenSettings, sidebarCollapsed, onToggle
   const token = useAuthStore((s) => s.token);
 
   return (
-    <div style={{
+    <div className="activity-rail" style={{
       width: 44, background: colors.bg, display: 'flex', flexDirection: 'column', borderRight: '1px solid var(--c-border)',
       alignItems: 'center', paddingTop: 4, gap: 4, flexShrink: 0,
     }}>

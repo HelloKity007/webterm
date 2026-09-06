@@ -62,7 +62,7 @@ export default function HeaderSearch() {
 
   return (
     <div ref={ref} style={{ flex: 1, display: 'flex', justifyContent: 'center', position: 'relative' }}>
-      <div style={{ display: 'flex', alignItems: 'center', borderRadius: 6, padding: '0 8px', height: 26, width: 360, background: colors.bgInput,
+      <div className="header-search-shell" style={{ display: 'flex', alignItems: 'center', borderRadius: 6, padding: '0 8px', height: 26, width: 360, background: colors.bgInput,
         border: focus ? '1px solid var(--c-accent)' : '1px solid var(--c-border)',
         boxShadow: focus ? '0 0 0 2px rgba(122,162,247,0.25)' : 'none',
         transition: 'border-color 0.15s, box-shadow 0.15s',
