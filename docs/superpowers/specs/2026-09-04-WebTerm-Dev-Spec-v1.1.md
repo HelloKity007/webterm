@@ -122,7 +122,7 @@
 
 #### F1 · 同账号多端布局/会话同步（核心护城河）
 **目标**：同一账号在多个浏览器登录，共享同一套布局与会话。
-- **复用现有机制**：`LayoutHub` 已按 `userID` 隔离订阅（revision 广播 + 权威拉取）；持久化终端已按 `wt-<userID>-<connID>-<hash>` 命名 tmux session。同账号多端天然共享——这正是 D1 选同账号模式的原因：**现有架构无需引入 workspace/member/invite 即可成立**。
+- **复用现有机制**：`LayoutHub` 已按 `userID` 隔离订阅（revision 广播 + 权威拉取）；持久化终端按 `wt<userID两位>-<workspace两位>-<panel两位>-<hash>` 命名 tmux session。同账号多端天然共享——这正是 D1 选同账号模式的原因：**现有架构无需引入 workspace/member/invite 即可成立**。
 - **强化点**：
   1. 布局 revision 持久化到 DB（当前可能仅内存），浏览器重开/服务端重启后不丢
   2. 多端并发修改布局的冲突合并（后写覆盖 + 增量 diff 提交，见 ADR-3）
@@ -141,7 +141,7 @@
   - [ ] 关闭一台，显示变 1 端
 
 #### F3 · 持久化终端（强化）
-现状：每个 pane 通过 `tmux new-session -Ad -s wt-<uid>-<connid>-<sha256(terminalId)[:8]>` + `attach-session` 实现多端 attach，`window-size largest` 防重连缩屏，`history-limit 200000`。
+现状：每个 pane 通过 `tmux new-session -Ad -s wt<uid两位>-<workspace两位>-<panel两位>-<sha256(terminalId)[:8]>` + `attach-session` 实现多端 attach，`window-size largest` 防重连缩屏，`history-limit 200000`。
 
 **强化项**：
 1. **启动预检**（D3）：连接建立时执行 `tmux -V`，版本 < 3.1 或不存在 → 返回明确错误（"目标主机需 tmux ≥ 3.1，请安装"），不静默失败

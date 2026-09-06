@@ -98,7 +98,7 @@ try {
   const token = temporaryLogin.token;
   const connection = await api(page, token, '/api/quick-connect/local', { method: 'POST', body: '{}' });
   const terminalID = `context-menu-tab-${randomBytes(8).toString('hex')}`;
-  sessionName = `wt-${temporaryUserID}-${connection.connection.id}-${createHash('sha256').update(terminalID).digest('hex').slice(0, 16)}`;
+  sessionName = `wt${String(temporaryUserID).padStart(2, '0')}-01-01-${createHash('sha256').update(terminalID).digest('hex').slice(0, 16)}`;
   const current = await api(page, token, '/api/layout');
   await api(page, token, '/api/layout', {
     method: 'PUT',
@@ -354,7 +354,7 @@ try {
   if (controllerToken && temporaryUserID && page) { try { await api(page, controllerToken, `/api/users/${temporaryUserID}`, { method: 'DELETE' }); } catch { /* cleanup best effort */ } }
   if (temporaryUserID) {
     try {
-      const prefix = `wt-${temporaryUserID}-`;
+      const prefix = `wt${String(temporaryUserID).padStart(2, '0')}-`;
       const sessions = execFileSync('tmux', ['list-sessions', '-F', '#{session_name}'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
         .trim().split('\n').filter((name) => name.startsWith(prefix));
       for (const name of sessions) execFileSync('tmux', ['kill-session', '-t', name], { stdio: 'ignore' });

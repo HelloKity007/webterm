@@ -37,7 +37,7 @@ function killTmuxSession(sessionName) {
 function temporaryUserSessions(userID) {
   if (!userID) return [];
   try {
-    const prefix = `wt-${userID}-`;
+    const prefix = `wt${String(userID).padStart(2, '0')}-`;
     return execFileSync('tmux', ['list-sessions', '-F', '#{session_name}'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
       .trim().split('\n').filter((session) => session.startsWith(prefix));
   } catch {
