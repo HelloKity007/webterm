@@ -1,8 +1,8 @@
 # WebTerm 深化开发规格说明书（Spec v1.2）
 
-> 状态：**Implementation active / Tab is next priority**
+> 状态：**Implementation active / M2 workspace tabs accepted; WS security is next**
 > 创建日期：2026-09-04；最近同步：2026-09-05
-> 已验收代码基线：`HelloKity007/webterm`，分支 `dev-1.0.0`，HEAD `1cb938f`
+> 已验收代码基线：`HelloKity007/webterm`，分支 `dev-1.0.1`，实现 HEAD `e8f2eef`
 > 取代：`2026-09-04-WebTerm-Dev-Spec-v1.1.md` 作为后续实施与验收依据
 > 实施计划：[2026-09-04-webterm-deep-development.md](../../exec-plans/active/2026-09-04-webterm-deep-development.md)
 
@@ -77,7 +77,7 @@ v1.1 的产品方向成立：WebTerm 的近期核心仍是“同一账号、多�
 | 一屏 8 pane | 已完成并验收 | `layoutPresets.ts`、Split 8；`87ec38e` | 保持回归；4×2、1×1 和 divider 作为后续布局增强 |
 | 拖动比例 | 未完成 | 树有 ratios，UI 无 divider drag | 实现拖动结束提交 |
 | pane 内会话 Tab | 已完成基础并验收 | `TabBar.tsx`、`layoutPersistence.ts`、`labelNumber`；`9dcb110` | 作为既有能力保留，不等同于下一阶段工作区 Tab |
-| 工作区 Tab | 未完成、下一优先级 | 当前只有单个共享 pane 网格；无上层工作区 Tab 容器 | 增加多 Tab 容器、固定索引、重命名、持久化与多端同步 |
+| 工作区 Tab | 已完成并通过发布测试验收 | `workspaceLayout.ts`、`WorkspaceTabBar.tsx`、schema v2 handler；`f812186`、`e8f2eef` | 转为回归门禁；M3 WS 安全成为下一阶段 |
 | 广播 | 部分完成 | 当前浏览器内 off/pane/all | 明确 active-visible 范围，增加共享组配置 |
 | SFTP 跟随 cd | 已完成基础 | OSC 7 → `sftpCdPaths` | 移出新增功能，保留回归 |
 | 自动重连 | 部分完成 | 最多 3 次指数退避 | 改为有界退避、无限生命周期、online 感知 |
@@ -458,5 +458,6 @@ JWT signing secret 必须来自稳定的生产配置/环境变量，使服务重
 ## 13. 变更记录
 
 - v1.2（2026-09-05 同步）：基线推进到 `1cb938f`；将 pengguanzhen 已提交的功能改动登记为验收通过；明确一屏 8 pane 已完成；把承载 pane 布局的工作区 Tab 设为下一优先级 P0，并补充“可重命名、前置固定数字索引”及迁移/持久化/验收要求。
+- v1.2（2026-09-05 M2 验收）：工作区 Tab schema v2、v1 迁移、固定编号、重命名、空白/复制与多端本地 active workspace 已通过真实 Chrome 8-pane 自动化；下一阶段切换为 M3 WS 安全与单写者。
 - v1.2：按仓库代码、现有 evidence 和上游官方资料完成审阅；修正 baseline、API、布局 schema、WS 鉴权事实、tmux/scrollback/小屏语义、xterm 6 fallback、冲突模型和性能验收；将 Codex/Claude CLI 历史回看提升为最高优先级 P0；形成可执行分阶段计划。
 - v1.1：原始深化开发草案，保留作决策背景。

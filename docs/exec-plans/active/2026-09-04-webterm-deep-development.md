@@ -1,10 +1,10 @@
 # WebTerm 深化开发分阶段实施计划（Spec v1.2）
 
-> Status: 🟡 In progress — Tab is next
+> Status: 🟡 In progress — M2 accepted, M3 is next
 > Created: 2026-09-04；Last synced: 2026-09-05
 > Source spec: `docs/superpowers/specs/2026-09-04-WebTerm-Dev-Spec-v1.2.md`
 > Target branch: `dev-1.0.1`
-> Accepted HEAD: `1cb938f`
+> Accepted implementation HEAD: `e8f2eef`
 
 ## 1. 目标
 
@@ -40,15 +40,15 @@
 |---|---|---|---|
 | M0 | 基线冻结与测量夹具 | 无 | 🟡 CLI/容量夹具已完成；安全/性能夹具随对应阶段补齐 |
 | M1 | Codex/Claude CLI 历史、复制与跨尺寸显示 | M0 | ✅ 已提交并按当前口径验收；转回归门禁 |
-| M2 | **工作区 Tab（下一优先级）** | 已验收 8 pane 基线 | 上层多 Tab 容器、固定编号、重命名、v1→v2 迁移、多端一致 |
-| M3 | WS 安全与单写者 | M2 | upgrade 前授权、Origin、ticket、无 race |
+| M2 | 工作区 Tab | 已验收 8 pane 基线 | ✅ 上层多 Tab、固定编号、重命名、v1→v2、真实浏览器多端验收通过 |
+| M3 | **WS 安全与单写者（下一优先级）** | M2 | upgrade 前授权、Origin、ticket、无 race |
 | M4 | tmux/SSH 保活与自动重连 | M3 | 断网/服务重启恢复、明确生命周期 |
 | M5 | 布局增强、divider 与冲突 UX | M2、M4 | 保持已验收 8 pane，补 1×1/4×2、拖动同步、CAS 收敛 |
 | M6 | presence 与共享广播组 | M5 | distinct client presence、8 pane 一次广播 |
 | M7 | WebGL fallback 与性能稳定 | M4、M5 | 受控负载达到门槛、context loss 可恢复 |
 | M8 | 三端系统验收与 P0 发布 | M1–M7 | 全门禁、证据包；复用已验收双环境提升/回滚链路 |
 
-M6 和 M7 在 M5 契约稳定后可并行开发，但合并前分别在最新共同基线上复验。**当前只把 M2 工作区 Tab 作为最高实现优先级；pane 内现有会话 Tab、已验收的一屏 8 pane 和 M1 不重复开发。**
+M6 和 M7 在 M5 契约稳定后可并行开发，但合并前分别在最新共同基线上复验。M2 已完成，下一阶段按依赖进入 M3；pane 内现有会话 Tab、已验收的一屏 8 pane 和 M1 不重复开发。
 
 ## 4. M0 — 基线冻结与测试夹具
 
@@ -138,7 +138,7 @@ M6 和 M7 在 M5 契约稳定后可并行开发，但合并前分别在最新共
 
 ## 6. M2 — 工作区 Tab（当前最高优先级）
 
-实施状态（2026-09-05）：尚未实现。当前只有一个共享 pane 网格；pane 内会话 Tab 已具备重命名和固定 `labelNumber`，但它不是本阶段要新增的上层工作区 Tab。M2 必须复用既有 panel/会话能力，不得用改名方式把两个层级混为一谈。
+实施状态（2026-09-05）：已完成并在发布测试环境通过。实现 schema v2、v1 无损迁移、固定编号、重命名、默认空白/显式复制、多端独立 active workspace；证据见 `2026-09-05-webterm-workspace-tabs-evidence.md`。
 
 ### 产品与数据任务
 
@@ -399,3 +399,5 @@ git diff --check
 - [2026-09-05] 验收边界推进到 `1cb938f`。M1 的历史、输入恢复、fullscreen 复制和跨尺寸缩放均已提交并按用户口径验收；双环境发布链路也已完成。
 - [2026-09-05] 用户确认一屏 8 pane 已实现；下一步优先实现工作区 Tab。Spec 与本计划均补充工作区 Tab 可重命名、前置固定数字索引、v1→v2 无损迁移和多端验收标准，并与既有 pane 内会话 Tab 明确区分。
 - [2026-09-05] 用户拍板新建工作区 Tab 同时提供“空白”和“复制当前布局”，默认“空白”；原待确认项关闭。
+- [2026-09-05] M2 完成：schema v2、v1→v2、工作区 TabBar、固定编号、重命名和两种创建模式均已实现；复制生成全新 terminalID，避免误杀原 tmux。
+- [2026-09-05] 真实 Chrome 自动化以 8-pane v1 布局完成迁移/复制、双浏览器、移动 viewport、刷新和 9444 服务重启复验；0 session DELETE、0 页面/控制台/HTTP 错误。M3 成为下一优先级。
