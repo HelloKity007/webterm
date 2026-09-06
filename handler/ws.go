@@ -34,6 +34,7 @@ type WSHandler struct {
 	PreserveTerminalSessions bool
 	// RunTerminalCommand is overridden by handler tests to replace remote SSH I/O.
 	RunTerminalCommand func(*store.Connection, string) error
+	terminalSessions   persistentSessionRegistry
 }
 
 func applyPanelSessionName(command string, userID, connectionID int64, terminalID, workspaceRaw, panelRaw string) string {
@@ -249,10 +250,13 @@ func (h *WSHandler) HandleSSH(conn *websocket.Conn) {
 	resumeInputCommand = applyPanelSessionName(resumeInputCommand, user.UserID, connID, terminalID, workspaceIndex, panelNumber)
 	followInputCommand = applyPanelSessionName(followInputCommand, user.UserID, connID, terminalID, workspaceIndex, panelNumber)
 
-	maxSessions := connInfo.MaxSessions
-	if maxSessions < 1 {
-		maxSessions = defaultConnectionMaxSessions
+	terminalKey := fmt.Sprintf("%d:%d:%s", user.UserID, connID, terminalID)
+	releaseTerminal, err := h.terminalSessions.acquire(terminalKey, persistentTerminalSessionLimit)
+	if err != nil {
+		sendErr(conn, fmt.Sprintf("会话数已达上限(%d)，请关闭一些 panel 后重试", persistentTerminalSessionLimit))
+		return
 	}
+	defer releaseTerminal()
 	newSSHClient := func() (*sshmgr.Client, error) {
 		var password, privateKey, passphrase string
 		if connInfo.PasswordEncrypted != "" {
@@ -284,10 +288,12 @@ func (h *WSHandler) HandleSSH(conn *websocket.Conn) {
 		}
 		return client, nil
 	}
-	lease, err := h.Pool.AcquireSession(connID, maxSessions, sshmgr.MaxChannelsPerTransport, newSSHClient)
+	// The registry limits unique tmux panels. SSH channels are transport
+	// resources and must not reject additional browser attachments to one panel.
+	lease, err := h.Pool.AcquireSession(connID, 0, sshmgr.MaxChannelsPerTransport, newSSHClient)
 	if err != nil {
 		if errors.Is(err, sshmgr.ErrMaxSessions) {
-			sendErr(conn, fmt.Sprintf("会话数已达上限(%d)，请关闭一些标签页后重试", maxSessions))
+			sendErr(conn, "SSH 传输通道暂时不可用，请稍后重试")
 		} else {
 			sendErr(conn, "连接失败: "+friendlyErr(err))
 		}

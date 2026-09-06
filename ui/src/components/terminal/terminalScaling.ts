@@ -12,7 +12,7 @@ export interface TerminalScaleOptions {
 
 // Give a small-only client a deterministic shared grid. A larger client can
 // still grow this target through the authoritative tmux title announcement.
-export const defaultSharedTerminalGrid: TerminalGrid = { cols: 240, rows: 60 };
+export const defaultSharedTerminalGrid: TerminalGrid = { cols: 80, rows: 24 };
 // Treat a normal 1920-wide display as the small side of the shared-grid
 // contract; high-resolution displays (for example 2560/4K) remain the large
 // authority. The caller also considers the current browser viewport.
@@ -63,7 +63,9 @@ export function calculateTerminalScale(
   // Scale glyphs uniformly. Any spare width/height caused by different screen
   // aspect ratios is distributed as cell spacing, so all rows and columns fit
   // without stretching the glyphs themselves.
-  const fontSize = Math.max(4, baseFontSize * scale);
+  // Keep scaled glyphs readable on small panels instead of rasterising them
+  // at 2–4px. The final screen-fit pass still adapts the grid dimensions.
+  const fontSize = Math.max(6.5, baseFontSize * scale);
   const effectiveScale = fontSize / baseFontSize;
   const fitMargin = scale < 1 ? 0.99 : 1;
   const letterSpacing = Math.max(0, nativeCellWidth * (widthScale * fitMargin - effectiveScale));
