@@ -109,6 +109,9 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
   const selectionCopyArmedRef = useRef(false);
   const selectionAnchorRef = useRef<{ col: number; row: number } | null>(null);
   const pendingLeftGestureRef = useRef<PendingLeftGesture | null>(null);
+  const globalSelectionCleanupRef = useRef<(() => void) | null>(null);
+  const globalSelectionMoveRef = useRef<(event: MouseEvent) => void>(() => {});
+  const globalSelectionUpRef = useRef<(event: MouseEvent) => void>(() => {});
   const selectionSnapshotRef = useRef('');
   const clipboardNoticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const rules = useHighlightRules();
@@ -235,6 +238,19 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
     setTimeout(clear, 0);
   }, []);
 
+  const trackSelectionOutsideSurface = useCallback(() => {
+    globalSelectionCleanupRef.current?.();
+    const onMove = (event: MouseEvent) => globalSelectionMoveRef.current(event);
+    const onUp = (event: MouseEvent) => globalSelectionUpRef.current(event);
+    document.addEventListener('mousemove', onMove, true);
+    document.addEventListener('mouseup', onUp, true);
+    globalSelectionCleanupRef.current = () => {
+      document.removeEventListener('mousemove', onMove, true);
+      document.removeEventListener('mouseup', onUp, true);
+      globalSelectionCleanupRef.current = null;
+    };
+  }, []);
+
   const handleSurfaceMouseDown = useCallback((event: ReactMouseEvent<HTMLDivElement>) => {
     if (selectionCopyArmedRef.current && event.button === 0) {
       event.preventDefault();
@@ -270,6 +286,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
         selectionSnapshotRef.current = '';
         termRef.current?.clearSelection();
         termRef.current?.focus();
+        trackSelectionOutsideSurface();
         return;
       }
     }
@@ -277,7 +294,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       focusTerminal: focusTerminalAfterPointer,
       releaseTmuxMenuAt,
     });
-  }, [focusTerminalAfterPointer, releaseTmuxMenuAt, terminalCellAt]);
+  }, [focusTerminalAfterPointer, releaseTmuxMenuAt, terminalCellAt, trackSelectionOutsideSurface]);
 
   const handleSurfaceMouseMove = useCallback((event: ReactMouseEvent<HTMLDivElement>) => {
     if (selectionCopyArmedRef.current && selectionAnchorRef.current && (event.buttons & 1) === 1) {
@@ -336,6 +353,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       if (selecting && selected && termRef.current) clearVisualSelection();
       pendingLeftGestureRef.current = null;
       selectionAnchorRef.current = null;
+      globalSelectionCleanupRef.current?.();
       if (selecting) {
         void copySelectionText(selected?.text || selectionSnapshotRef.current);
       } else {
@@ -350,8 +368,47 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
     routeTerminalMouseUp(event, mouseStateRef.current, { focusTerminal: focusTerminalAfterPointer });
   }, [clearVisualSelection, copySelectionText, extendSelectionCopy, focusTerminalAfterPointer]);
 
+  useEffect(() => {
+    globalSelectionMoveRef.current = (event) => {
+      const pending = pendingLeftGestureRef.current;
+      if (!pending || (event.buttons & 1) !== 1) return;
+      event.preventDefault();
+      const current = { x: event.clientX, y: event.clientY };
+      if (!pending.selecting && isTerminalSelectionDrag(
+        { x: pending.clientX, y: pending.clientY }, current,
+      )) {
+        pending.selecting = true;
+        termRef.current?.select(pending.anchor.col, pending.anchor.row, 1);
+        selectionSnapshotRef.current = termRef.current?.getSelection() || '';
+      }
+      if (pending.selecting) extendSelectionCopy(event.clientX, event.clientY);
+    };
+    globalSelectionUpRef.current = (event) => {
+      const pending = pendingLeftGestureRef.current;
+      if (!pending || event.button !== 0) return;
+      const selecting = pending.selecting || isTerminalSelectionDrag(
+        { x: pending.clientX, y: pending.clientY }, { x: event.clientX, y: event.clientY },
+      );
+      const selected = selecting ? extendSelectionCopy(event.clientX, event.clientY) : null;
+      pendingLeftGestureRef.current = null;
+      selectionAnchorRef.current = null;
+      globalSelectionCleanupRef.current?.();
+      if (selecting) {
+        clearVisualSelection();
+        void copySelectionText(selected?.text || selectionSnapshotRef.current);
+      } else {
+        replayTerminalLeftClick(
+          pending.target,
+          { x: pending.clientX, y: pending.clientY, detail: pending.detail },
+          { x: event.clientX, y: event.clientY },
+        );
+      }
+    };
+  }, [clearVisualSelection, copySelectionText, extendSelectionCopy]);
+
   useEffect(() => () => {
     if (clipboardNoticeTimerRef.current) clearTimeout(clipboardNoticeTimerRef.current);
+    globalSelectionCleanupRef.current?.();
   }, []);
 
   const sendBinary = useCallback((octets: Octets) => {
