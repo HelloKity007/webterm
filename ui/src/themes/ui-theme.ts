@@ -1,15 +1,15 @@
 // Tokyo Night inspired palette — harmonious dark theme
 export const c = {
-  bg0: '#020617',        // deepest bg
-  bg1: '#070d1b',        // sidebar, panels
-  bg2: '#0e172b',        // tabs, toolbars
-  bg3: '#17233b',        // inputs, cards
-  bgHover: '#1e3351',    // hover
-  border: '#334155',     // subtle border
-  fg: '#f8fafc',         // primary text
-  fgDim: '#94a3b8',      // dim text
-  accent: '#22c55e',     // green — main accent
-  accent2: '#38bdf8',    // cyan — secondary
-  accent3: '#fbbf24',    // warm gold — emphasis
-  accent4: '#fb7185',    // rose — danger
+  bg0: '#d9edd9',        // deepest bg
+  bg1: '#d9edd9',        // sidebar, panels
+  bg2: '#bfdcbe',        // tabs, toolbars
+  bg3: '#e6f2e4',        // inputs, cards
+  bgHover: '#a9d2aa',    // hover
+  border: '#80ad82',     // subtle border
+  fg: '#203523',         // primary text
+  fgDim: '#5f7962',      // dim text
+  accent: '#4f8f55',     // green — main accent
+  accent2: '#3e7181',    // cyan — secondary
+  accent3: '#8e7025',    // warm gold — emphasis
+  accent4: '#a84040',    // rose — danger
 };

@@ -387,7 +387,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
   }, []);
 
   useEffect(() => {
-    const themeConfig = getTheme(themeName || 'Dracula');
+    const themeConfig = getTheme(themeName || 'XTerminal Green');
     const term = new Terminal({
       cursorBlink: true, fontSize: fontSize, fontFamily: '"JetBrains Mono", "JetBrains Maple Mono", Consolas, monospace',
       scrollback: terminalScrollbackLines,
@@ -912,8 +912,8 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
   }, [send, sendTextAsBinary, broadcastScope, broadcastSourceId, myTabId, tabs, terminalRegistry, termKey]);
 
   return (
-    <div style={{ position: 'relative', flex: 1, display: 'flex', minWidth: 0, minHeight: 0, overflow: 'hidden', background: getTheme(themeName || 'Dracula').background }}>
-      <div ref={ref} className="terminal-surface" style={{ flex: 1, minWidth: 0, minHeight: 0, overflow: 'hidden', padding: '0 6px', background: getTheme(themeName || 'Dracula').background }}
+    <div className="terminal-root" style={{ position: 'relative', flex: 1, display: 'flex', minWidth: 0, minHeight: 0, overflow: 'hidden', background: getTheme(themeName || 'XTerminal Green').background }}>
+      <div ref={ref} className="terminal-surface" style={{ flex: 1, minWidth: 0, minHeight: 0, overflow: 'hidden', padding: '0 6px', background: getTheme(themeName || 'XTerminal Green').background }}
         onMouseDownCapture={handleSurfaceMouseDown}
         onMouseMoveCapture={handleSurfaceMouseMove}
         onMouseUpCapture={handleSurfaceMouseUp}
@@ -935,7 +935,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
               height: `${100 / selectionOverlaySize.rows}%`,
               left: `${selectionRow.startColumn * 100 / selectionOverlaySize.cols}%`,
               width: `${(selectionRow.endColumn - selectionRow.startColumn) * 100 / selectionOverlaySize.cols}%`,
-              background: getTheme(themeName || 'Dracula').selectionBackground,
+              background: getTheme(themeName || 'XTerminal Green').selectionBackground,
               outline: '1px solid var(--c-accent)',
               opacity: 0.28,
             }} />

@@ -16,7 +16,7 @@ interface Props {
 
 export default function TerminalTab({ connId, extraMenuItems, paneTabs, myTabId, workspaceIndex, panelNumber }: Props) {
   return (
-    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0, overflow: 'hidden' }}>
+    <div className="terminal-tab-content" style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0, overflow: 'hidden' }}>
       <ThemedTerminal connId={connId} extraMenuItems={extraMenuItems} tabs={paneTabs} myTabId={myTabId} workspaceIndex={workspaceIndex} panelNumber={panelNumber} />
     </div>
   );

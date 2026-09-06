@@ -60,7 +60,7 @@ interface PreferencesState {
 }
 
 export const usePreferencesStore = create<PreferencesState>((set) => ({
-  themeName: localStorage.getItem('webterm-theme') || 'Dracula',
+  themeName: localStorage.getItem('webterm-theme') || 'XTerminal Green',
   fontSize: Number(localStorage.getItem('webterm-fontSize')) || 16,
   onekeyPwd: localStorage.getItem('webterm-onekey') || '[]',
   highlightRules: loadHighlightRules(),

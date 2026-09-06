@@ -59,8 +59,8 @@ export default function LoginPage() {
       }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
           <div>
-            <div style={{ fontSize: font.xl4, fontWeight: 700, color: colors.white, letterSpacing: 1, whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 10 }}>
-              <span style={{ width: 34, height: 34, borderRadius: 9, display: 'grid', placeItems: 'center', background: 'linear-gradient(135deg, #7aa2f7, #bb9af7)', boxShadow: '0 8px 20px rgba(122,162,247,0.28)' }}><Icon name="terminal" size={19} color={colors.bg} /></span>
+            <div style={{ fontSize: font.xl4, fontWeight: 700, color: colors.text, letterSpacing: 1, whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ width: 34, height: 34, borderRadius: 9, display: 'grid', placeItems: 'center', background: 'linear-gradient(135deg, #8fbd91, #4f8f55)', boxShadow: '0 8px 20px rgba(79,143,85,0.28)' }}><Icon name="terminal" size={19} color="#f3fff3" /></span>
               WebTerm
             </div>
             <div style={{ color: colors.textMuted2, fontSize: font.md, marginTop: 10 }}>{t('app_slogan')}</div>

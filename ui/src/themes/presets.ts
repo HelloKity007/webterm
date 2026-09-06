@@ -25,6 +25,17 @@ export interface TerminalTheme {
 
 export const presets: TerminalTheme[] = [
   {
+    name: 'XTerminal Green',
+    background: '#1f211f', foreground: '#c7d8c8',
+    cursor: '#a7d7a8', cursorAccent: '#1f211f',
+    selectionBackground: '#355d3a',
+    black: '#1f211f', red: '#d88989', green: '#8fc58f', yellow: '#d7c58a',
+    blue: '#8caec1', magenta: '#b39abb', cyan: '#91c6b0', white: '#c7d8c8',
+    brightBlack: '#637366', brightRed: '#efaaaa', brightGreen: '#b4e3b4',
+    brightYellow: '#eadca5', brightBlue: '#b0d2e4', brightMagenta: '#d0b7d6',
+    brightCyan: '#b5ead6', brightWhite: '#eef7ef',
+  },
+  {
     name: 'Dracula',
     background: '#282a36', foreground: '#f8f8f2',
     cursor: '#f8f8f2', cursorAccent: '#282a36',

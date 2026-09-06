@@ -8,35 +8,35 @@
 
 **Project:** WebTerm
 **Generated:** 2026-09-06 04:00:17
-**Category:** Financial Dashboard
+**Category:** Developer Terminal Workspace
 **Design Dials:** Variance 4/10 (Balanced / Modern) | Motion 3/10 (Subtle) | Density 8/10 (Dense / Dashboard)
 
 ---
 
 ## Global Rules
 
-### Color Palette
+### Color Palette — Soft XTerminal Green
 
 | Role | Hex | CSS Variable |
 |------|-----|--------------|
-| Primary | `#0F172A` | `--color-primary` |
-| On Primary | `#FFFFFF` | `--color-on-primary` |
-| Secondary | `#1E293B` | `--color-secondary` |
-| On Secondary | `#FFFFFF` | `--color-on-secondary` |
-| Accent/CTA | `#22C55E` | `--color-accent` |
-| On Accent/CTA | `#0F172A` | `--color-on-accent` |
-| Background | `#020617` | `--color-background` |
-| Foreground | `#F8FAFC` | `--color-foreground` |
-| Card | `#0E1223` | `--color-card` |
-| Card Foreground | `#F8FAFC` | `--color-card-foreground` |
-| Muted | `#1A1E2F` | `--color-muted` |
-| Muted Foreground | `#94A3B8` | `--color-muted-foreground` |
-| Border | `#334155` | `--color-border` |
-| Destructive | `#EF4444` | `--color-destructive` |
+| Primary | `#4F8F55` | `--color-primary` |
+| On Primary | `#F3FFF3` | `--color-on-primary` |
+| Secondary | `#B9DCB9` | `--color-secondary` |
+| On Secondary | `#203523` | `--color-on-secondary` |
+| Accent/CTA | `#4F8F55` | `--color-accent` |
+| On Accent/CTA | `#F3FFF3` | `--color-on-accent` |
+| Background | `#D9EDD9` | `--color-background` |
+| Foreground | `#203523` | `--color-foreground` |
+| Card | `#E6F2E4` | `--color-card` |
+| Card Foreground | `#203523` | `--color-card-foreground` |
+| Muted | `#BFDCBE` | `--color-muted` |
+| Muted Foreground | `#5D7861` | `--color-muted-foreground` |
+| Border | `#80AD82` | `--color-border` |
+| Destructive | `#B94B4B` | `--color-destructive` |
 | On Destructive | `#000000` | `--color-on-destructive` |
 | Ring | `#FFFFFF` | `--color-ring` |
 
-**Color Notes:** Dark bg + green positive indicators
+**Color Notes:** Soft green browser chrome, charcoal terminal surfaces, low-saturation status colors, no neon glow.
 
 ### Typography
 

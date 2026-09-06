@@ -616,7 +616,7 @@ function LeafPane({ nodeId, onActiveSshChange, isInSplit, workspaceIndex }: {
   }, [focusedPaneId, nodeId, activeTab?.connId, activeTab?.id, onActiveSshChange, connections, setStatusConn]);
 
   return (
-    <div onClick={() => setFocusedPane(nodeId)} style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0, minHeight: 0 }}>
+    <div className="terminal-pane" onClick={() => setFocusedPane(nodeId)} style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0, minHeight: 0 }}>
       <div style={{ position: 'relative', flexShrink: 0 }}>
         <TabBar tabs={tabs} activeTabId={activeTabId} onSelectTab={setActiveTabId} onCloseTab={closeTab} onRenameTab={renameTab} filterType="ssh"
           onReceiveTab={handleReceiveTab} onAddTab={() => setShowAddMenu((open) => !open)} />
@@ -634,7 +634,7 @@ function LeafPane({ nodeId, onActiveSshChange, isInSplit, workspaceIndex }: {
           </div>
         )}
       </div>
-      <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+      <div className="terminal-content" style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
         {tabs.filter((tab) => tab.id === activeTabId).map((tab) => (
           <div key={tab.id} style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
             {tab.type === 'ssh' && tab.connId && (
@@ -686,7 +686,7 @@ function GridContainer({ onActiveSshChange, workspaceIndex }: { onActiveSshChang
   const gridTemplateAreas = grid.map((row) => `"${row.join(' ')}"`).join(' ');
 
   return (
-    <div style={{
+    <div className="terminal-grid" style={{
       display: 'grid',
       gridTemplateColumns: `repeat(${cols}, 1fr)`,
       gridTemplateRows: `repeat(${rows}, 1fr)`,
@@ -697,7 +697,7 @@ function GridContainer({ onActiveSshChange, workspaceIndex }: { onActiveSshChang
       {paneIds.map((id) => {
         const cell = cellMap.get(id);
         return (
-          <div key={id} style={{
+          <div className="terminal-grid-cell" key={id} style={{
             gridArea: cell ? id : undefined,
             display: cell ? 'flex' : 'none',
             overflow: 'hidden',
