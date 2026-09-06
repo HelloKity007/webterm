@@ -9,9 +9,10 @@ interface Props {
   onSelect: (id: string) => void;
   onRename: (id: string, name: string) => void;
   onCreate: (mode: WorkspaceCreateMode) => void;
+  onClose?: (id: string) => void;
 }
 
-export default function WorkspaceTabBar({ tabs, activeWorkspaceTabId, onSelect, onRename, onCreate }: Props) {
+export default function WorkspaceTabBar({ tabs, activeWorkspaceTabId, onSelect, onRename, onCreate, onClose }: Props) {
   const [editingID, setEditingID] = useState<string | null>(null);
   const [editingName, setEditingName] = useState('');
   const [showCreate, setShowCreate] = useState(false);
@@ -64,19 +65,21 @@ export default function WorkspaceTabBar({ tabs, activeWorkspaceTabId, onSelect, 
               />
             </div>
           ) : (
-            <button
+            <div
               key={workspace.id}
-              type="button"
               role="tab"
               aria-selected={active}
               aria-label={label}
               title={label}
               onClick={() => onSelect(workspace.id)}
               onDoubleClick={() => beginRename(workspace)}
-              style={{ height: 30, maxWidth: 240, minWidth: 72, padding: '0 12px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', border: `1px solid ${active ? colors.accent : 'transparent'}`, borderRadius: 5, cursor: 'pointer', color: active ? colors.bg : colors.textMuted2, background: active ? colors.accent : 'transparent', fontSize: font.md }}
+              style={{ height: 30, maxWidth: 260, minWidth: 90, padding: '0 6px 0 12px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', border: `1px solid ${active ? colors.accent : 'transparent'}`, borderRadius: 5, cursor: 'pointer', color: active ? colors.bg : colors.textMuted2, background: active ? colors.accent : 'transparent', fontSize: font.md, display: 'flex', alignItems: 'center', gap: 6 }}
             >
-              {label}
-            </button>
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</span>
+              {onClose && tabs.length > 1 && <button type="button" aria-label={`${t('workspace_close')}: ${label}`} title={t('workspace_close')}
+                onClick={(event) => { event.stopPropagation(); if (window.confirm(t('workspace_close_confirm'))) onClose(workspace.id); }}
+                style={{ width: 18, height: 18, flexShrink: 0, padding: 0, border: 0, borderRadius: '50%', cursor: 'pointer', color: active ? colors.bg : colors.textMuted, background: 'transparent', fontSize: font.md, lineHeight: '16px' }}>×</button>}
+            </div>
           );
         })}
       </div>

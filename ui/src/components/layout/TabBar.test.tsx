@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import TabBar from './TabBar';
 
 describe('TabBar', () => {
+  afterEach(() => { cleanup(); vi.restoreAllMocks(); });
   it('renders a pane new-tab button when requested', () => {
     const onAddTab = vi.fn();
     render(<TabBar
@@ -35,5 +36,15 @@ describe('TabBar', () => {
 
     expect(onRenameTab).toHaveBeenCalledWith('ssh-7', '生产机');
     expect(screen.getByText('3: x99')).toBeTruthy();
+  });
+
+  it('confirms before closing a terminal tab', () => {
+    const onCloseTab = vi.fn();
+    vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true);
+    render(<TabBar tabs={[{ id: 'ssh-1', type: 'ssh', title: '本机', connId: 1 }]} activeTabId="ssh-1" onSelectTab={() => {}} onCloseTab={onCloseTab} />);
+    const close = screen.getByLabelText('关闭标签');
+    fireEvent.click(close);
+    fireEvent.click(close);
+    expect(onCloseTab).toHaveBeenCalledTimes(1);
   });
 });

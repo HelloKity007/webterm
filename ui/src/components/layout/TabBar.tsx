@@ -89,7 +89,7 @@ export default function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab, onR
                 style={{ width: 112, border: 'none', borderRadius: 3, padding: '1px 4px', fontSize: font.md, color: colors.text, background: colors.bgInput }}
               />
             ) : `${tab.labelNumber ?? idx + 1}: ${tab.title}`}
-            <span onClick={(e) => { e.stopPropagation(); onCloseTab(tab.id); }}
+            <span aria-label={t('tab_close')} onClick={(e) => { e.stopPropagation(); if (window.confirm(t('tab_close_confirm'))) onCloseTab(tab.id); }}
               style={{ color: colors.textMuted, cursor: 'pointer', borderRadius: '50%', width: 14, height: 14, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
               onMouseEnter={(e) => { e.currentTarget.style.background = colors.border; e.currentTarget.style.color = colors.bg; }}
               onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = colors.textMuted; }}><Icon name="x" size={11} /></span>

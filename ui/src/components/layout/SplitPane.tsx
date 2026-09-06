@@ -133,6 +133,25 @@ function renameWorkspace(workspaceID: string, name: string) {
   notify();
 }
 
+async function closeWorkspace(workspaceID: string) {
+  if (workspaceState.workspaceTabs.length <= 1) return;
+  syncActiveWorkspaceLayout();
+  const workspace = workspaceState.workspaceTabs.find((candidate) => candidate.id === workspaceID);
+  if (!workspace) return;
+  const terminalIDs = Object.values(workspace.layout.panes).flatMap((pane) => pane.tabs
+    .filter((tab) => tab.type === 'ssh' && tab.connId)
+    .map((tab) => ({ connId: tab.connId!, tabId: tab.id })));
+  await Promise.all(terminalIDs.map(({ connId, tabId }) => closeTerminalSession(connId, tabId).catch((error) => {
+    console.error('Failed to close workspace terminal session:', error);
+  })));
+  const remaining = workspaceState.workspaceTabs.filter((candidate) => candidate.id !== workspaceID);
+  workspaceState = { workspaceTabs: remaining };
+  if (activeWorkspaceTabID === workspaceID) activeWorkspaceTabID = remaining[0].id;
+  const activeWorkspace = remaining.find((candidate) => candidate.id === activeWorkspaceTabID)!;
+  restoreLayout(activeWorkspace.layout);
+  notify();
+}
+
 function addWorkspace(mode: WorkspaceCreateMode) {
   syncActiveWorkspaceLayout();
   const created = createWorkspaceTab(workspaceState, activeWorkspaceTabID, mode, nextLayoutID);
@@ -939,6 +958,7 @@ export default function SplitPane({ onActiveSshChange }: { onActiveSshChange?: (
       onSelect={switchWorkspace}
       onRename={renameWorkspace}
       onCreate={addWorkspace}
+      onClose={(workspaceID) => { void closeWorkspace(workspaceID); }}
     />
     <GridContainer onActiveSshChange={onActiveSshChange} />
     {layoutMessage && <div role="status" style={{ position: 'fixed', right: 16, bottom: 16, zIndex: 20, padding: '8px 12px', borderRadius: 4, background: colors.bgRaised, border: `1px solid ${colors.border}`, color: colors.text, fontSize: font.md }}>{layoutMessage}</div>}

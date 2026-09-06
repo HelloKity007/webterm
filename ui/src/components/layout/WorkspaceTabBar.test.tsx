@@ -58,4 +58,15 @@ describe('WorkspaceTabBar', () => {
     fireEvent.click(screen.getByRole('button', { name: '创建工作区' }));
     expect(onCreate).toHaveBeenLastCalledWith('copy');
   });
+
+  it('confirms before closing a workspace and hides close for the last one', () => {
+    const onClose = vi.fn();
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const { rerender } = render(<WorkspaceTabBar tabs={tabs} activeWorkspaceTabId="workspace-1" onSelect={vi.fn()} onRename={vi.fn()} onCreate={vi.fn()} onClose={onClose} />);
+    fireEvent.click(screen.getByRole('button', { name: /关闭工作区: 3:/ }));
+    expect(confirm).toHaveBeenCalledWith('关闭此工作区及其中的全部终端会话？');
+    expect(onClose).toHaveBeenCalledWith('workspace-3');
+    rerender(<WorkspaceTabBar tabs={[tabs[0]]} activeWorkspaceTabId="workspace-1" onSelect={vi.fn()} onRename={vi.fn()} onCreate={vi.fn()} onClose={onClose} />);
+    expect(screen.queryByRole('button', { name: /关闭工作区/ })).toBeNull();
+  });
 });
