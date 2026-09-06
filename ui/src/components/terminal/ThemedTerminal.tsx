@@ -321,6 +321,8 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
         } else {
           term.clearSelection();
           setSelectionOverlayRows([]);
+          setSelectionOverlaySize(null);
+          requestAnimationFrame(() => term.clearSelection());
         }
       }
       selectionAnchorRef.current = null;
@@ -350,6 +352,8 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
         } else {
           termRef.current.clearSelection();
           setSelectionOverlayRows([]);
+          setSelectionOverlaySize(null);
+          requestAnimationFrame(() => termRef.current?.clearSelection());
         }
       }
       pendingLeftGestureRef.current = null;
