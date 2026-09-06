@@ -104,7 +104,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
   const [clipboardNotice, setClipboardNotice] = useState('');
   const [historyHelpOpen, setHistoryHelpOpen] = useState(false);
-  const [selectionCopyArmed, setSelectionCopyArmed] = useState(false);
+  const [, setSelectionCopyArmed] = useState(false);
   const [selectionOverlayRows, setSelectionOverlayRows] = useState<Array<{ row: number; startColumn: number; endColumn: number }>>([]);
   const [selectionOverlaySize, setSelectionOverlaySize] = useState<{ cols: number; rows: number } | null>(null);
   const contextSelectionRef = useRef('');
@@ -942,15 +942,6 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
           ))}
         </div>
       )}
-      <button type="button" aria-pressed={selectionCopyArmed} aria-label={t('term_select_copy')}
-        title={selectionCopyArmed ? t('term_select_copy_cancel') : t('term_select_copy')}
-        onClick={() => setSelectionCopyMode(!selectionCopyArmedRef.current)} style={{
-          position: 'absolute', top: 5, right: 67, zIndex: 12,
-          padding: '2px 6px', border: `1px solid ${selectionCopyArmed ? 'var(--c-warning)' : 'var(--c-border)'}`, borderRadius: 4,
-          background: selectionCopyArmed ? colors.accentDim : colors.bgInput,
-          color: selectionCopyArmed ? colors.warning : colors.textMuted, cursor: 'pointer',
-          fontSize: 10, lineHeight: 1.4, opacity: selectionCopyArmed ? 1 : 0.72,
-        }}>{selectionCopyArmed ? t('term_select_copy_armed') : t('term_select_copy')}</button>
       <button type="button" aria-label={t('term_history_title')} title={t('term_history_title')}
         onClick={() => setHistoryHelpOpen((open) => !open)} style={{
           position: 'absolute', top: 5, right: 11, zIndex: 12,
@@ -982,10 +973,6 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       {contextMenu && (
         <ContextMenu x={contextMenu.x} y={contextMenu.y}
           items={[
-            {
-              label: t('term_select_copy'),
-              action: () => setSelectionCopyMode(true),
-            },
             {
               label: t('term_copy'),
               action: async () => {
