@@ -74,12 +74,14 @@ describe('workspace layout schema v2', () => {
     layout.panes.root.tabs = [{ id: 'ssh-original', type: 'ssh', title: 'production', connId: 7, labelNumber: 3 }];
     layout.panes.root.activeTabId = 'ssh-original';
     const initial = migrateLayoutV1(layout)!;
+    const renamedInitial = renameWorkspaceTab(initial, 'workspace-1', 'source panel')
 
-    const created = createWorkspaceTab(initial, 'workspace-1', 'copy', idFactory);
+    const created = createWorkspaceTab(renamedInitial, 'workspace-1', 'copy', idFactory);
     const copiedPaneID = created.workspace.layout.focusedPaneId!;
     const copiedTab = created.workspace.layout.panes[copiedPaneID].tabs[0];
 
     expect(created.workspace.id).not.toBe('workspace-1');
+    expect(created.workspace.name).toBe('workspace');
     expect(copiedPaneID).not.toBe('root');
     expect(copiedTab.id).not.toBe('ssh-original');
     expect(copiedTab).toMatchObject({ title: 'production', connId: 7, labelNumber: 3 });
