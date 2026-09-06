@@ -1,37 +1,30 @@
 # WebTerm 深化开发分阶段实施计划（Spec v1.2）
 
-> Status: 🟡 Ready
-> Created: 2026-09-04
+> Status: 🟡 In progress — Tab is next
+> Created: 2026-09-04；Last synced: 2026-09-05
 > Source spec: `docs/superpowers/specs/2026-09-04-WebTerm-Dev-Spec-v1.2.md`
-> Target branch: `dev-1.0.0`
-> Baseline HEAD: `686d03e`
+> Target branch: `dev-1.0.1`
+> Accepted HEAD: `1cb938f`
 
 ## 1. 目标
 
-在不回退现有布局持久化、tmux 持久终端、容量分片、SFTP/DB/OneKey 能力的前提下，先解决 Codex/Claude 等 CLI 只能查看一屏历史的问题，再交付可实际用于“同账号三端 + 8 pane”的其余 P0：安全握手、断线恢复、布局拖动、presence、广播组、WebGL fallback 和可重复的性能/多端验收。
+在不回退现有布局持久化、tmux 持久终端、容量分片、SFTP/DB/OneKey、CLI 历史/复制与一屏 8 pane 能力的前提下，下一步优先在 pane 网格之上实现工作区 Tab：每个 Tab 承载一套 pane 布局，固定数字索引且可重命名，并保持既有 pane、会话 Tab、terminalID 和 tmux 会话连续。其后再交付安全握手、断线恢复、布局增强、presence、广播组、WebGL fallback 和可重复的性能/多端验收。
 
 本计划只授权 P0 的设计与实现。P1/P2 先保留 backlog，不在 P0 顺手实现。
 
 ## 2. 开工前状态与约束
 
-### 已验证基线
+### 已验收基线
 
-- `go test ./...`：通过。
-- `npm --prefix ui test`：14 files / 39 tests 通过。
-- `npm --prefix ui run lint`：通过。
-- `npm --prefix ui run build`：通过。
-- 已有 1,000 pane 容量 evidence；P0 日常门禁使用 24 shell，发布前可复跑大容量。
+- 用户指定“pengguanzhen 已 commit 的提交视为验收通过”；当前验收边界为 `1cb938f`。
+- 一屏 2×4（8 pane）、布局/会话 Tab 持久化、CLI 多屏历史、输入恢复、fullscreen 直接拖选复制和跨尺寸完整 grid 已完成。
+- 双环境候选部署、批准、提升、回滚、受管重启和生产 secret 加载已完成。
+- 已有 1,000 pane 容量 evidence；P0 日常门禁仍使用 24 shell，发布前可复跑大容量。
+- 每个后续阶段仍需在最后一次修改后执行 fresh test/lint/build；历史提交验收不能代替新改动的回归。
 
 ### 工作树保护
 
-当前已有用户未提交修改：
-
-- `handler/persistent_terminal.go`
-- `handler/persistent_terminal_test.go`
-- `scripts/verify-persistent-terminal.mjs`
-- Spec v1.1
-
-这些修改包含 tmux mouse 行为，属于既有工作。每阶段必须基于它们增量实现，禁止 reset、checkout 或覆盖。
+2026-09-05 开始本次文档同步前工作树为干净状态；原记录的 tmux mouse 与 Spec 修改均已进入提交。后续仍禁止 reset、checkout 或覆盖用户新出现的无关修改。
 
 ### 通用工程规则
 
@@ -45,18 +38,21 @@
 
 | 阶段 | 范围 | 依赖 | 主要出口 |
 |---|---|---|---|
-| M0 | 基线冻结与测量夹具 | 无 | 可重复基线、协议测试工具、风险清单 |
-| M1 | **Codex/Claude CLI 历史回看** | M0 | 真实 CLI 可回看 ≥5 屏、无鼠标协议污染 |
-| M2 | WS 安全与单写者 | M1 | upgrade 前授权、Origin、ticket、无 race |
-| M3 | tmux/SSH 保活与自动重连 | M2 | 断网/服务重启恢复、明确生命周期 |
-| M4 | 布局模板、divider 与冲突 UX | M3 | 2×4/4×2、拖动同步、CAS 收敛 |
-| M5 | presence 与共享广播组 | M4 | distinct client presence、8 pane 一次广播 |
-| M6 | WebGL fallback 与性能稳定 | M3、M4 | 受控负载达到门槛、context loss 可恢复 |
-| M7 | 三端系统验收与 P0 发布 | M1–M6 | 全门禁、证据包、回滚验证 |
+| M0 | 基线冻结与测量夹具 | 无 | 🟡 CLI/容量夹具已完成；安全/性能夹具随对应阶段补齐 |
+| M1 | Codex/Claude CLI 历史、复制与跨尺寸显示 | M0 | ✅ 已提交并按当前口径验收；转回归门禁 |
+| M2 | **工作区 Tab（下一优先级）** | 已验收 8 pane 基线 | 上层多 Tab 容器、固定编号、重命名、v1→v2 迁移、多端一致 |
+| M3 | WS 安全与单写者 | M2 | upgrade 前授权、Origin、ticket、无 race |
+| M4 | tmux/SSH 保活与自动重连 | M3 | 断网/服务重启恢复、明确生命周期 |
+| M5 | 布局增强、divider 与冲突 UX | M2、M4 | 保持已验收 8 pane，补 1×1/4×2、拖动同步、CAS 收敛 |
+| M6 | presence 与共享广播组 | M5 | distinct client presence、8 pane 一次广播 |
+| M7 | WebGL fallback 与性能稳定 | M4、M5 | 受控负载达到门槛、context loss 可恢复 |
+| M8 | 三端系统验收与 P0 发布 | M1–M7 | 全门禁、证据包；复用已验收双环境提升/回滚链路 |
 
-M5 和 M6 在 M4 契约稳定后可并行开发，但合并前分别在最新共同基线上复验。**M1 是最高优先级阻塞阶段：真实 Claude/Codex 历史验收未通过，不进入 M2。**
+M6 和 M7 在 M5 契约稳定后可并行开发，但合并前分别在最新共同基线上复验。**当前只把 M2 工作区 Tab 作为最高实现优先级；pane 内现有会话 Tab、已验收的一屏 8 pane 和 M1 不重复开发。**
 
 ## 4. M0 — 基线冻结与测试夹具
+
+实施状态（2026-09-05）：部分完成。CLI synthetic fixture、真实会话 evidence 和容量 evidence 已提交并验收；WS 握手、故障注入和 renderer/performance 夹具在对应后续阶段补齐。
 
 ### 目的
 
@@ -79,12 +75,12 @@ M5 和 M6 在 M4 契约稳定后可并行开发，但合并前分别在最新共
 - `ui/src/components/layout/layoutPersistence*.ts`：共享字段比较/fixture。
 - `docs/exec-plans/active/*-evidence.md`：阶段 evidence。
 
-### RED 场景
+### 剩余 RED 场景
 
 - 当前未授权 WS 会先 upgrade，测试应失败。
 - 当前 3 次重连后停止，长断网场景应失败。
 - 当前无 renderer/performance observation，性能采集断言应失败。
-- 当前 Claude CLI 只能看到约一屏内容，真实 CLI history marker 断言应失败。
+- CLI 历史原 RED 已由 M1 关闭，保留为后续阶段不得回归的固定门禁。
 
 ### 出口门禁
 
@@ -92,9 +88,9 @@ M5 和 M6 在 M4 契约稳定后可并行开发，但合并前分别在最新共
 - 负载 fixture 可在异常时可靠清理远端进程与临时用户。
 - 不改产品行为。
 
-## 5. M1 — Codex/Claude CLI 历史回看（最高优先级阻塞阶段）
+## 5. M1 — Codex/Claude CLI 历史、复制与跨尺寸显示（已验收）
 
-实施状态（2026-09-04）：代码与 synthetic tmux/TUI 回归已完成；真实用户已确认 Claude fullscreen 历史 wheel/PgUp 可用。不同尺寸并发 attach、恢复输入和 CLI 复制粘贴优化已实现，待用户复验。证据见 `2026-09-04-webterm-cli-history-evidence.md`。
+实施状态（2026-09-05）：`955d265`–`e14aacf` 与 `d1ef4ab` 已提交；按用户指定口径视为验收通过。历史导航、恢复输入、Claude 长会话兜底、fullscreen 直接拖选复制、选择快照和“大屏铺满 + 小屏完整缩放”均转为回归门禁。证据见 `2026-09-04-webterm-cli-history-evidence.md`。
 
 ### 先做诊断矩阵
 
@@ -108,14 +104,14 @@ M5 和 M6 在 M4 契约稳定后可并行开发，但合并前分别在最新共
 | Codex default TUI | 测 | 测 | Ctrl+T | 不应作为唯一依据 | 测 |
 | Codex `--no-alt-screen` | 测 | 测 | Ctrl+T | 测 | 测 |
 
-### 后端/tmux 任务
+### 已实施的后端/tmux 内容（保留回归）
 
-1. 保留并验证当前未提交的 session-scoped `mouse on` 改动；确认设置只作用于 WebTerm session，不修改用户其他 tmux session。
+1. session-scoped `mouse on` 已提交并验证；设置只作用于 WebTerm session，不修改用户其他 tmux session。
 2. 检查 tmux mouse/copy-mode 与两个 attach client 的作用域，记录 history navigation 是否会改变其他端画面。
 3. 如需 terminal action，增加受控的 history/copy-mode action；服务端重新派生 session target，不接受客户端传 tmux 名或任意命令。
 4. 普通 shell 的 tmux history 保持 200,000 行；解决全局 `history-limit` 副作用时不得降低本阶段能力。
 
-### 前端任务
+### 已实施的前端内容（保留回归）
 
 1. 增加 history mode indicator/help，区分“终端历史”和“CLI 内部 transcript”。
 2. 正确透传 Claude fullscreen 请求的 SGR wheel；加入 `PgUp/PgDn`、`Ctrl+Home/End` 的可发现入口，不能抢走 CLI 已声明的 key handling。
@@ -124,7 +120,7 @@ M5 和 M6 在 M4 契约稳定后可并行开发，但合并前分别在最新共
 5. Claude 帮助入口说明 `/tui fullscreen`、Ctrl+O transcript 和 `[` 写入 scrollback；不静默设置远端全局 `CLAUDE_CODE_NO_FLICKER`。
 6. 保持普通右键为 WebTerm 菜单、Ctrl+右键 tmux 操作、Shift+drag 文本选择、复制粘贴和中文 IME；fullscreen mouse-reporting CLI 另提供不向远端发送鼠标事件的显式“选择并复制”模式。
 
-### 自动化与真实 CLI 验收
+### 自动化与真实 CLI 验收基线
 
 1. synthetic fixture 覆盖 alternate screen、DEC alternate scroll、SGR mouse 1000/1002/1003/1006、关闭 mouse mode 和异常退出清理。
 2. Claude 2.1.246 临时 session 生成 ≥5 屏 numbered marker；wheel/PgUp 找到早期 marker，Ctrl+End 后继续输入，Ctrl+O transcript 可打开退出。
@@ -140,7 +136,44 @@ M5 和 M6 在 M4 契约稳定后可并行开发，但合并前分别在最新共
 - Codex/Claude 版本、tmux/浏览器版本和操作路径写入 evidence。
 - mouse、右键、选择、复制、IME、持久 attach 既有回归全绿。
 
-## 6. M2 — WS 安全、ticket 与单写者
+## 6. M2 — 工作区 Tab（当前最高优先级）
+
+实施状态（2026-09-05）：尚未实现。当前只有一个共享 pane 网格；pane 内会话 Tab 已具备重命名和固定 `labelNumber`，但它不是本阶段要新增的上层工作区 Tab。M2 必须复用既有 panel/会话能力，不得用改名方式把两个层级混为一谈。
+
+### 产品与数据任务
+
+1. 明确层级：`workspace tab → pane layout → session tabs`。工作区 Tab 使用独立 `id/index/name`；pane 内会话 Tab 保留现有 `id/title/labelNumber/connId`。
+2. 将 layout schema 从 v1 单一 `{tree, panes}` 升级为 v2 `workspaceTabs[]`；每个工作区 Tab 保存 `id/index/name/layout`，不新增数据库表。
+3. 编写纯函数 v1 → v2 迁移：现有布局成为第一个工作区 Tab，所有 pane、会话 Tab、terminalID、connId 和 labelNumber 原样保留；迁移幂等且失败不写半成品。
+4. 工作区 Tab 的 `index` 在当前用户集合内唯一，创建时分配，在生命周期内不因重命名、切换、刷新或同步改变。
+5. 工作区 Tab 集合、索引、名称和每项布局属于共享字段；`activeWorkspaceTabId`、focused pane 和 pane 内 active session Tab 保持浏览器本地。
+6. 新建支持“空白”和“复制当前布局”两种模式，默认“空白”；空白模式创建空白 1 pane，复制模式生成新的 workspace/pane ID。复制后的 terminalID 策略在实现前写入 Decision Log，硬约束是不误杀原会话。
+
+### UI 任务
+
+1. 在 pane 网格之上新增工作区 TabBar，显示 `<index>: <name>`；与每个 pane 内现有会话 TabBar 在组件、样式和可访问名称上明确区分。
+2. 提供新增、切换和重命名入口。新增时可选“空白”或“复制当前布局”且默认选中“空白”；重命名只改 `name`，Enter 提交、Escape 取消、失焦提交，空白名称保持原值。
+3. 切换只改变当前可见 pane 网格；隐藏工作区 Tab 内的 tmux session 保持存活，不能触发终端关闭 API。
+4. 允许工作区 Tab 重名，以固定索引区分；长名称视觉截断但保留完整 tooltip/accessible name，HTML 特殊字符按文本显示。
+5. 第一切片不实现工作区 Tab 删除、排序、复制、搜索和跨浏览器窗口拖拽；这些操作需要单独定义会话与冲突语义。
+
+### 必测场景
+
+- 用生产布局副本执行 v1 → v2：原一屏 8 pane 成为工作区 Tab 1，所有 pane/会话 Tab/terminalID/tmux session 和输出连续。
+- 不改变新增选项时创建空白 1 pane；主动选择“复制当前布局”时复制 pane 布局且所有新 workspace/pane ID 唯一。
+- 创建至少 3 个工作区 Tab，索引唯一且始终显示；`3: workspace` 重命名后成为 `3: production`。
+- 三个工作区 Tab 各自保存不同 pane 布局；反复切换、刷新和服务重启后分别恢复。
+- 两个浏览器看到相同的工作区 Tab 集合、索引、名称和布局，但可停留在不同 active workspace Tab。
+- 切换工作区 Tab 不触发 `DELETE /api/terminal-sessions/...`，隐藏 Tab 的远端进程继续运行。
+- 重复名、空白名、超长名、HTML 特殊字符、并发重命名冲突和迁移失败路径均有自动化覆盖。
+
+### 出口门禁
+
+- Spec `TAB-*` 与 `E2E-TAB-1` 全绿；“空白/复制”两种创建路径和默认空白均有自动化覆盖，复制模式的 terminalID 策略已在 Decision Log 拍板。
+- 基础 1 pane/8 pane、CLI 历史/复制、跨尺寸缩放和显式关闭语义不回归。
+- fresh UI tests、lint、production build、Go layout/session tests 和数据库副本迁移验证全绿，evidence 写入独立阶段工件。
+
+## 7. M3 — WS 安全、ticket 与单写者
 
 ### 后端任务
 
@@ -180,7 +213,7 @@ M5 和 M6 在 M4 契约稳定后可并行开发，但合并前分别在最新共
 - 现有真实 SSH/SFTP/DB/layout smoke 全绿。
 - 生产配置不接受 legacy JWT query；无凭据泄漏 evidence。
 
-## 7. M3 — tmux 预检、SSH keepalive 与自动重连
+## 8. M4 — tmux 预检、SSH keepalive 与自动重连
 
 ### 后端任务
 
@@ -188,7 +221,7 @@ M5 和 M6 在 M4 契约稳定后可并行开发，但合并前分别在最新共
 2. 连接配置变更时使预检缓存失效；缓存不能绕过每次资源授权。
 3. 审计 `set-option -g history-limit` 对远端用户 tmux 的影响；形成 ADR：专用 socket/namespace 或兼容保留方案。
 4. 为每个 SSH transport 建立 keepalive lifecycle；失败时标记 transport dead 并终止相关 session，让浏览器重连。
-5. 完成 app ping/pong、activity deadline、shutdown event；所有发送走 M2 pump。
+5. 完成 app ping/pong、activity deadline、shutdown event；所有发送走 M3 pump。
 6. 保持显式 tab close 立即 kill，普通 detach 不 kill；删除 API 继续幂等。
 
 ### 前端任务
@@ -212,7 +245,7 @@ M5 和 M6 在 M4 契约稳定后可并行开发，但合并前分别在最新共
 - Playwright 实际 tmux session ID/marker 证明重连到同一会话。
 - 30 分钟 idle soak 无 ghost session/transport 泄漏。
 
-## 8. M4 — 布局模板、divider 与冲突收敛
+## 9. M5 — 布局增强、divider 与冲突收敛
 
 ### 数据与协议任务
 
@@ -222,7 +255,7 @@ M5 和 M6 在 M4 契约稳定后可并行开发，但合并前分别在最新共
 
 ### UI 任务
 
-1. 在现有 2×4 基础上增加 4×2、1×1；提供明确模板入口。
+1. 保持已验收的一屏 2×4（8 pane）行为；在其基础上增加 4×2、1×1，并提供明确模板入口。
 2. 模板替换保留原 pane tabs，新增 pane 空置；一次操作、一次 snapshot save。
 3. 实现 grid divider pointer drag：rAF 合并、ratio clamp/normalize、pointer capture、键盘可访问调整。
 4. 拖动期间只改 CSS；结束后统一 fit 和防抖保存。
@@ -244,7 +277,7 @@ M5 和 M6 在 M4 契约稳定后可并行开发，但合并前分别在最新共
 - 无 pane remount、terminalID 改变或 tmux session 重建。
 - axe/键盘检查覆盖 divider 与模板入口。
 
-## 9. M5 — presence 与广播组
+## 10. M6 — presence 与广播组
 
 ### 后端任务
 
@@ -274,7 +307,7 @@ M5 和 M6 在 M4 契约稳定后可并行开发，但合并前分别在最新共
 - 多端录屏/截图和 server counter 共同证明 presence 与广播一次性。
 - registry 在 soak 后回到零，无 goroutine/timer leak。
 
-## 10. M6 — WebGL fallback 与性能稳定
+## 11. M7 — WebGL fallback 与性能稳定
 
 ### 实施任务
 
@@ -298,13 +331,13 @@ M5 和 M6 在 M4 契约稳定后可并行开发，但合并前分别在最新共
 - 没有白屏、page error、持续线性内存增长。
 - before/after 原始 trace 和环境信息入 evidence，不只写结论。
 
-## 11. M7 — 三端整体验收与发布
+## 12. M8 — 三端整体验收与发布
 
 ### 系统场景
 
 1. 生产 build + Go + Caddy LAN 配置启动，验证 loopback/allowlist/certificate。
 2. 三个独立桌面客户端 + mobile viewport，以同一账号恢复 8 pane。
-3. 先复验 Claude/Codex 多屏历史，再依次执行：layout drag、冲突、presence、广播、30 秒断网、5 分钟断网、服务重启、WebGL fallback。
+3. 先复验工作区 Tab 的固定编号、重命名、切换和 v1 布局迁移，再复验 Claude/Codex 多屏历史，之后依次执行：layout drag、冲突、presence、广播、30 秒断网、5 分钟断网、服务重启、WebGL fallback。
 4. 验证 A 关闭后 B/C 不中断；A 重开恢复，且不覆盖 B/C 当前权威布局。
 5. 运行 24 shell gate；资源允许时复跑现有 1,000 pane non-regression。
 6. 在数据库副本验证升级和旧二进制回滚；远端 tmux session 不因部署切换被 kill。
@@ -326,20 +359,20 @@ git diff --check
 
 ### P0 Done When
 
-- Spec E2E-1 至 E2E-9、PERF-1 全部有 fresh evidence。
+- Spec E2E-1 至 E2E-9、E2E-TAB-1、PERF-1 全部有 fresh evidence。
 - 所有功能 requirement 能映射到自动测试或明确的人工/环境验收。
 - 无 token/密码/私钥进入 Git、日志、截图、trace。
 - 已知限制写入 README/部署文档：同账号限制、tmux ≥ 3.1、mobile 裁切、显式 close 语义。
 - 有升级步骤、回滚步骤和数据兼容证明。
 
-## 12. P1/P2 Backlog（不属于本计划 Done）
+## 13. P1/P2 Backlog（不属于本计划 Done）
 
-- P1：Snippets、Tab Manager、端口转发、会话管理、条件式 WS mux spike。
+- P1：Snippets、pane 内会话 Tab Manager、端口转发、会话管理、条件式 WS mux spike。P1 的会话 Tab Manager 与 M2/P0 的上层工作区 Tab 不是同一能力。
 - P2：AI、可追责审计、危险命令软门禁、移动端权限模型。
 
 每项开始前从 Spec v1.2 的进入条件生成独立规格和实施计划；不得因为列在 backlog 就直接编码。
 
-## 13. Decision Log
+## 14. Decision Log
 
 | 日期 | 决策 | 原因 |
 |---|---|---|
@@ -351,10 +384,18 @@ git diff --check
 | 2026-09-04 | presence 按 terminalID/clientID | 当前会话身份属于 tab，不是 leaf pane；socket 数不等于端数 |
 | 2026-09-04 | CLI 历史回看成为第一个 P0 阻塞阶段 | 用户当前 Claude CLI 只能查看一屏，直接影响核心使用场景 |
 | 2026-09-04 | CLI 原生历史优先、tmux/xterm 兜底 | alternate screen 不会自然进入 xterm 主 scrollback，必须按实际 renderer 路由 |
+| 2026-09-05 | pengguanzhen 已 commit 的功能改动视为验收通过 | 按用户指定的计划同步口径更新已完成项，不重复排期 |
+| 2026-09-05 | 一屏 8 pane 完成后优先实施工作区 Tab | 新层级位于 pane 网格之上，早于 WS 安全、重连和布局增强 |
+| 2026-09-05 | 工作区 Tab 编号与名称分离 | 固定数字索引用于稳定识别，重命名只改变名称；pane 内会话 Tab 保持现状 |
+| 2026-09-05 | 新建工作区 Tab 可选空白或复制，默认空白 | 默认操作保持轻量且不意外复制现有布局；需要时由用户显式选择复制 |
+| 2026-09-05 | 复制布局生成新的 pane、会话 Tab 与 terminalID | 当前 `Tab.id` 即 terminalID；生成全新身份可避免关闭副本时误杀原 tmux 会话，仅复用连接、标题和显示编号 |
 
-## 14. Progress Notes
+## 15. Progress Notes
 
 - [2026-09-04] 计划创建。完成代码事实核对、现有 evidence 核对、官方 xterm/tmux/Go websocket 资料核对。
 - [2026-09-04] 基线通过：Go 全测；UI 14 files / 39 tests；lint；production build。
-- [2026-09-04] 尚未开始产品代码实现；M0 为第一个执行阶段。
+- [2026-09-04] 计划创建时尚未开始本计划的新产品代码实现；M0 为当时第一个执行阶段。
 - [2026-09-04] 用户追加最高优先级：Codex/Claude 等 CLI 必须能回看多屏历史。已将其设为 M1 阻塞门，并按本机 Codex 0.145.0、Claude 2.1.246、tmux 3.5a 建立真实验收矩阵。
+- [2026-09-05] 验收边界推进到 `1cb938f`。M1 的历史、输入恢复、fullscreen 复制和跨尺寸缩放均已提交并按用户口径验收；双环境发布链路也已完成。
+- [2026-09-05] 用户确认一屏 8 pane 已实现；下一步优先实现工作区 Tab。Spec 与本计划均补充工作区 Tab 可重命名、前置固定数字索引、v1→v2 无损迁移和多端验收标准，并与既有 pane 内会话 Tab 明确区分。
+- [2026-09-05] 用户拍板新建工作区 Tab 同时提供“空白”和“复制当前布局”，默认“空白”；原待确认项关闭。

@@ -160,7 +160,7 @@ func TestLayoutSaveDoesNotShareBrowserTabSelection(t *testing.T) {
 
 func TestSharedLayoutKeepsTabLabelNumberAndName(t *testing.T) {
 	raw := json.RawMessage(`{"tree":{"type":"leaf","id":"root"},"panes":{"root":{"tabs":[{"id":"ssh-7","type":"ssh","title":"生产机","connId":7,"labelNumber":3}],"activeTabId":"ssh-7"}},"focusedPaneId":"root"}`)
-	shared, err := sharedLayoutJSON(raw)
+	shared, err := sharedLayoutJSON(1, raw)
 	if err != nil {
 		t.Fatal(err)
 	}

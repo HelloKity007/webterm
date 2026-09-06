@@ -16,6 +16,17 @@ import { shouldPersistLayout } from './layoutSave';
 import { useWebSocket } from '../../hooks/useWebSocket';
 import { replaceLeafWithEightPaneGrid } from './layoutPresets';
 import { closeTerminalSession } from '../../api/terminalSessions';
+import WorkspaceTabBar from './WorkspaceTabBar';
+import {
+  createWorkspaceTab,
+  emptyPersistedWorkspace,
+  normalizePersistedWorkspace,
+  preserveLocalWorkspaceSelection,
+  renameWorkspaceTab,
+  sharedWorkspaceSnapshot,
+  type PersistedWorkspace,
+  type WorkspaceCreateMode,
+} from './workspaceLayout';
 
 // Grid cell — computed from the tree
 interface GridCell {
@@ -31,6 +42,8 @@ let layoutRoot: LayoutNode = { type: 'leaf', id: 'root' };
 let listeners: Array<() => void> = [];
 let layoutRestoreVersion = 0;
 let generatedID = 0;
+let workspaceState: PersistedWorkspace = emptyPersistedWorkspace();
+let activeWorkspaceTabID = workspaceState.workspaceTabs[0].id;
 
 function nextLayoutID(prefix: string) {
   generatedID += 1;
@@ -64,6 +77,68 @@ function layoutSnapshot(): PersistedLayout {
     };
   }
   return { tree: structuredClone(layoutRoot), panes, focusedPaneId: useLayoutStore.getState().focusedPaneId };
+}
+
+function syncActiveWorkspaceLayout() {
+  workspaceState = {
+    workspaceTabs: workspaceState.workspaceTabs.map((workspace) => workspace.id === activeWorkspaceTabID
+      ? { ...workspace, layout: layoutSnapshot() }
+      : workspace),
+  };
+}
+
+function workspaceSnapshot(): PersistedWorkspace {
+  syncActiveWorkspaceLayout();
+  return workspaceState;
+}
+
+function restoreWorkspace(value: unknown): boolean {
+  const previousActiveWorkspaceID = activeWorkspaceTabID;
+  syncActiveWorkspaceLayout();
+  const previousActiveLayout = workspaceState.workspaceTabs.find((workspace) => workspace.id === previousActiveWorkspaceID)?.layout;
+  const normalized = normalizePersistedWorkspace(value);
+  if (!normalized) return false;
+  workspaceState = preserveLocalWorkspaceSelection(normalized, workspaceState);
+  if (!workspaceState.workspaceTabs.some((workspace) => workspace.id === activeWorkspaceTabID)) {
+    activeWorkspaceTabID = workspaceState.workspaceTabs[0].id;
+  }
+  const activeWorkspace = workspaceState.workspaceTabs.find((workspace) => workspace.id === activeWorkspaceTabID)!;
+  const activeLayoutChanged = previousActiveWorkspaceID !== activeWorkspaceTabID || !previousActiveLayout ||
+    JSON.stringify(sharedLayoutSnapshot(previousActiveLayout)) !== JSON.stringify(sharedLayoutSnapshot(activeWorkspace.layout));
+  if (activeLayoutChanged) restoreLayout(activeWorkspace.layout);
+  else notify();
+  return true;
+}
+
+function resetWorkspace() {
+  workspaceState = emptyPersistedWorkspace();
+  activeWorkspaceTabID = workspaceState.workspaceTabs[0].id;
+  restoreLayout(workspaceState.workspaceTabs[0].layout);
+}
+
+function switchWorkspace(workspaceID: string) {
+  if (workspaceID === activeWorkspaceTabID) return;
+  syncActiveWorkspaceLayout();
+  const workspace = workspaceState.workspaceTabs.find((candidate) => candidate.id === workspaceID);
+  if (!workspace) return;
+  activeWorkspaceTabID = workspaceID;
+  restoreLayout(workspace.layout);
+}
+
+function renameWorkspace(workspaceID: string, name: string) {
+  syncActiveWorkspaceLayout();
+  const renamed = renameWorkspaceTab(workspaceState, workspaceID, name);
+  if (renamed === workspaceState) return;
+  workspaceState = renamed;
+  notify();
+}
+
+function addWorkspace(mode: WorkspaceCreateMode) {
+  syncActiveWorkspaceLayout();
+  const created = createWorkspaceTab(workspaceState, activeWorkspaceTabID, mode, nextLayoutID);
+  workspaceState = created.value;
+  activeWorkspaceTabID = created.workspace.id;
+  restoreLayout(created.workspace.layout);
 }
 
 function restoreLayout(value: unknown) {
@@ -751,11 +826,17 @@ export default function SplitPane({ onActiveSshChange }: { onActiveSshChange?: (
   const restoredAtRef = useRef(0);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [layoutMessage, setLayoutMessage] = useState('');
+  const [, forceWorkspaceUpdate] = useState(0);
 
-  const applyLayout = useCallback((response: { revision: number; layout: unknown; skipped_tabs: number }) => {
+  useLayoutEffect(() => subscribe(() => forceWorkspaceUpdate((version) => version + 1)), []);
+
+  const applyLayout = useCallback((response: { schema_version: number; revision: number; layout: unknown; skipped_tabs: number }) => {
+    if (!restoreWorkspace(response.layout)) {
+      setLayoutMessage('已保存布局格式无效；已保留当前布局，请联系管理员检查原始数据。');
+      return;
+    }
     revisionRef.current = response.revision;
-    restoreLayout(response.layout);
-    persistedLayoutRef.current = JSON.stringify(sharedLayoutSnapshot(layoutSnapshot()));
+    persistedLayoutRef.current = JSON.stringify(sharedWorkspaceSnapshot(workspaceSnapshot()));
     restoredAtRef.current = Date.now();
     if (response.skipped_tabs > 0) setLayoutMessage(`已跳过 ${response.skipped_tabs} 个无法访问的已保存标签页。`);
   }, []);
@@ -769,7 +850,7 @@ export default function SplitPane({ onActiveSshChange }: { onActiveSshChange?: (
   useEffect(() => {
     let active = true;
     if (!token || !userID) {
-      restoreLayout(emptyPersistedLayout());
+      resetWorkspace();
       return () => { active = false; };
     }
     const clearMessageTimer = window.setTimeout(() => setLayoutMessage(''), 0);
@@ -788,11 +869,11 @@ export default function SplitPane({ onActiveSshChange }: { onActiveSshChange?: (
       if (Date.now() - restoredAtRef.current < 500) return;
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
       saveTimerRef.current = setTimeout(() => {
-        const layout = sharedLayoutSnapshot(layoutSnapshot());
+        const layout = sharedWorkspaceSnapshot(workspaceSnapshot());
         const serializedLayout = JSON.stringify(layout);
         if (!shouldPersistLayout(serializedLayout, persistedLayoutRef.current)) return;
         void apiPut('/api/layout', {
-          schema_version: 1,
+          schema_version: 2,
           revision: revisionRef.current,
           layout,
         }).then((response) => {
@@ -823,6 +904,13 @@ export default function SplitPane({ onActiveSshChange }: { onActiveSshChange?: (
       const revision = layoutEventRevision(raw, revisionRef.current);
       if (revision !== null) void loadLayout(revision).catch(() => setLayoutMessage('无法同步另一端更新的布局；请稍后重试。'));
     }} />}
+    <WorkspaceTabBar
+      tabs={workspaceState.workspaceTabs}
+      activeWorkspaceTabId={activeWorkspaceTabID}
+      onSelect={switchWorkspace}
+      onRename={renameWorkspace}
+      onCreate={addWorkspace}
+    />
     <GridContainer onActiveSshChange={onActiveSshChange} />
     {layoutMessage && <div role="status" style={{ position: 'fixed', right: 16, bottom: 16, zIndex: 20, padding: '8px 12px', borderRadius: 4, background: colors.bgRaised, border: `1px solid ${colors.border}`, color: colors.text, fontSize: font.md }}>{layoutMessage}</div>}
   </>;

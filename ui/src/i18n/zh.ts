@@ -10,6 +10,8 @@ const zh: Record<string, string> = {
   menu_rename_group: '重命名分组', menu_delete_group: '删除分组',
   tab_new: '新建标签', broadcast_off: '广播', broadcast_pane: '当前分屏', broadcast_all: '所有标签',
   broadcast_toggle: '点击切换广播范围',
+  workspace_tabs: '工作区标签', workspace_name: '工作区名称', workspace_new: '新建工作区',
+  workspace_create: '创建工作区', workspace_create_mode: '选择新建方式', workspace_blank: '空白工作区', workspace_copy: '复制当前布局',
   term_copy: '复制', term_paste: '粘贴', term_find: '查找 (Ctrl+F)', term_clear: '清屏',
   term_select_copy: '选择并复制', term_select_copy_armed: '拖动选择…', term_select_copy_cancel: '取消选择复制模式',
   term_select_copy_hint: '请在终端中拖动选择，松开鼠标后自动复制',

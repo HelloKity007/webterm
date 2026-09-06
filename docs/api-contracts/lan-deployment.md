@@ -7,13 +7,14 @@
 ## `GET /api/layout`
 
 - 权限：任何已登录用户。
-- `200`：`{"schema_version":1,"revision":N,"layout":{...}}`；无保存记录时返回空 root 布局和 revision `0`。
+- `200`：`{"schema_version":1|2,"revision":N,"layout":{...}}`。schema v1 是兼容读取的单一 `{tree,panes}`；schema v2 为 `{"workspaceTabs":[{"id","index","name","layout"}]}`，其中每个 `layout` 沿用原 pane 模型。无保存记录时仍返回可迁移的空 schema v1 root 布局和 revision `0`。
 
 ## `PUT /api/layout`
 
 - 权限：任何已登录用户。
-- 请求：`{"schema_version":1,"revision":N,"layout":{...}}`。
-- 校验：JSON 不超过 256 KiB、layout 是有效 pane 树、每个 SSH tab 的连接对当前用户仍可用。
+- 请求：`{"schema_version":2,"revision":N,"layout":{"workspaceTabs":[...]}}`；滚动升级期间仍接受合法 schema v1。
+- 校验：JSON 不超过 256 KiB、每个 workspace 的 ID/正整数 index 唯一、名称非空且不超过 256 字符、pane/session terminal ID 跨 workspace 唯一、每棵 pane 树有效、每个 SSH/DB tab 的连接对当前用户仍可用。
+- 共享/本地边界：workspace 集合、固定 index、名称及各 pane 布局会保存；active workspace、focused pane 和 pane 内 active session tab 不保存。
 - `200`：返回新 revision。
 - `400`：无效 JSON、版本、大小或布局树。
 - `403`：引用了不可用的连接。

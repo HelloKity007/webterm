@@ -10,6 +10,8 @@ const en: Record<string, string> = {
   menu_rename_group: 'Rename Group', menu_delete_group: 'Delete Group',
   tab_new: 'New Tab', broadcast_off: 'Broadcast', broadcast_pane: 'This Pane', broadcast_all: 'All Tabs',
   broadcast_toggle: 'Toggle broadcast',
+  workspace_tabs: 'Workspace tabs', workspace_name: 'Workspace name', workspace_new: 'New workspace',
+  workspace_create: 'Create workspace', workspace_create_mode: 'Choose how to create it', workspace_blank: 'Blank workspace', workspace_copy: 'Copy current layout',
   term_copy: 'Copy', term_paste: 'Paste', term_find: 'Find (Ctrl+F)', term_clear: 'Clear',
   term_select_copy: 'Select & copy', term_select_copy_armed: 'Drag to select…', term_select_copy_cancel: 'Cancel select-and-copy mode',
   term_select_copy_hint: 'Drag across terminal text; releasing the mouse copies it automatically',

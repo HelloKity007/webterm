@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/xufanchn/webterm/auth"
 	"github.com/xufanchn/webterm/store"
@@ -42,6 +43,17 @@ type savedLayout struct {
 	FocusedPaneID string                `json:"focusedPaneId"`
 }
 
+type savedWorkspaceLayout struct {
+	WorkspaceTabs []savedWorkspaceTab `json:"workspaceTabs"`
+}
+
+type savedWorkspaceTab struct {
+	ID     string      `json:"id"`
+	Index  int64       `json:"index"`
+	Name   string      `json:"name"`
+	Layout savedLayout `json:"layout"`
+}
+
 type layoutNode struct {
 	Type      string       `json:"type"`
 	ID        string       `json:"id"`
@@ -74,7 +86,7 @@ func (h *LayoutHandler) Get(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"failed to load layout"}`, http.StatusInternalServerError)
 		return
 	}
-	filtered, skipped := h.filterUnavailableTabs(user, layout.LayoutJSON)
+	filtered, skipped := h.filterUnavailableTabs(user, layout.SchemaVersion, layout.LayoutJSON)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{"schema_version": layout.SchemaVersion, "revision": layout.Revision, "layout": json.RawMessage(filtered), "skipped_tabs": skipped})
 }
@@ -91,11 +103,11 @@ func (h *LayoutHandler) Save(w http.ResponseWriter, r *http.Request) {
 		Revision      int64           `json:"revision"`
 		Layout        json.RawMessage `json:"layout"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&request); err != nil || request.SchemaVersion != 1 || len(request.Layout) == 0 || !validLayoutJSON(request.Layout) {
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil || (request.SchemaVersion != 1 && request.SchemaVersion != 2) || len(request.Layout) == 0 || !validLayoutJSON(request.SchemaVersion, request.Layout) {
 		http.Error(w, `{"error":"invalid layout"}`, http.StatusBadRequest)
 		return
 	}
-	allowed, err := h.layoutConnectionsAreUsable(user, request.Layout)
+	allowed, err := h.layoutConnectionsAreUsable(user, request.SchemaVersion, request.Layout)
 	if err != nil {
 		http.Error(w, `{"error":"failed to validate layout"}`, http.StatusInternalServerError)
 		return
@@ -104,7 +116,7 @@ func (h *LayoutHandler) Save(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"layout references unavailable connection"}`, http.StatusForbidden)
 		return
 	}
-	sharedLayout, err := sharedLayoutJSON(request.Layout)
+	sharedLayout, err := sharedLayoutJSON(request.SchemaVersion, request.Layout)
 	if err != nil {
 		http.Error(w, `{"error":"invalid layout"}`, http.StatusBadRequest)
 		return
@@ -114,8 +126,8 @@ func (h *LayoutHandler) Save(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"failed to load layout"}`, http.StatusInternalServerError)
 		return
 	}
-	currentSharedLayout, err := sharedLayoutJSON(current.LayoutJSON)
-	if current.Revision > 0 && current.Revision == request.Revision && err == nil && bytes.Equal(currentSharedLayout, sharedLayout) {
+	currentSharedLayout, err := sharedLayoutJSON(current.SchemaVersion, current.LayoutJSON)
+	if current.Revision > 0 && current.Revision == request.Revision && current.SchemaVersion == request.SchemaVersion && err == nil && bytes.Equal(currentSharedLayout, sharedLayout) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{"revision": current.Revision})
 		return
@@ -139,22 +151,85 @@ func (h *LayoutHandler) Save(w http.ResponseWriter, r *http.Request) {
 // sharedLayoutJSON deliberately removes browser-local selection state before
 // it reaches the database or the layout event stream.  Only workspace shape
 // and opened tabs are shared between a user's browsers.
-func sharedLayoutJSON(raw json.RawMessage) ([]byte, error) {
-	var layout savedLayout
+func sharedLayoutJSON(schemaVersion int, raw json.RawMessage) ([]byte, error) {
+	if schemaVersion == 1 {
+		var layout savedLayout
+		if err := json.Unmarshal(raw, &layout); err != nil {
+			return nil, err
+		}
+		clearLocalLayoutState(&layout)
+		return json.Marshal(layout)
+	}
+	if schemaVersion != 2 {
+		return nil, errors.New("unsupported layout schema")
+	}
+	var layout savedWorkspaceLayout
 	if err := json.Unmarshal(raw, &layout); err != nil {
 		return nil, err
 	}
+	for index := range layout.WorkspaceTabs {
+		clearLocalLayoutState(&layout.WorkspaceTabs[index].Layout)
+	}
+	return json.Marshal(layout)
+}
+
+func clearLocalLayoutState(layout *savedLayout) {
 	layout.FocusedPaneID = ""
 	for paneID, pane := range layout.Panes {
 		pane.ActiveTabID = ""
 		layout.Panes[paneID] = pane
 	}
-	return json.Marshal(layout)
 }
 
-func validLayoutJSON(raw json.RawMessage) bool {
-	var layout savedLayout
-	if json.Unmarshal(raw, &layout) != nil || layout.Panes == nil {
+func validLayoutJSON(schemaVersion int, raw json.RawMessage) bool {
+	if schemaVersion == 1 {
+		var layout savedLayout
+		return json.Unmarshal(raw, &layout) == nil && validSavedLayout(layout)
+	}
+	if schemaVersion != 2 {
+		return false
+	}
+	var layout savedWorkspaceLayout
+	if json.Unmarshal(raw, &layout) != nil || len(layout.WorkspaceTabs) == 0 {
+		return false
+	}
+	workspaceIDs := make(map[string]struct{}, len(layout.WorkspaceTabs))
+	workspaceIndexes := make(map[int64]struct{}, len(layout.WorkspaceTabs))
+	paneIDs := make(map[string]struct{})
+	terminalIDs := make(map[string]struct{})
+	for _, workspace := range layout.WorkspaceTabs {
+		if strings.TrimSpace(workspace.ID) == "" || workspace.Index < 1 || strings.TrimSpace(workspace.Name) == "" || utf8.RuneCountInString(workspace.Name) > 256 {
+			return false
+		}
+		if _, duplicate := workspaceIDs[workspace.ID]; duplicate {
+			return false
+		}
+		if _, duplicate := workspaceIndexes[workspace.Index]; duplicate {
+			return false
+		}
+		workspaceIDs[workspace.ID] = struct{}{}
+		workspaceIndexes[workspace.Index] = struct{}{}
+		if !validSavedLayout(workspace.Layout) {
+			return false
+		}
+		for paneID, pane := range workspace.Layout.Panes {
+			if _, duplicate := paneIDs[paneID]; duplicate {
+				return false
+			}
+			paneIDs[paneID] = struct{}{}
+			for _, tab := range pane.Tabs {
+				if _, duplicate := terminalIDs[tab.ID]; duplicate {
+					return false
+				}
+				terminalIDs[tab.ID] = struct{}{}
+			}
+		}
+	}
+	return true
+}
+
+func validSavedLayout(layout savedLayout) bool {
+	if layout.Panes == nil {
 		return false
 	}
 	leaves := make(map[string]struct{})
@@ -217,22 +292,24 @@ func validLayoutPane(pane layoutPane) bool {
 	return activeFound
 }
 
-func (h *LayoutHandler) layoutConnectionsAreUsable(user *auth.Claims, raw json.RawMessage) (bool, error) {
-	var layout savedLayout
-	if err := json.Unmarshal(raw, &layout); err != nil {
+func (h *LayoutHandler) layoutConnectionsAreUsable(user *auth.Claims, schemaVersion int, raw json.RawMessage) (bool, error) {
+	layouts, err := decodeSavedLayouts(schemaVersion, raw)
+	if err != nil {
 		return false, err
 	}
-	for _, pane := range layout.Panes {
-		for _, tab := range pane.Tabs {
-			if tab.Type == "ssh" {
-				connection, err := h.Store.GetConnection(tab.ConnID)
-				if err != nil || !canUseConnection(user, connection) {
-					return false, nil
-				}
-			} else {
-				connection, err := h.Store.GetDbConnection(tab.ConnID)
-				if err != nil || !canUseDbConnection(user, connection) {
-					return false, nil
+	for _, layout := range layouts {
+		for _, pane := range layout.Panes {
+			for _, tab := range pane.Tabs {
+				if tab.Type == "ssh" {
+					connection, err := h.Store.GetConnection(tab.ConnID)
+					if err != nil || !canUseConnection(user, connection) {
+						return false, nil
+					}
+				} else {
+					connection, err := h.Store.GetDbConnection(tab.ConnID)
+					if err != nil || !canUseDbConnection(user, connection) {
+						return false, nil
+					}
 				}
 			}
 		}
@@ -240,11 +317,66 @@ func (h *LayoutHandler) layoutConnectionsAreUsable(user *auth.Claims, raw json.R
 	return true, nil
 }
 
-func (h *LayoutHandler) filterUnavailableTabs(user *auth.Claims, raw json.RawMessage) ([]byte, int) {
-	var layout savedLayout
-	if json.Unmarshal(raw, &layout) != nil || !validLayoutJSON(raw) {
+func decodeSavedLayouts(schemaVersion int, raw json.RawMessage) ([]savedLayout, error) {
+	if schemaVersion == 1 {
+		var layout savedLayout
+		if err := json.Unmarshal(raw, &layout); err != nil {
+			return nil, err
+		}
+		return []savedLayout{layout}, nil
+	}
+	if schemaVersion != 2 {
+		return nil, errors.New("unsupported layout schema")
+	}
+	var workspaceLayout savedWorkspaceLayout
+	if err := json.Unmarshal(raw, &workspaceLayout); err != nil {
+		return nil, err
+	}
+	layouts := make([]savedLayout, 0, len(workspaceLayout.WorkspaceTabs))
+	for _, workspace := range workspaceLayout.WorkspaceTabs {
+		layouts = append(layouts, workspace.Layout)
+	}
+	return layouts, nil
+}
+
+func (h *LayoutHandler) filterUnavailableTabs(user *auth.Claims, schemaVersion int, raw json.RawMessage) ([]byte, int) {
+	if !validLayoutJSON(schemaVersion, raw) {
 		return raw, 0
 	}
+	if schemaVersion == 1 {
+		var layout savedLayout
+		if json.Unmarshal(raw, &layout) != nil {
+			return raw, 0
+		}
+		skipped := h.filterSavedLayoutTabs(user, &layout)
+		if skipped == 0 {
+			return raw, 0
+		}
+		encoded, err := json.Marshal(layout)
+		if err != nil {
+			return raw, 0
+		}
+		return encoded, skipped
+	}
+	var layout savedWorkspaceLayout
+	if json.Unmarshal(raw, &layout) != nil {
+		return raw, 0
+	}
+	skipped := 0
+	for index := range layout.WorkspaceTabs {
+		skipped += h.filterSavedLayoutTabs(user, &layout.WorkspaceTabs[index].Layout)
+	}
+	if skipped == 0 {
+		return raw, 0
+	}
+	encoded, err := json.Marshal(layout)
+	if err != nil {
+		return raw, 0
+	}
+	return encoded, skipped
+}
+
+func (h *LayoutHandler) filterSavedLayoutTabs(user *auth.Claims, layout *savedLayout) int {
 	skipped := 0
 	for paneID, pane := range layout.Panes {
 		kept := pane.Tabs[:0]
@@ -272,14 +404,7 @@ func (h *LayoutHandler) filterUnavailableTabs(user *auth.Claims, raw json.RawMes
 		}
 		layout.Panes[paneID] = pane
 	}
-	encoded, err := json.Marshal(layout)
-	if err != nil {
-		return raw, 0
-	}
-	if skipped == 0 {
-		return raw, 0
-	}
-	return encoded, skipped
+	return skipped
 }
 
 func tabExists(tabs []layoutTab, id string) bool {
