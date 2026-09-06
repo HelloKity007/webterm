@@ -1,12 +1,15 @@
 import playwright from '../ui/node_modules/@playwright/test/index.js';
 import { createHash, randomBytes } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
 const { chromium } = playwright;
 const baseURL = (process.env.WEBTERM_BASE_URL || '').replace(/\/$/, '');
 const username = process.env.WEBTERM_LOADTEST_USERNAME || '';
 const password = process.env.WEBTERM_LOADTEST_PASSWORD || '';
 const chromePath = process.env.CHROME_PATH || '/usr/bin/google-chrome';
+const restartReleaseTest = process.env.WEBTERM_RESTART_RELEASE_TEST === 'true';
+const repoRoot = fileURLToPath(new URL('..', import.meta.url));
 const timeout = 60_000;
 
 if (!baseURL || !username || !password) {
@@ -29,6 +32,36 @@ function tmuxHasSession(sessionName) {
 function killTmuxSession(sessionName) {
   if (!sessionName || !tmuxHasSession(sessionName)) return;
   execFileSync('tmux', ['kill-session', '-t', sessionName], { stdio: 'ignore' });
+}
+
+function temporaryUserSessions(userID) {
+  if (!userID) return [];
+  try {
+    const prefix = `wt-${userID}-`;
+    return execFileSync('tmux', ['list-sessions', '-F', '#{session_name}'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
+      .trim().split('\n').filter((session) => session.startsWith(prefix));
+  } catch {
+    return [];
+  }
+}
+
+async function killTemporaryUserSessions(userID) {
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    const sessions = temporaryUserSessions(userID);
+    for (const session of sessions) killTmuxSession(session);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    if (temporaryUserSessions(userID).length === 0) return;
+  }
+  throw new Error(`temporary tmux sessions survived cleanup for user ${userID}`);
+}
+
+async function waitForTmuxSession(sessionName) {
+  const deadline = Date.now() + timeout;
+  while (Date.now() < deadline) {
+    if (tmuxHasSession(sessionName)) return;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  throw new Error(`tmux session was not attached: ${sessionName}`);
 }
 
 async function login(page, loginUsername, loginPassword) {
@@ -81,15 +114,19 @@ async function deleteTemporaryUser(page, token, userID) {
   throw lastError;
 }
 
-function schemaV1Layout(connectionID, terminalID) {
+function schemaV1Layout(connectionID, terminalIDs) {
+  const paneIDs = ['root', ...Array.from({ length: 7 }, (_, index) => `legacy-pane-${index + 2}`)];
   return {
-    tree: { type: 'leaf', id: 'root' },
-    panes: {
-      root: {
-        tabs: [{ id: terminalID, type: 'ssh', title: 'workspace E2E shell', connId: connectionID, labelNumber: 1 }],
-        activeTabId: terminalID,
-      },
+    tree: {
+      type: 'split', direction: 'vertical', ratios: [0.5, 0.5], children: [
+        { type: 'split', direction: 'horizontal', ratios: [0.25, 0.25, 0.25, 0.25], children: paneIDs.slice(0, 4).map((id) => ({ type: 'leaf', id })) },
+        { type: 'split', direction: 'horizontal', ratios: [0.25, 0.25, 0.25, 0.25], children: paneIDs.slice(4).map((id) => ({ type: 'leaf', id })) },
+      ],
     },
+    panes: Object.fromEntries(paneIDs.map((paneID, index) => [paneID, {
+      tabs: [{ id: terminalIDs[index], type: 'ssh', title: `workspace E2E shell ${index + 1}`, connId: connectionID, labelNumber: index + 1 }],
+      activeTabId: terminalIDs[index],
+    }])),
     focusedPaneId: 'root',
   };
 }
@@ -115,6 +152,23 @@ async function openClient(browser, token, user, viewport, deleteRequests) {
   await page.goto(`${baseURL}/`, { waitUntil: 'domcontentloaded', timeout });
   await page.getByRole('tab', { name: '1: workspace', exact: true }).waitFor({ timeout });
   return { context, page, pageErrors, consoleErrors, failedResponses };
+}
+
+async function restartReleaseEnvironment() {
+  execFileSync('bash', ['-lc', 'source ./scripts/lan-lib.sh; lan_stop_pid webterm-release; lan_start_release'], {
+    cwd: repoRoot,
+    env: process.env,
+    stdio: ['ignore', 'ignore', 'pipe'],
+  });
+  const deadline = Date.now() + timeout;
+  while (Date.now() < deadline) {
+    try {
+      const health = execFileSync('curl', ['--silent', '--show-error', '--insecure', `${baseURL}/api/health`], { encoding: 'utf8' });
+      if (health.includes('"environment":"release-test"') && health.includes('"status":"ok"')) return;
+    } catch { /* release listener may still be starting */ }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  throw new Error('release-test did not recover after restart');
 }
 
 async function openCreateDialog(page) {
@@ -150,8 +204,8 @@ let controlContext;
 let controlPage;
 let controllerToken;
 let temporaryUserID;
-let originalSessionName;
-let copiedSessionName;
+let originalSessionNames = [];
+let copiedSessionNames = [];
 const clients = [];
 const deleteRequests = [];
 
@@ -172,20 +226,20 @@ try {
   const token = testLogin.token;
   const connection = await api(controlPage, token, '/api/quick-connect/local', { method: 'POST', body: '{}' });
   const connectionID = connection.connection.id;
-  const originalTerminalID = `workspace-original-${randomBytes(8).toString('hex')}`;
-  originalSessionName = terminalSessionName(temporaryUserID, connectionID, originalTerminalID);
+  const originalTerminalIDs = Array.from({ length: 8 }, () => `workspace-original-${randomBytes(8).toString('hex')}`);
+  originalSessionNames = originalTerminalIDs.map((terminalID) => terminalSessionName(temporaryUserID, connectionID, terminalID));
   const current = await api(controlPage, token, '/api/layout');
   await api(controlPage, token, '/api/layout', {
     method: 'PUT',
-    body: JSON.stringify({ schema_version: 1, revision: current.revision, layout: schemaV1Layout(connectionID, originalTerminalID) }),
+    body: JSON.stringify({ schema_version: 1, revision: current.revision, layout: schemaV1Layout(connectionID, originalTerminalIDs) }),
   });
 
   const first = await openClient(browser, token, testLogin.user, { width: 1440, height: 900 }, deleteRequests);
   clients.push(first);
   const second = await openClient(browser, token, testLogin.user, { width: 1280, height: 800 }, deleteRequests);
   clients.push(second);
-  await first.page.waitForFunction((terminalID) => typeof window[`webterm-ws-${terminalID}`] === 'function', originalTerminalID, { timeout });
-  if (!tmuxHasSession(originalSessionName)) throw new Error('v1 migration did not retain and attach the original terminalID');
+  await first.page.waitForFunction((terminalID) => typeof window[`webterm-ws-${terminalID}`] === 'function', originalTerminalIDs[0], { timeout });
+  for (const sessionName of originalSessionNames) await waitForTmuxSession(sessionName);
 
   let dialog = await openCreateDialog(first.page);
   const radios = dialog.getByRole('radio');
@@ -223,11 +277,17 @@ try {
   for (const values of Object.values(ids)) {
     if (new Set(values).size !== values.length) throw new Error(`schema v2 contains duplicate identities: ${JSON.stringify(ids)}`);
   }
-  const copiedTerminalID = persisted.layout.workspaceTabs[2].layout.panes[Object.keys(persisted.layout.workspaceTabs[2].layout.panes)[0]].tabs[0].id;
-  if (!copiedTerminalID || copiedTerminalID === originalTerminalID) throw new Error('copied workspace reused the original terminalID');
-  copiedSessionName = terminalSessionName(temporaryUserID, connectionID, copiedTerminalID);
-  await first.page.waitForFunction((terminalID) => typeof window[`webterm-ws-${terminalID}`] === 'function', copiedTerminalID, { timeout });
-  if (!tmuxHasSession(copiedSessionName)) throw new Error('copied workspace did not attach its independent terminal session');
+  const migratedTerminalIDs = Object.values(persisted.layout.workspaceTabs[0].layout.panes).flatMap((pane) => pane.tabs.map((tab) => tab.id));
+  if (migratedTerminalIDs.length !== 8 || originalTerminalIDs.some((terminalID) => !migratedTerminalIDs.includes(terminalID))) {
+    throw new Error('v1 to v2 migration changed one or more existing 8-pane terminal IDs');
+  }
+  const copiedTerminalIDs = Object.values(persisted.layout.workspaceTabs[2].layout.panes).flatMap((pane) => pane.tabs.map((tab) => tab.id));
+  if (copiedTerminalIDs.length !== 8 || copiedTerminalIDs.some((terminalID) => originalTerminalIDs.includes(terminalID))) {
+    throw new Error('copied 8-pane workspace reused an original terminalID');
+  }
+  copiedSessionNames = copiedTerminalIDs.map((terminalID) => terminalSessionName(temporaryUserID, connectionID, terminalID));
+  await first.page.waitForFunction((terminalID) => typeof window[`webterm-ws-${terminalID}`] === 'function', copiedTerminalIDs[0], { timeout });
+  for (const sessionName of copiedSessionNames) await waitForTmuxSession(sessionName);
 
   await second.page.getByRole('tab', { name: '3: <b>production & qa</b>', exact: true }).waitFor({ timeout });
   if (!await second.page.getByRole('tab', { name: '1: workspace', exact: true }).getAttribute('aria-selected').then((value) => value === 'true')) {
@@ -238,18 +298,22 @@ try {
   if (await first.page.getByRole('tab', { name: '2: blank & qa', exact: true }).getAttribute('aria-selected') !== 'true') {
     throw new Error('workspace switching in one browser changed another browser active workspace');
   }
-  if (!tmuxHasSession(originalSessionName) || !tmuxHasSession(copiedSessionName)) throw new Error('workspace switching killed a hidden tmux session');
+  if (![...originalSessionNames, ...copiedSessionNames].every(tmuxHasSession)) throw new Error('workspace switching killed a hidden tmux session');
   if (deleteRequests.length > 0) throw new Error(`workspace switching called terminal session DELETE: ${deleteRequests.join(',')}`);
 
   await first.page.reload({ waitUntil: 'domcontentloaded', timeout });
   await first.page.getByRole('tab', { name: '1: workspace', exact: true }).waitFor({ timeout });
   await first.page.getByRole('tab', { name: '2: blank & qa', exact: true }).waitFor();
   await first.page.getByRole('tab', { name: '3: <b>production & qa</b>', exact: true }).waitFor();
+  await first.page.waitForFunction((terminalID) => typeof window[`webterm-ws-${terminalID}`] === 'function', originalTerminalIDs[0], { timeout });
+  await first.page.locator('.terminal-surface').first().waitFor({ timeout });
   await first.page.screenshot({ path: '/tmp/webterm-workspace-tabs-desktop.png', fullPage: true });
 
   const mobile = await openClient(browser, token, testLogin.user, { width: 390, height: 844 }, deleteRequests);
   clients.push(mobile);
   await mobile.page.getByRole('tab', { name: '3: <b>production & qa</b>', exact: true }).waitFor({ timeout });
+  await mobile.page.waitForFunction((terminalID) => typeof window[`webterm-ws-${terminalID}`] === 'function', originalTerminalIDs[0], { timeout });
+  await mobile.page.locator('.terminal-surface').first().waitFor({ timeout });
   const overflow = await mobile.page.evaluate(() => ({ body: document.body.scrollWidth - document.body.clientWidth, document: document.documentElement.scrollWidth - document.documentElement.clientWidth }));
   if (overflow.body > 1 || overflow.document > 1) throw new Error(`workspace bar overflowed the mobile viewport: ${JSON.stringify(overflow)}`);
   await mobile.page.screenshot({ path: '/tmp/webterm-workspace-tabs-mobile.png', fullPage: true });
@@ -262,14 +326,39 @@ try {
   if (diagnostics.length > 0) throw new Error(`browser diagnostics were not clean: ${diagnostics.join(' | ')}`);
   if (deleteRequests.length > 0) throw new Error(`unexpected terminal session DELETE: ${deleteRequests.join(',')}`);
 
+  let persistedAfterRestart = false;
+  if (restartReleaseTest) {
+    for (const client of clients) await client.context.close();
+    await restartReleaseEnvironment();
+    controllerToken = (await login(controlPage, username, password)).token;
+    const restartedLogin = await login(controlPage, temporaryUsername, temporaryPassword);
+    const afterRestart = await openClient(browser, restartedLogin.token, restartedLogin.user, { width: 1365, height: 768 }, deleteRequests);
+    clients.push(afterRestart);
+    await afterRestart.page.getByRole('tab', { name: '2: blank & qa', exact: true }).waitFor({ timeout });
+    await afterRestart.page.getByRole('tab', { name: '3: <b>production & qa</b>', exact: true }).waitFor({ timeout });
+    const restartedLayout = await api(afterRestart.page, restartedLogin.token, '/api/layout');
+    if (restartedLayout.schema_version !== 2 || restartedLayout.layout.workspaceTabs.length !== 3) {
+      throw new Error(`workspace schema did not survive release-test restart: ${JSON.stringify(restartedLayout)}`);
+    }
+    if (![...originalSessionNames, ...copiedSessionNames].every(tmuxHasSession)) {
+      throw new Error('release-test restart killed a workspace terminal session');
+    }
+    if (afterRestart.pageErrors.length || afterRestart.consoleErrors.length || afterRestart.failedResponses.length) {
+      throw new Error(`post-restart browser diagnostics were not clean: ${JSON.stringify({ pageErrors: afterRestart.pageErrors, consoleErrors: afterRestart.consoleErrors, failedResponses: afterRestart.failedResponses })}`);
+    }
+    persistedAfterRestart = true;
+  }
+
   process.stdout.write(`${JSON.stringify({
     schemaVersion: persisted.schema_version,
     workspaceIndexes: indexes,
     workspaceNames: persisted.layout.workspaceTabs.map((workspace) => workspace.name),
-    v1TerminalRetained: true,
-    copyUsesIndependentTerminalID: true,
+    v1TerminalsRetained: 8,
+    copyUsesIndependentTerminalIDs: 8,
     hiddenTmuxSessionsRetained: true,
     independentBrowserSelection: true,
+    persistedAfterReleaseTestRestart: persistedAfterRestart,
+    reauthenticatedAfterReleaseTestRestart: persistedAfterRestart,
     terminalSessionDeletes: 0,
     desktopScreenshot: '/tmp/webterm-workspace-tabs-desktop.png',
     mobileScreenshot: '/tmp/webterm-workspace-tabs-mobile.png',
@@ -278,10 +367,12 @@ try {
     failedResponses: [],
   })}\n`);
 } finally {
+  let cleanupError;
   for (const client of clients) await client.context.close().catch(() => {});
-  killTmuxSession(originalSessionName);
-  killTmuxSession(copiedSessionName);
+  for (const sessionName of [...originalSessionNames, ...copiedSessionNames]) killTmuxSession(sessionName);
+  await killTemporaryUserSessions(temporaryUserID).catch((error) => { cleanupError = error; });
   if (temporaryUserID && controlPage && controllerToken) await deleteTemporaryUser(controlPage, controllerToken, temporaryUserID).catch(() => {});
   if (controlContext) await controlContext.close().catch(() => {});
   if (browser) await browser.close().catch(() => {});
+  if (cleanupError) throw cleanupError;
 }

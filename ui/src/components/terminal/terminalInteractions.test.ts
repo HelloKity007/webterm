@@ -1,6 +1,21 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest';
-import { clearTerminalHistory, copyTerminalText, createTerminalMouseState, getTerminalGridPosition, getTerminalSelectionRange, getTerminalSelectionRows, isForwardedTerminalPointerEvent, isTerminalSelectionDrag, pasteTerminalText, replayTerminalLeftClick, routeTerminalClipboardShortcut, routeTerminalControlShortcut, routeTerminalContextMenu, routeTerminalMouseDown, routeTerminalMouseMove, routeTerminalMouseUp, shouldPersistTerminalSelection } from './terminalInteractions';
+import { clearTerminalHistory, copyTerminalText, createTerminalMouseState, getTerminalGridPosition, getTerminalSelectionRange, getTerminalSelectionRows, isForwardedTerminalPointerEvent, isTerminalSelectionDrag, pasteTerminalText, replayTerminalLeftClick, routeTerminalClipboardShortcut, routeTerminalControlShortcut, routeTerminalContextMenu, routeTerminalMouseDown, routeTerminalMouseMove, routeTerminalMouseUp, shouldAutoFocusTerminal, shouldPersistTerminalSelection } from './terminalInteractions';
+
+describe('terminal autofocus', () => {
+  it('does not steal focus from an active text editor', () => {
+    const input = document.createElement('input');
+    const textarea = document.createElement('textarea');
+    const editable = document.createElement('div');
+    editable.setAttribute('contenteditable', 'true');
+
+    expect(shouldAutoFocusTerminal(input)).toBe(false);
+    expect(shouldAutoFocusTerminal(textarea)).toBe(false);
+    expect(shouldAutoFocusTerminal(editable)).toBe(false);
+    expect(shouldAutoFocusTerminal(document.createElement('button'))).toBe(true);
+    expect(shouldAutoFocusTerminal(null)).toBe(true);
+  });
+});
 
 describe('terminal right-click routing', () => {
   it('keeps a plain right-click in the frontend and blocks tmux mouse handling', () => {

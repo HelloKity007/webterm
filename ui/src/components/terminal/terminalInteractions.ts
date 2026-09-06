@@ -36,6 +36,11 @@ interface TerminalClipboardShortcutActions {
 
 const forwardedTerminalPointerEvents = new WeakSet<Event>();
 
+export function shouldAutoFocusTerminal(activeElement: Element | null): boolean {
+  if (!activeElement) return true;
+  return !activeElement.matches('input, textarea, select, [contenteditable]:not([contenteditable="false"])');
+}
+
 export function isForwardedTerminalPointerEvent(event: Event | undefined): boolean {
   return Boolean(event && forwardedTerminalPointerEvents.has(event));
 }

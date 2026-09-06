@@ -42,6 +42,7 @@ import {
   routeTerminalMouseDown,
   routeTerminalMouseMove,
   routeTerminalMouseUp,
+  shouldAutoFocusTerminal,
   shouldPersistTerminalSelection,
 } from './terminalInteractions';
 import { calculateTerminalScale, parseSharedTerminalGridTitle, type TerminalGrid } from './terminalScaling';
@@ -638,9 +639,11 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
 
       requestAnimationFrame(() => {
         scheduleFit();
-        term.focus();
+        if (shouldAutoFocusTerminal(document.activeElement)) term.focus();
         // Retry focus after layout settles (important for split panes)
-        setTimeout(() => term.focus(), 100);
+        setTimeout(() => {
+          if (shouldAutoFocusTerminal(document.activeElement)) term.focus();
+        }, 100);
       });
     }
 
