@@ -431,6 +431,10 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       cursorBlink: true, fontSize: fontSize, fontFamily: '"JetBrains Mono", "JetBrains Maple Mono", Consolas, monospace',
       scrollback: terminalScrollbackLines,
       scrollOnUserInput: true,
+      // Match native terminal applications: one wheel notch should advance
+      // several rows instead of appearing to crawl through long scrollback.
+      scrollSensitivity: 5,
+      fastScrollSensitivity: 5,
       theme: {
         background: themeConfig.background,
         foreground: themeConfig.foreground,
