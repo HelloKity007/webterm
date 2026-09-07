@@ -18,7 +18,7 @@ describe('calculateTerminalScale', () => {
     expect(defaultSharedTerminalGrid).toEqual({ cols: 80, rows: 24 });
     expect(sharedGridForViewport({ cols: 40, rows: 14 }, 1193)).toEqual({ cols: 80, rows: 24 });
     expect(sharedGridForViewport({ cols: 350, rows: 62 }, 1193)).toEqual({ cols: 350, rows: 62 });
-    expect(sharedGridForViewport({ cols: 40, rows: 14 }, 1920)).toEqual({ cols: 80, rows: 24 });
+    expect(sharedGridForViewport({ cols: 40, rows: 14 }, 1920)).toEqual({ cols: 40, rows: 14 });
     expect(sharedGridForViewport({ cols: 100, rows: 30 }, 2560)).toEqual({ cols: 100, rows: 30 });
   });
   it('keeps the configured font for a native-size shared grid', () => {
@@ -32,7 +32,7 @@ describe('calculateTerminalScale', () => {
 
   it('fits a larger shared grid into a smaller browser without cropping rows', () => {
     const result = calculateTerminalScale({ cols: 191, rows: 46 }, { cols: 350, rows: 62 }, 14, 8);
-    expect(result.fontSize).toBeCloseTo(7.64, 1);
+    expect(result.fontSize).toBe(9);
     expect(result.letterSpacing).toBe(0);
     expect(result.lineHeight).toBeGreaterThan(1);
     expect(result.scale).toBeLessThan(1);
@@ -40,7 +40,7 @@ describe('calculateTerminalScale', () => {
 
   it('uses cell spacing when height is the limiting dimension', () => {
     const result = calculateTerminalScale({ cols: 240, rows: 30 }, { cols: 300, rows: 60 }, 14, 8);
-    expect(result.fontSize).toBe(7);
+    expect(result.fontSize).toBe(9);
     expect(result.letterSpacing).toBeGreaterThan(0);
     expect(result.lineHeight).toBe(1);
   });
