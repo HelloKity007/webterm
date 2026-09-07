@@ -20,7 +20,7 @@ export const smallViewportWidth = 2400;
 // Do not rasterise a full 3440px grid into unreadable glyphs on a 1920px
 // client. The small client still gets a generous complete working area while
 // keeping a practical upper bound for readability.
-export const smallViewportGridLimit: TerminalGrid = { cols: 120, rows: 40 };
+export const smallViewportGridLimit: TerminalGrid = { cols: 80, rows: 30 };
 
 export function sharedGridForViewport(announced: TerminalGrid, viewportWidth: number): TerminalGrid {
   if (viewportWidth >= smallViewportWidth) return announced;
@@ -69,7 +69,8 @@ export function calculateTerminalScale(
   // without stretching the glyphs themselves.
   // Keep scaled glyphs readable on small panels instead of rasterising them
   // at 2–4px. The final screen-fit pass still adapts the grid dimensions.
-  const fontSize = Math.max(13, baseFontSize * scale);
+  const readableFloor = Math.min(baseFontSize, 16);
+  const fontSize = Math.max(readableFloor, baseFontSize * scale);
   const effectiveScale = fontSize / baseFontSize;
   const fitMargin = scale < 1 ? 0.99 : 1;
   const letterSpacing = Math.max(0, nativeCellWidth * (widthScale * fitMargin - effectiveScale));
