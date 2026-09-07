@@ -5,6 +5,7 @@
 > Source spec: `docs/superpowers/specs/2026-09-04-WebTerm-Dev-Spec-v1.2.md`
 > Target branch: `dev-1.0.2` (verify with `git branch --show-current` before implementation)
 > Accepted implementation HEAD: `e8f2eef`
+> Production font corrective build: `9359c3c4` (2026-09-07), preserving production wheel behavior
 
 ## 1. 目标
 
