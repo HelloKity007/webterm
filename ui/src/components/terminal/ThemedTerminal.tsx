@@ -567,17 +567,20 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
         const currentScreen = term.element?.querySelector<HTMLElement>('.xterm-screen');
         if (currentScreen) currentScreen.style.transform = '';
 
+        const displayWidth = Math.max(window.innerWidth, window.screen?.width || 0);
+        const useSmallViewportBaseline = displayWidth < smallViewportWidth;
+        // Increase only the small client's base glyph size. Large displays
+        // retain the production-native font metrics and scroll behavior.
+        const responsiveFontSize = useSmallViewportBaseline ? Math.max(fontSize, 16) : fontSize;
         // First measure how many cells this browser can show at the configured
         // font. Never accept a title smaller than that native grid: this lets a
         // newly attached larger browser grow the shared tmux window.
-        term.options.fontSize = fontSize;
+        term.options.fontSize = responsiveFontSize;
         term.options.letterSpacing = 0;
         term.options.lineHeight = 1;
         fitAddon.fit();
 
         const nativeGrid = { cols: term.cols, rows: term.rows };
-        const displayWidth = Math.max(window.innerWidth, window.screen?.width || 0);
-        const useSmallViewportBaseline = displayWidth < smallViewportWidth;
         const viewportGrid = sharedGrid
           ? sharedGridForViewport(sharedGrid, displayWidth)
           : (useSmallViewportBaseline ? defaultSharedTerminalGrid : null);
@@ -589,7 +592,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
         const nativeCellWidth = screen && nativeGrid.cols > 0
           ? screen.getBoundingClientRect().width / nativeGrid.cols
           : 1;
-        let scaleOptions = calculateTerminalScale(nativeGrid, targetGrid, fontSize, nativeCellWidth);
+        let scaleOptions = calculateTerminalScale(nativeGrid, targetGrid, responsiveFontSize, nativeCellWidth);
 
         term.options.fontSize = scaleOptions.fontSize;
         term.options.letterSpacing = scaleOptions.letterSpacing;

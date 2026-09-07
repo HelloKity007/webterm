@@ -47,15 +47,15 @@ describe('terminal CLI history support', () => {
     clock.mockRestore();
   });
 
-  it('leaves ordinary alternate-screen wheel input native for smooth TUI scrolling', () => {
+  it('uses the production-proven rate-limited page path for alternate-screen wheel scrolling', () => {
     const clock = vi.spyOn(Date, 'now').mockReturnValue(3_000);
     const state = createTerminalWheelState();
     const sendPage = vi.fn();
     const event = new WheelEvent('wheel', { cancelable: true, deltaY: -80 });
 
-    expect(routeTerminalWheel(event, { alternateScreen: true, state, sendPage })).toBe(true);
-    expect(event.defaultPrevented).toBe(false);
-    expect(sendPage).not.toHaveBeenCalled();
+    expect(routeTerminalWheel(event, { alternateScreen: true, state, sendPage })).toBe(false);
+    expect(event.defaultPrevented).toBe(true);
+    expect(sendPage).toHaveBeenCalledWith('up');
     clock.mockRestore();
   });
 
