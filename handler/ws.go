@@ -32,9 +32,22 @@ type WSHandler struct {
 	// with production tmux names: closing a test tab removes only test layout
 	// state and never kills the shared remote session.
 	PreserveTerminalSessions bool
+	// TmuxSocket isolates release-test from production's tmux server. Empty
+	// means the user's default tmux socket (production behavior).
+	TmuxSocket string
 	// RunTerminalCommand is overridden by handler tests to replace remote SSH I/O.
 	RunTerminalCommand func(*store.Connection, string) error
 	terminalSessions   persistentSessionRegistry
+}
+
+// scopeTmuxCommand routes every tmux invocation, including invocations inside
+// run-shell hooks, through the environment-specific server socket. Commands
+// are generated internally and contain only controlled tmux syntax.
+func scopeTmuxCommand(command, socket string) string {
+	if strings.TrimSpace(socket) == "" {
+		return command
+	}
+	return strings.ReplaceAll(command, "tmux ", "tmux -L "+socket+" ")
 }
 
 func applyPanelSessionName(command string, userID, connectionID int64, terminalID, workspaceRaw, panelRaw string) string {
@@ -130,6 +143,7 @@ func (h *WSHandler) CloseTerminalSession(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	command = applyPanelSessionName(command, user.UserID, connID, terminalID, r.URL.Query().Get("workspace_index"), r.URL.Query().Get("panel_number"))
+	command = scopeTmuxCommand(command, h.TmuxSocket)
 	if err := h.runTerminalCommand(connection, command); err != nil {
 		http.Error(w, `{"error":"failed to close terminal"}`, http.StatusBadGateway)
 		return
@@ -249,6 +263,11 @@ func (h *WSHandler) HandleSSH(conn *websocket.Conn) {
 	codexScrollableCommand = applyPanelSessionName(codexScrollableCommand, user.UserID, connID, terminalID, workspaceIndex, panelNumber)
 	resumeInputCommand = applyPanelSessionName(resumeInputCommand, user.UserID, connID, terminalID, workspaceIndex, panelNumber)
 	followInputCommand = applyPanelSessionName(followInputCommand, user.UserID, connID, terminalID, workspaceIndex, panelNumber)
+	tmuxCommand = scopeTmuxCommand(tmuxCommand, h.TmuxSocket)
+	clearCommand = scopeTmuxCommand(clearCommand, h.TmuxSocket)
+	codexScrollableCommand = scopeTmuxCommand(codexScrollableCommand, h.TmuxSocket)
+	resumeInputCommand = scopeTmuxCommand(resumeInputCommand, h.TmuxSocket)
+	followInputCommand = scopeTmuxCommand(followInputCommand, h.TmuxSocket)
 
 	terminalKey := fmt.Sprintf("%d:%d:%s", user.UserID, connID, terminalID)
 	releaseTerminal, err := h.terminalSessions.acquire(terminalKey, persistentTerminalSessionLimit)

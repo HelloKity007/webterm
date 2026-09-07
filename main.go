@@ -98,6 +98,14 @@ func main() {
 	wsH := &handler.WSHandler{
 		Store: st, Pool: pool, AESCipher: aesCipher,
 		PreserveTerminalSessions: *preserveTerminalSessions,
+		// Release-test gets a private tmux server. Its copied layout may use the
+		// same terminal IDs, but must never resize or mutate production sessions.
+		TmuxSocket: func() string {
+			if *deploymentEnvironment == "release-test" {
+				return "webterm-release-test"
+			}
+			return ""
+		}(),
 	}
 
 	mux.Handle("GET /api/connections", auth.Middleware(http.HandlerFunc(connH.List)))

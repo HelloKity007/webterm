@@ -3,7 +3,7 @@
 > Status: 🟡 In progress — M2 accepted, M3 is next
 > Created: 2026-09-04；Last synced: 2026-09-05
 > Source spec: `docs/superpowers/specs/2026-09-04-WebTerm-Dev-Spec-v1.2.md`
-> Target branch: `dev-1.0.1`
+> Target branch: `dev-1.0.2` (verify with `git branch --show-current` before implementation)
 > Accepted implementation HEAD: `e8f2eef`
 
 ## 1. 目标
@@ -38,7 +38,7 @@
 
 | 阶段 | 范围 | 依赖 | 主要出口 |
 |---|---|---|---|
-| M0 | 基线冻结与测量夹具 | 无 | 🟡 CLI/容量夹具已完成；安全/性能夹具随对应阶段补齐 |
+| M0 | 基线冻结、测量夹具与双环境 tmux 隔离 | 无 | 🟡 CLI/容量夹具已完成；先关闭 test→production tmux 污染 |
 | M1 | Codex/Claude CLI 历史、复制与跨尺寸显示 | M0 | ✅ 已提交并按当前口径验收；转回归门禁 |
 | M2 | 工作区 Tab | 已验收 8 pane 基线 | ✅ 上层多 Tab、固定编号、重命名、v1→v2、真实浏览器多端验收通过 |
 | M3 | **WS 安全与单写者（下一优先级）** | M2 | upgrade 前授权、Origin、ticket、无 race |
@@ -53,6 +53,12 @@ M6 和 M7 在 M5 契约稳定后可并行开发，但合并前分别在最新共
 ## 4. M0 — 基线冻结与测试夹具
 
 实施状态（2026-09-05）：部分完成。CLI synthetic fixture、真实会话 evidence 和容量 evidence 已提交并验收；WS 握手、故障注入和 renderer/performance 夹具在对应后续阶段补齐。
+
+### M0-0 双环境 tmux 隔离（新增 P0 门禁）
+
+9443 production 与 9444 release-test 必须使用不同的远端 tmux socket/namespace。当前 `-preserve-terminal-sessions` 只隔离了测试布局清理，不能阻止测试 attach 改写 production session 的 window size、hooks、mouse、history 或 CLI 状态；因此在继续 Control Mode 或滚动优化前，先完成 namespace 注入、session registry key 隔离、测试 namespace 清理和跨环境不变量测试。
+
+出口条件：在同一连接快照上，release-test 的 attach/resize/滚动/输入/关闭操作不会改变 production session 的 options、window size、history、pane PID 或输出；production 现有 session 不迁移、不 kill。
 
 ### 目的
 

@@ -10,6 +10,17 @@ import (
 	"github.com/xufanchn/webterm/store"
 )
 
+func TestScopeTmuxCommandUsesEnvironmentSocketEverywhere(t *testing.T) {
+	command := `tmux start-server \; tmux set-option -t wt mouse on && tmux run-shell "tmux list-clients -t wt"`
+	want := `tmux -L webterm-release-test start-server \; tmux -L webterm-release-test set-option -t wt mouse on && tmux -L webterm-release-test run-shell "tmux -L webterm-release-test list-clients -t wt"`
+	if got := scopeTmuxCommand(command, "webterm-release-test"); got != want {
+		t.Fatalf("scoped command = %q, want %q", got, want)
+	}
+	if got := scopeTmuxCommand(command, ""); got != command {
+		t.Fatalf("production command changed without socket: %q", got)
+	}
+}
+
 func TestCloseTerminalSessionKillsOnlyTheRequestedTabsTmuxSession(t *testing.T) {
 	st := newQuickConnectTestStore(t)
 	userID, err := st.CreateUser("terminal-owner", "hash", "user")
