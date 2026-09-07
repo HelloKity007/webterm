@@ -577,7 +577,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
         const viewportGrid = sharedGrid
           ? sharedGridForViewport(sharedGrid, displayWidth)
           : (useSmallViewportBaseline ? defaultSharedTerminalGrid : null);
-        const targetGrid = viewportGrid ? {
+        const targetGrid = useSmallViewportBaseline && viewportGrid ? {
           cols: Math.max(nativeGrid.cols, viewportGrid.cols),
           rows: Math.max(nativeGrid.rows, viewportGrid.rows),
         } : nativeGrid;

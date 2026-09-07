@@ -13,15 +13,20 @@ export interface TerminalScaleOptions {
 // Give a small-only client a deterministic shared grid. A larger client can
 // still grow this target through the authoritative tmux title announcement.
 export const defaultSharedTerminalGrid: TerminalGrid = { cols: 80, rows: 24 };
-// Keep a 1920-wide desktop as the large authority. Narrower screens use the
-// deterministic shared-grid baseline and adaptive glyph sizing.
-export const smallViewportWidth = 1800;
+// A 1920-wide desktop is the small side when paired with a 3440px authority.
+// Narrower screens use the deterministic shared-grid baseline and adaptive
+// glyph sizing.
+export const smallViewportWidth = 2400;
+// Do not rasterise a full 3440px grid into unreadable glyphs on a 1920px
+// client. The small client still gets a generous complete working area while
+// keeping a practical upper bound for readability.
+export const smallViewportGridLimit: TerminalGrid = { cols: 160, rows: 48 };
 
 export function sharedGridForViewport(announced: TerminalGrid, viewportWidth: number): TerminalGrid {
   if (viewportWidth >= smallViewportWidth) return announced;
   return {
-    cols: Math.max(announced.cols, defaultSharedTerminalGrid.cols),
-    rows: Math.max(announced.rows, defaultSharedTerminalGrid.rows),
+    cols: Math.min(smallViewportGridLimit.cols, Math.max(announced.cols, defaultSharedTerminalGrid.cols)),
+    rows: Math.min(smallViewportGridLimit.rows, Math.max(announced.rows, defaultSharedTerminalGrid.rows)),
   };
 }
 
@@ -64,7 +69,7 @@ export function calculateTerminalScale(
   // without stretching the glyphs themselves.
   // Keep scaled glyphs readable on small panels instead of rasterising them
   // at 2–4px. The final screen-fit pass still adapts the grid dimensions.
-  const fontSize = Math.max(9, baseFontSize * scale);
+  const fontSize = Math.max(11, baseFontSize * scale);
   const effectiveScale = fontSize / baseFontSize;
   const fitMargin = scale < 1 ? 0.99 : 1;
   const letterSpacing = Math.max(0, nativeCellWidth * (widthScale * fitMargin - effectiveScale));
