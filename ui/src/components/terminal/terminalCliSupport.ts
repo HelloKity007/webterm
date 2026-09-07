@@ -76,22 +76,10 @@ export function routeTerminalHistoryWheel(event: WheelEvent, options: TerminalWh
 }
 
 export function routeTerminalWheel(event: WheelEvent, options: TerminalWheelOptions = {}): boolean {
-  // Fullscreen TUIs repaint the entire alternate buffer for every SGR wheel
-  // report. Use the rate-limited page fallback there; main-screen scrolling
-  // remains native xterm/tmux behavior.
-  if (options.alternateScreen && options.state && options.sendPage) {
-    const direction = event.deltaY < 0 ? -1 : event.deltaY > 0 ? 1 : 0;
-    if (direction === 0) return false;
-    event.preventDefault();
-    event.stopPropagation();
-    const now = Date.now();
-    if (direction !== options.state.lastPageDirection || now - options.state.lastPageAt >= alternatePageIntervalMs) {
-      options.state.lastPageAt = now;
-      options.state.lastPageDirection = direction;
-      options.sendPage(direction < 0 ? 'up' : 'down');
-    }
-    return false;
-  }
+  // Let fullscreen TUIs receive ordinary wheel reports directly. Claude and
+  // Codex implement their own viewport history and are substantially smoother
+  // when tmux forwards the native SGR mouse event. Shift+wheel remains the
+  // explicit, rate-limited PageUp/PageDown fallback for stuck renderers.
   return event.shiftKey ? routeTerminalHistoryWheel(event, options) : true;
 }
 
