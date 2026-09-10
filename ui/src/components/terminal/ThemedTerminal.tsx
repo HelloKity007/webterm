@@ -470,6 +470,14 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
     const mobileBrowser = isMobileBrowserEnvironment();
     term.attachCustomWheelEventHandler((event) => {
       if (event.deltaY < 0) inputViewportFollowedRef.current = false;
+      // A normal shell has a local xterm scrollback. Do not let tmux's mouse
+      // protocol reach readline, where wheel reports become history-up/down.
+      if (term.buffer.active.type !== 'alternate') {
+        event.preventDefault();
+        event.stopPropagation();
+        term.scrollLines(event.deltaY < 0 ? -3 : event.deltaY > 0 ? 3 : 0);
+        return false;
+      }
       return routeTerminalWheel(event, {
         alternateScreen: term.buffer.active.type === 'alternate',
         state: wheelStateRef.current,
@@ -496,6 +504,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       const deltaY = touchLastY - event.touches[0].clientY;
       if (Math.abs(deltaY) < 4) return;
       event.preventDefault();
+      event.stopImmediatePropagation();
       touchRemainder += deltaY;
       touchLastY = event.touches[0].clientY;
       const alternate = term.buffer.active.type === 'alternate';
@@ -608,7 +617,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
         const useSmallViewportBaseline = !mobileBrowser && displayWidth < smallViewportWidth;
         // Increase only the small client's base glyph size. Large displays
         // retain the production-native font metrics and scroll behavior.
-        const responsiveFontSize = mobileBrowser ? Math.max(fontSize, 16) : useSmallViewportBaseline ? Math.max(fontSize, 16) : fontSize;
+        const responsiveFontSize = mobileBrowser ? Math.max(12, fontSize - 2) : useSmallViewportBaseline ? Math.max(fontSize, 16) : fontSize;
         // First measure how many cells this browser can show at the configured
         // font. Never accept a title smaller than that native grid: this lets a
         // newly attached larger browser grow the shared tmux window.
