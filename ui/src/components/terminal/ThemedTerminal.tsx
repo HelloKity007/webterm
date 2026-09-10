@@ -617,7 +617,9 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
         const useSmallViewportBaseline = !mobileBrowser && displayWidth < smallViewportWidth;
         // Increase only the small client's base glyph size. Large displays
         // retain the production-native font metrics and scroll behavior.
-        const responsiveFontSize = mobileBrowser ? Math.max(12, fontSize - 2) : useSmallViewportBaseline ? Math.max(fontSize, 16) : fontSize;
+        // Phones have a much shorter portrait width; keep a compact native
+        // glyph while avoiding any transform/stretch of the terminal canvas.
+        const responsiveFontSize = mobileBrowser ? Math.max(11, fontSize - 4) : useSmallViewportBaseline ? Math.max(fontSize, 16) : fontSize;
         // First measure how many cells this browser can show at the configured
         // font. Never accept a title smaller than that native grid: this lets a
         // newly attached larger browser grow the shared tmux window.
