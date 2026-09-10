@@ -649,10 +649,14 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
         const viewportGrid = sharedGrid
           ? (mobileBrowser ? sharedGrid : sharedGridForViewport(sharedGrid, displayWidth))
           : (useSmallViewportBaseline ? defaultSharedTerminalGrid : null);
-        const targetGrid = (mobileBrowser || useSmallViewportBaseline) && viewportGrid ? {
-          cols: Math.max(nativeGrid.cols, viewportGrid.cols),
-          rows: Math.max(nativeGrid.rows, viewportGrid.rows),
-        } : nativeGrid;
+        const targetGrid = mobileBrowser && viewportGrid
+          ? viewportGrid
+          : useSmallViewportBaseline && viewportGrid
+            ? {
+              cols: Math.max(nativeGrid.cols, viewportGrid.cols),
+              rows: Math.max(nativeGrid.rows, viewportGrid.rows),
+            }
+            : nativeGrid;
         const screen = term.element?.querySelector<HTMLElement>('.xterm-screen');
         const nativeCellWidth = screen && nativeGrid.cols > 0
           ? screen.getBoundingClientRect().width / nativeGrid.cols
