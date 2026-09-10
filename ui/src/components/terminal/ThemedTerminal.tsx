@@ -476,6 +476,12 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       // protocol reach readline, where wheel reports become history-up/down.
       const alternate = terminalModeRef.current === 'cli' ||
         (terminalModeRef.current === 'unknown' && (alternateScreenRef.current || term.buffer.active.type === 'alternate'));
+      if (terminalModeRef.current === 'shell') {
+        // tmux owns the shell's scrollback. Let xterm emit its SGR mouse
+        // report so tmux enters copy-mode instead of sending PageUp to
+        // readline (which appears as command-history navigation).
+        return true;
+      }
       if (!alternate) {
         event.preventDefault();
         event.stopPropagation();
@@ -521,6 +527,12 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
             alternateScreen: true, state: wheelStateRef.current,
             sendPage: (page) => sendRef.current(JSON.stringify({ data: page === 'up' ? '\x1b[5~' : '\x1b[6~' })),
           });
+        } else if (terminalModeRef.current === 'shell') {
+          // Re-enter xterm's mouse protocol from a touch gesture; tmux then
+          // applies the same copy-mode binding as a physical wheel.
+          term.element?.dispatchEvent(new WheelEvent('wheel', {
+            bubbles: true, cancelable: true, deltaY: direction * 120,
+          }));
         } else {
           term.scrollLines(direction * 3);
         }
