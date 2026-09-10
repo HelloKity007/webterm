@@ -107,6 +107,8 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
   const contextSelectionRef = useRef('');
   const mouseStateRef = useRef(createTerminalMouseState());
   const wheelStateRef = useRef(createTerminalWheelState());
+  const terminalModeRef = useRef<'unknown' | 'shell' | 'cli'>('unknown');
+  const alternateScreenRef = useRef(false);
   const selectionCopyArmedRef = useRef(false);
   const selectionAnchorRef = useRef<{ col: number; row: number } | null>(null);
   const pendingLeftGestureRef = useRef<PendingLeftGesture | null>(null);
@@ -472,14 +474,16 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       if (event.deltaY < 0) inputViewportFollowedRef.current = false;
       // A normal shell has a local xterm scrollback. Do not let tmux's mouse
       // protocol reach readline, where wheel reports become history-up/down.
-      if (term.buffer.active.type !== 'alternate') {
+      const alternate = terminalModeRef.current === 'cli' ||
+        (terminalModeRef.current === 'unknown' && (alternateScreenRef.current || term.buffer.active.type === 'alternate'));
+      if (!alternate) {
         event.preventDefault();
         event.stopPropagation();
         term.scrollLines(event.deltaY < 0 ? -3 : event.deltaY > 0 ? 3 : 0);
         return false;
       }
       return routeTerminalWheel(event, {
-        alternateScreen: term.buffer.active.type === 'alternate',
+        alternateScreen: alternate,
         state: wheelStateRef.current,
         sendPage: (direction) => {
           sendRef.current(JSON.stringify({ data: direction === 'up' ? '\x1b[5~' : '\x1b[6~' }));
@@ -507,7 +511,8 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       event.stopImmediatePropagation();
       touchRemainder += deltaY;
       touchLastY = event.touches[0].clientY;
-      const alternate = term.buffer.active.type === 'alternate';
+      const alternate = terminalModeRef.current === 'cli' ||
+        (terminalModeRef.current === 'unknown' && (alternateScreenRef.current || term.buffer.active.type === 'alternate'));
       while (Math.abs(touchRemainder) >= 24) {
         const direction = touchRemainder > 0 ? 1 : -1;
         touchRemainder -= direction * 24;
@@ -800,6 +805,16 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
           } else {
             bytes = new TextEncoder().encode(msg.data);
           }
+          const raw = new TextDecoder().decode(bytes);
+          // xterm may report an alternate buffer after a reconnect even when
+          // the captured pane is a shell. Raw mode transitions plus prompt/UI
+          // markers are more reliable for deciding whether wheel is CLI input.
+          // eslint-disable-next-line no-control-regex
+          if (/\x1b\[\?(?:47|1047|1049)h/.test(raw)) alternateScreenRef.current = true;
+          // eslint-disable-next-line no-control-regex
+          if (/\x1b\[\?(?:47|1047|1049)l/.test(raw)) alternateScreenRef.current = false;
+          if (/claude|context|bypass permissions|\[minimax/i.test(raw)) terminalModeRef.current = 'cli';
+          else if (!alternateScreenRef.current && /(?:bash|zsh|fish|\$ |# )/.test(raw)) terminalModeRef.current = 'shell';
           try {
             deliverTerminalBytes(term, zsentryRef.current, bytes);
           } catch (e) {
