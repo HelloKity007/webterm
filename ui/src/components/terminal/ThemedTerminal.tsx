@@ -647,9 +647,9 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
 
         const nativeGrid = { cols: term.cols, rows: term.rows };
         const viewportGrid = sharedGrid
-          ? sharedGridForViewport(sharedGrid, displayWidth)
+          ? (mobileBrowser ? sharedGrid : sharedGridForViewport(sharedGrid, displayWidth))
           : (useSmallViewportBaseline ? defaultSharedTerminalGrid : null);
-        const targetGrid = useSmallViewportBaseline && viewportGrid ? {
+        const targetGrid = (mobileBrowser || useSmallViewportBaseline) && viewportGrid ? {
           cols: Math.max(nativeGrid.cols, viewportGrid.cols),
           rows: Math.max(nativeGrid.rows, viewportGrid.rows),
         } : nativeGrid;
@@ -706,8 +706,11 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
               // Wait one extra paint for xterm's canvas/scroll-area dimensions;
               // measuring immediately after resize can apply a stale scale and
               // leave a partially painted screen with blank space.
-              const screenScaleX = availableWidth / screenRect.width;
-              const screenScaleY = availableHeight / screenRect.height;
+              const uniformScale = mobileBrowser
+                ? Math.min(1, availableWidth / screenRect.width, availableHeight / screenRect.height)
+                : 1;
+              const screenScaleX = mobileBrowser ? uniformScale : availableWidth / screenRect.width;
+              const screenScaleY = mobileBrowser ? uniformScale : availableHeight / screenRect.height;
               scaledScreen.style.transformOrigin = 'top left';
               scaledScreen.style.transform = `scale(${screenScaleX}, ${screenScaleY})`;
               surface.dataset.screenScaleX = screenScaleX.toFixed(3);
@@ -735,12 +738,11 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
     const titleDisposable = term.onTitleChange((title) => {
       const announcedGrid = parseSharedTerminalGridTitle(title);
       if (!announcedGrid) return;
-      if (mobileBrowser) return;
       // tmux's title is authoritative for a connected shared session, but a
       // small-only client still needs the deterministic baseline. Otherwise
       // tmux echoes the small client's native grid and immediately erases the
       // scale that was applied during the first fit.
-      const nextGrid = sharedGridForViewport(announcedGrid, window.innerWidth);
+      const nextGrid = mobileBrowser ? announcedGrid : sharedGridForViewport(announcedGrid, window.innerWidth);
       if (sharedGrid?.cols === nextGrid.cols && sharedGrid.rows === nextGrid.rows) return;
       sharedGrid = nextGrid;
       if (myTabId) setSharedTerminalGrid(myTabId, nextGrid);
