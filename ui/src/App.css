@@ -111,6 +111,8 @@ select:focus, input:focus, textarea:focus, button:focus-visible, [role="button"]
 .terminal-surface .xterm { background: #1f211f; color: #c7d8c8; }
 .terminal-surface .xterm-viewport { background: #1f211f !important; }
 .terminal-surface .xterm-screen { background: #1f211f; }
+.terminal-mobile-shell { background: #1f211f; }
+.mobile-panel-switcher { display: none; }
 .terminal-tabbar > div[draggable="true"] { color: #3d5b42 !important; }
 .terminal-tabbar > div[draggable="true"]:hover { background: #a9d2aa !important; color: #203523 !important; }
 .workspace-tabs [role="tab"]:hover { background: #a9d2aa !important; color: #203523 !important; }
@@ -121,6 +123,14 @@ select:focus, input:focus, textarea:focus, button:focus-visible, [role="button"]
 .modal-card { background: #e6f2e4 !important; border-color: #80ad82 !important; border-radius: 8px !important; }
 .modal-card button:hover { background: #bfdcbe !important; color: var(--c-text) !important; }
 .login-shell { background: radial-gradient(circle at 18% 12%, rgba(97,161,101,.22), transparent 30%), radial-gradient(circle at 82% 88%, rgba(120,169,127,.18), transparent 32%), #d9edd9 !important; }
+
+@media (max-width: 700px) {
+  .mobile-panel-switcher { display: flex; flex: 0 0 38px; align-items: center; gap: 6px; padding: 4px 8px; overflow-x: auto; background: #b9dcb9; border-bottom: 1px solid #80ad82; }
+  .mobile-panel-switcher button { flex: 0 0 32px; height: 30px; padding: 0; border: 1px solid #80ad82; border-radius: 5px; background: #d9edd9; color: #3d5b42; font: 600 13px/1 sans-serif; }
+  .mobile-panel-switcher button[aria-current="page"] { background: #4f8f55; color: #fff; border-color: #3d7542; }
+  .mobile-single-panel-grid { gap: 0 !important; }
+  .mobile-single-panel-grid .terminal-grid-cell { min-width: 0; min-height: 0; }
+}
 .login-card { background: rgba(230,242,228,.96) !important; border-color: #80ad82 !important; border-radius: 8px !important; box-shadow: 0 24px 72px rgba(53,98,57,.22), inset 0 1px rgba(255,255,255,.65) !important; }
 .login-card input { background: #eef7ed !important; border-color: #80ad82 !important; color: #203523 !important; }
 .login-card input:-webkit-autofill,

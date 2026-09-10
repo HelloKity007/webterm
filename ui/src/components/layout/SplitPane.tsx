@@ -28,6 +28,7 @@ import {
   type PersistedWorkspace,
   type WorkspaceCreateMode,
 } from './workspaceLayout';
+import { isMobileBrowserEnvironment } from './mobileLayout';
 
 // Grid cell — computed from the tree
 interface GridCell {
@@ -664,6 +665,7 @@ function LeafPane({ nodeId, onActiveSshChange, isInSplit, workspaceIndex }: {
 // Top-level grid container — ALL panes are direct children with stable keys
 function GridContainer({ onActiveSshChange, workspaceIndex }: { onActiveSshChange?: (connId: number | null, tabId: string | null) => void; workspaceIndex: number }) {
   const [, forceUpdate] = useState(0);
+  const mobile = isMobileBrowserEnvironment();
 
   // Subscribe before passive effects load the saved layout, otherwise a fast
   // layout response can be restored before this grid starts listening.
@@ -673,6 +675,9 @@ function GridContainer({ onActiveSshChange, workspaceIndex }: { onActiveSshChang
   const cellMap = new Map(cells.map((c) => [c.id, c]));
   const paneIds = Array.from(allPaneIds);
   const isInSplit = layoutRoot.type !== 'leaf';
+  const visiblePaneIds = cells.map((cell) => cell.id);
+  const [mobilePaneId, setMobilePaneId] = useState(visiblePaneIds[0] || paneIds[0] || 'root');
+  const effectiveMobilePaneId = visiblePaneIds.includes(mobilePaneId) ? mobilePaneId : (visiblePaneIds[0] || paneIds[0] || 'root');
 
   // Build grid-template-areas
   const grid: string[][] = Array.from({ length: rows }, () => Array(cols).fill('.'));
@@ -686,11 +691,20 @@ function GridContainer({ onActiveSshChange, workspaceIndex }: { onActiveSshChang
   const gridTemplateAreas = grid.map((row) => `"${row.join(' ')}"`).join(' ');
 
   return (
-    <div className="terminal-grid" style={{
+    <div className={mobile ? 'terminal-mobile-shell' : undefined} style={{ flex: 1, minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      {mobile && (
+        <nav className="mobile-panel-switcher" aria-label="Terminal panels">
+          {visiblePaneIds.map((id, index) => (
+            <button key={id} type="button" aria-label={`Panel ${index + 1}`} aria-current={id === effectiveMobilePaneId ? 'page' : undefined}
+              onClick={() => setMobilePaneId(id)}>{index + 1}</button>
+          ))}
+        </nav>
+      )}
+      <div className={mobile ? 'terminal-grid mobile-single-panel-grid' : 'terminal-grid'} style={{
       display: 'grid',
-      gridTemplateColumns: `repeat(${cols}, 1fr)`,
-      gridTemplateRows: `repeat(${rows}, 1fr)`,
-      gridTemplateAreas,
+      gridTemplateColumns: mobile ? '1fr' : `repeat(${cols}, 1fr)`,
+      gridTemplateRows: mobile ? '1fr' : `repeat(${rows}, 1fr)`,
+      gridTemplateAreas: mobile ? `"${effectiveMobilePaneId}"` : gridTemplateAreas,
       flex: 1, overflow: 'hidden', minWidth: 0, minHeight: 0,
       gap: 1, background: colors.border,
     }}>
@@ -699,13 +713,14 @@ function GridContainer({ onActiveSshChange, workspaceIndex }: { onActiveSshChang
         return (
           <div className="terminal-grid-cell" key={id} style={{
             gridArea: cell ? id : undefined,
-            display: cell ? 'flex' : 'none',
+            display: cell && (!mobile || id === effectiveMobilePaneId) ? 'flex' : 'none',
             overflow: 'hidden',
           }}>
             <LeafPane key={`${id}-${layoutRestoreVersion}`} nodeId={id} onActiveSshChange={onActiveSshChange} isInSplit={isInSplit && cellMap.has(id)} workspaceIndex={workspaceIndex} />
           </div>
         );
       })}
+      </div>
     </div>
   );
 }
