@@ -819,7 +819,9 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
           // eslint-disable-next-line no-control-regex
           const plain = raw.replace(/\x1b(?:\][^\x07]*(?:\x07|\x1b\\)|\[[0-?]*[ -/]*[@-~]|[@-_])/g, '').replace(/\r/g, '');
           const shellPrompt = /(?:^|\n)[^\n]{0,200}(?:\$|#)\s*$/.test(plain) || /\b(?:bash|zsh|fish|dash)\b/.test(plain);
-          if (!alternateScreenRef.current && shellPrompt) terminalModeRef.current = 'shell';
+          // A reattached shell can start with tmux's stale ?1049h redraw;
+          // an actual shell prompt is authoritative and must win over it.
+          if (shellPrompt) terminalModeRef.current = 'shell';
           else if (/claude|context|bypass permissions|\[minimax/i.test(plain)) terminalModeRef.current = 'cli';
           try {
             deliverTerminalBytes(term, zsentryRef.current, bytes);
