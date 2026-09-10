@@ -813,8 +813,14 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
           if (/\x1b\[\?(?:47|1047|1049)h/.test(raw)) alternateScreenRef.current = true;
           // eslint-disable-next-line no-control-regex
           if (/\x1b\[\?(?:47|1047|1049)l/.test(raw)) alternateScreenRef.current = false;
-          if (/claude|context|bypass permissions|\[minimax/i.test(raw)) terminalModeRef.current = 'cli';
-          else if (!alternateScreenRef.current && /(?:bash|zsh|fish|\$ |# )/.test(raw)) terminalModeRef.current = 'shell';
+          // Strip terminal control sequences before identifying a shell
+          // prompt. This prevents a stale xterm alternate-buffer flag on a
+          // reattached bash pane from turning wheel input into PageUp.
+          // eslint-disable-next-line no-control-regex
+          const plain = raw.replace(/\x1b(?:\][^\x07]*(?:\x07|\x1b\\)|\[[0-?]*[ -/]*[@-~]|[@-_])/g, '').replace(/\r/g, '');
+          const shellPrompt = /(?:^|\n)[^\n]{0,200}(?:\$|#)\s*$/.test(plain) || /\b(?:bash|zsh|fish|dash)\b/.test(plain);
+          if (!alternateScreenRef.current && shellPrompt) terminalModeRef.current = 'shell';
+          else if (/claude|context|bypass permissions|\[minimax/i.test(plain)) terminalModeRef.current = 'cli';
           try {
             deliverTerminalBytes(term, zsentryRef.current, bytes);
           } catch (e) {
