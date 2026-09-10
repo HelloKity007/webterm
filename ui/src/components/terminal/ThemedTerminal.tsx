@@ -45,6 +45,7 @@ import {
 } from './terminalInteractions';
 import { calculateTerminalScale, defaultSharedTerminalGrid, parseSharedTerminalGridTitle, sharedGridForViewport, smallViewportWidth, type TerminalGrid } from './terminalScaling';
 import { getSharedTerminalGrid, setSharedTerminalGrid } from './terminalGridCache';
+import { isMobileBrowserEnvironment } from '../layout/mobileLayout';
 
 interface Props {
   connId: number;
@@ -466,6 +467,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
     const searchAddon = new SearchAddon();
     term.loadAddon(fitAddon);
     term.loadAddon(searchAddon);
+    const mobileBrowser = isMobileBrowserEnvironment();
     term.attachCustomWheelEventHandler((event) => {
       if (event.deltaY < 0) inputViewportFollowedRef.current = false;
       return routeTerminalWheel(event, {
@@ -476,6 +478,41 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
         },
       });
     });
+
+    // xterm's default touch handler emits key-like gestures, which makes a
+    // phone swipe change the bash command history instead of scrolling. Map a
+    // vertical swipe to local scrollback, or to the same rate-limited page
+    // path used by Claude's alternate screen.
+    let touchLastY: number | null = null;
+    let touchRemainder = 0;
+    const handleTouchStart = (event: TouchEvent) => {
+      if (event.touches.length === 1) {
+        touchLastY = event.touches[0].clientY;
+        touchRemainder = 0;
+      }
+    };
+    const handleTouchMove = (event: TouchEvent) => {
+      if (touchLastY === null || event.touches.length !== 1) return;
+      const deltaY = touchLastY - event.touches[0].clientY;
+      if (Math.abs(deltaY) < 4) return;
+      event.preventDefault();
+      touchRemainder += deltaY;
+      touchLastY = event.touches[0].clientY;
+      const alternate = term.buffer.active.type === 'alternate';
+      while (Math.abs(touchRemainder) >= 24) {
+        const direction = touchRemainder > 0 ? 1 : -1;
+        touchRemainder -= direction * 24;
+        if (alternate) {
+          routeTerminalWheel(new WheelEvent('wheel', { cancelable: true, deltaY: direction * 120 }), {
+            alternateScreen: true, state: wheelStateRef.current,
+            sendPage: (page) => sendRef.current(JSON.stringify({ data: page === 'up' ? '\x1b[5~' : '\x1b[6~' })),
+          });
+        } else {
+          term.scrollLines(direction * 3);
+        }
+      }
+    };
+    const handleTouchEnd = () => { touchLastY = null; touchRemainder = 0; };
 
     // Ctrl+C: send SIGINT (0x03)
     term.attachCustomKeyEventHandler((e) => {
@@ -540,7 +577,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
     });
 
     let resizingForSharedGrid = false;
-    let sharedGrid: TerminalGrid | null = myTabId ? getSharedTerminalGrid(myTabId) : null;
+    let sharedGrid: TerminalGrid | null = mobileBrowser ? null : (myTabId ? getSharedTerminalGrid(myTabId) : null);
     let pendingFitFrame: number | null = null;
     let pendingScreenScaleFrame: number | null = null;
 
@@ -568,10 +605,10 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
         if (currentScreen) currentScreen.style.transform = '';
 
         const displayWidth = Math.max(window.innerWidth, window.screen?.width || 0);
-        const useSmallViewportBaseline = displayWidth < smallViewportWidth;
+        const useSmallViewportBaseline = !mobileBrowser && displayWidth < smallViewportWidth;
         // Increase only the small client's base glyph size. Large displays
         // retain the production-native font metrics and scroll behavior.
-        const responsiveFontSize = useSmallViewportBaseline ? Math.max(fontSize, 16) : fontSize;
+        const responsiveFontSize = mobileBrowser ? Math.max(fontSize, 16) : useSmallViewportBaseline ? Math.max(fontSize, 16) : fontSize;
         // First measure how many cells this browser can show at the configured
         // font. Never accept a title smaller than that native grid: this lets a
         // newly attached larger browser grow the shared tmux window.
@@ -592,7 +629,9 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
         const nativeCellWidth = screen && nativeGrid.cols > 0
           ? screen.getBoundingClientRect().width / nativeGrid.cols
           : 1;
-        let scaleOptions = calculateTerminalScale(nativeGrid, targetGrid, responsiveFontSize, nativeCellWidth);
+        let scaleOptions = mobileBrowser
+          ? { fontSize: responsiveFontSize, letterSpacing: 0, lineHeight: 1, scale: 1 }
+          : calculateTerminalScale(nativeGrid, targetGrid, responsiveFontSize, nativeCellWidth);
 
         term.options.fontSize = scaleOptions.fontSize;
         term.options.letterSpacing = scaleOptions.letterSpacing;
@@ -668,6 +707,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
     const titleDisposable = term.onTitleChange((title) => {
       const announcedGrid = parseSharedTerminalGridTitle(title);
       if (!announcedGrid) return;
+      if (mobileBrowser) return;
       // tmux's title is authoritative for a connected shared session, but a
       // small-only client still needs the deterministic baseline. Otherwise
       // tmux echoes the small client's native grid and immediately erases the
@@ -679,9 +719,13 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       scheduleFit();
     });
 
-    if (ref.current) {
-      ref.current.style.backgroundColor = themeConfig.background;
-      term.open(ref.current);
+    const surfaceElement = ref.current;
+    if (surfaceElement) {
+      surfaceElement.style.backgroundColor = themeConfig.background;
+      term.open(surfaceElement);
+      surfaceElement.addEventListener('touchstart', handleTouchStart, { passive: true, capture: true });
+      surfaceElement.addEventListener('touchmove', handleTouchMove, { passive: false, capture: true });
+      surfaceElement.addEventListener('touchend', handleTouchEnd, { passive: true, capture: true });
       // xterm sizes its canvas to integral character cells.  Keep its viewport
       // itself stretched to the pane so the few remaining pixels (or a
       // transient pre-resize canvas) cannot reveal the page behind it.
@@ -715,6 +759,9 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       if (pendingFitFrame !== null) cancelAnimationFrame(pendingFitFrame);
       if (pendingScreenScaleFrame !== null) cancelAnimationFrame(pendingScreenScaleFrame);
       titleDisposable.dispose();
+      surfaceElement?.removeEventListener('touchstart', handleTouchStart, true);
+      surfaceElement?.removeEventListener('touchmove', handleTouchMove, true);
+      surfaceElement?.removeEventListener('touchend', handleTouchEnd, true);
       term.dispose();
       resizeObserver.disconnect();
       window.removeEventListener('resize', handleResize);
