@@ -45,6 +45,18 @@ type tmuxControlEvent struct {
 	Raw  string
 }
 
+// encodeTmuxControlSendKeys builds a control-mode command without allowing
+// terminal input to escape into the protocol. tmux control commands are
+// newline framed; shell-style single quoting keeps arbitrary UTF-8 and quote
+// characters inside the -l payload.
+func encodeTmuxControlSendKeys(pane, data string) string {
+	if pane == "" || data == "" {
+		return ""
+	}
+	quoted := "'" + strings.ReplaceAll(data, "'", "'\\''") + "'"
+	return "%send-keys -t " + pane + " -l -- " + quoted + "\n"
+}
+
 // parseTmuxControlLine parses one complete line from tmux -CC. tmux escapes
 // pane output using octal bytes (\ooo), backslash, and line continuations.
 func parseTmuxControlLine(line string) (tmuxControlEvent, bool) {

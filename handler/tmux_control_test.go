@@ -20,6 +20,22 @@ func TestParseTmuxControlOutputDecodesPaneAndEscapes(t *testing.T) {
 	}
 }
 
+func TestEncodeTmuxControlSendKeysQuotesArbitraryInput(t *testing.T) {
+	got := encodeTmuxControlSendKeys("%7", "echo '你好'\\\n")
+	if !strings.HasPrefix(got, "%send-keys -t %7 -l -- '") || !strings.HasSuffix(got, "'\n") || !strings.Contains(got, "\\''") {
+		t.Fatalf("command = %q, want a quoted control-mode send-keys command", got)
+	}
+}
+
+func TestEncodeTmuxControlSendKeysRejectsEmptyValues(t *testing.T) {
+	if got := encodeTmuxControlSendKeys("", "x"); got != "" {
+		t.Fatalf("empty pane encoded as %q", got)
+	}
+	if got := encodeTmuxControlSendKeys("%1", ""); got != "" {
+		t.Fatalf("empty input encoded as %q", got)
+	}
+}
+
 func TestPumpTmuxControlOutputForwardsOnlySelectedPane(t *testing.T) {
 	stream := "%begin 1 0\n%output %1 hello\\012\n%output %2 ignored\\012\n%end 1 0\n"
 	var got []byte
