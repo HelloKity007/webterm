@@ -67,10 +67,11 @@ func persistentTerminalControlCommand(userID, connectionID int64, terminalID str
 	if err != nil {
 		return "", err
 	}
-	// Hooks that reference #{hook_client} are valid for normal tmux clients but
-	// are not populated by -C control clients. Keep control mode's setup
-	// deliberately side-effect free and let the browser own its viewport.
-	return fmt.Sprintf("tmux start-server \\; set-option -g history-limit %d && (tmux has-session -t %s 2>/dev/null || tmux new-session -d -s %s) && tmux set-option -t %s window-size largest && tmux set-option -t %s status off && tmux set-option -t %s set-titles on && tmux set-option -t %s set-titles-string 'webterm-grid:#{window_width}x#{window_height}' && tmux set-option -t %s mouse on && tmux set-option -t %s @webterm_mouse_passthrough on && tmux set-hook -t %s 'client-attached[200]' 'set-option -t %s window-size largest; if-shell -F \"#{hook_client}\" \"refresh-client -D 9999\"' && tmux set-hook -t %s 'client-resized[200]' 'set-option -t %s window-size largest; if-shell -F \"#{hook_client}\" \"refresh-client -D 9999\"' && exec tmux -C attach-session -t %s", terminalHistoryLines, sessionName, sessionName, sessionName, sessionName, sessionName, sessionName, sessionName, sessionName, sessionName, sessionName, sessionName, sessionName, sessionName), nil
+	// Normal WebTerm clients install hooks that reference #{hook_client}; that
+	// format is not populated by -C control clients and can abort attach with a
+	// protocol error. Remove both current and legacy hook variants before the
+	// control attach, then let the browser own its viewport via %refresh-client.
+	return fmt.Sprintf("tmux start-server \\; set-option -g history-limit %d && (tmux has-session -t %s 2>/dev/null || tmux new-session -d -s %s) && tmux set-option -t %s window-size largest && tmux set-option -t %s status off && tmux set-option -t %s set-titles on && tmux set-option -t %s set-titles-string 'webterm-grid:#{window_width}x#{window_height}' && tmux set-option -t %s mouse on && tmux set-option -t %s @webterm_mouse_passthrough on && tmux set-hook -u -t %s client-attached && tmux set-hook -u -t %s client-resized && tmux set-hook -u -t %s window-resized && exec tmux -C attach-session -t %s", terminalHistoryLines, sessionName, sessionName, sessionName, sessionName, sessionName, sessionName, sessionName, sessionName, sessionName, sessionName, sessionName, sessionName), nil
 }
 
 func persistentTerminalFollowInputCommand(userID, connectionID int64, terminalID string) (string, error) {
