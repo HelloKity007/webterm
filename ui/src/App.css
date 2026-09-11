@@ -111,6 +111,10 @@ select:focus, input:focus, textarea:focus, button:focus-visible, [role="button"]
 .terminal-surface .xterm { background: #1f211f; color: #c7d8c8; }
 .terminal-surface .xterm-viewport { background: #1f211f !important; }
 .terminal-surface .xterm-screen { background: #1f211f; }
+/* Keep xterm's character grid in its own pixel geometry. A CSS transform on
+   the screen desynchronizes glyphs, cursor coordinates, and scrollback rows. */
+.terminal-surface .xterm-screen { transform: none !important; transform-origin: top left; }
+.terminal-surface .xterm-rows { line-height: normal; }
 .terminal-mobile-shell { background: #1f211f; }
 .mobile-panel-switcher { display: none; }
 .terminal-tabbar > div[draggable="true"] { color: #3d5b42 !important; }
