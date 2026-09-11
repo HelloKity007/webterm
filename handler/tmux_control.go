@@ -85,6 +85,26 @@ type tmuxControlInput struct {
 	writer  io.Writer
 }
 
+type tmuxControlTerminalSession struct {
+	base   terminalInputSession
+	writer io.Writer
+}
+
+func (s *tmuxControlTerminalSession) WindowChange(rows, cols int) error {
+	if s == nil || s.writer == nil {
+		return io.ErrClosedPipe
+	}
+	_, err := io.WriteString(s.writer, "%refresh-client -C "+strconv.Itoa(cols)+"x"+strconv.Itoa(rows)+"\n")
+	return err
+}
+
+func (s *tmuxControlTerminalSession) Close() error {
+	if s == nil || s.base == nil {
+		return nil
+	}
+	return s.base.Close()
+}
+
 func (i *tmuxControlInput) Write(data []byte) (int, error) {
 	if err := i.write(string(data)); err != nil {
 		return 0, err

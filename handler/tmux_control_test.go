@@ -51,6 +51,17 @@ func TestTmuxControlInputWaitsForPaneIdentity(t *testing.T) {
 	}
 }
 
+func TestTmuxControlTerminalSessionEncodesResizeAsControlCommand(t *testing.T) {
+	var out strings.Builder
+	session := &tmuxControlTerminalSession{writer: &out}
+	if err := session.WindowChange(44, 92); err != nil {
+		t.Fatal(err)
+	}
+	if out.String() != "%refresh-client -C 92x44\n" {
+		t.Fatalf("resize command = %q", out.String())
+	}
+}
+
 func TestEncodeTmuxControlSendKeysQuotesArbitraryInput(t *testing.T) {
 	got := encodeTmuxControlSendKeys("%7", "echo '你好'\\\n")
 	if !strings.HasPrefix(got, "%send-keys -t %7 -l -- '") || !strings.HasSuffix(got, "'\n") || !strings.Contains(got, "\\''") {

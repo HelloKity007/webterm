@@ -384,14 +384,16 @@ func (h *WSHandler) HandleSSH(conn *websocket.Conn) {
 	history := h.historyFor(terminalKey)
 	controlTracker := &tmuxControlPaneTracker{}
 	var inputWriter io.Writer = stdinPipe
+	inputSession := terminalInputSession(session)
 	if controlMode {
 		inputWriter = &tmuxControlInput{tracker: controlTracker, writer: stdinPipe}
+		inputSession = &tmuxControlTerminalSession{base: session, writer: stdinPipe}
 	}
 
 	go func() {
 		pumpTerminalInput(func(raw *json.RawMessage) error {
 			return websocket.JSON.Receive(conn, raw)
-		}, session, inputWriter, func(action string) error {
+		}, inputSession, inputWriter, func(action string) error {
 			var command string
 			switch action {
 			case "clear_history":
