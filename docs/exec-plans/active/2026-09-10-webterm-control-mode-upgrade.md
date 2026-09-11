@@ -63,6 +63,7 @@
 
 - 测试环境版本 `a60df91d79309480fc4a588ab16dfeacfcebf787` 已通过 UI 74/74、lint、build、Go tests。
 - 真实 Chromium 390×844 移动视口启用实验 flag 后，8 个 Control Mode SSH WebSocket 均建立，收到真实 pane `%output` 数据且无错误帧。
+- `capture-pane` 首屏回放和 pane-id 预取已加入；最新浏览器验证中首个控制 pane 在输入前收到 1 个 capture 帧，键盘操作后实时帧数增加到 22 个。
 - 真实 Chromium 桌面视口默认仍走 raw PTY，确保现有生产路径不受实验 Control Mode 影响。
 - 发现并修复控制连接中旧 `client-attached/client-resized/window-resized` hook 干扰，以及错误的 `%refresh-client/%send-keys` 入站前缀。
 - 尚未将 Control Mode 默认开启；仍需完成 Claude 长会话、中文输入、滚轮/触摸回看、桌面+移动端同时连接的浏览器自动化断言后，才可视为 M3 完成。
