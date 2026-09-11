@@ -402,7 +402,9 @@ func (h *WSHandler) HandleSSH(conn *websocket.Conn) {
 				}
 			}
 		}
-		captureTarget = scopeTmuxCommand("tmux capture-pane -p -e -t "+captureTarget, h.TmuxSocket)
+		targetName := captureTarget
+		captureCommand := scopeTmuxCommand("tmux capture-pane -p -e -t "+targetName, h.TmuxSocket)
+		paneCommand := scopeTmuxCommand("tmux display-message -p -t "+targetName+" '#{pane_id}'", h.TmuxSocket)
 		go func() {
 			captureClient, captureErr := newSSHClient()
 			if captureErr != nil {
@@ -416,7 +418,19 @@ func (h *WSHandler) HandleSSH(conn *websocket.Conn) {
 			defer captureSession.Close()
 			var captured bytes.Buffer
 			captureSession.Stdout = &captured
-			if captureErr = captureSession.Run(captureTarget); captureErr == nil && captured.Len() > 0 {
+			// Resolve the server-assigned pane id before the first browser keypress.
+			// Static capture does not emit a control %output event, so relying only
+			// on the live tracker would otherwise reject input for restored panes.
+			var paneID bytes.Buffer
+			paneSession, paneErr := captureClient.NewSession()
+			if paneErr == nil {
+				paneSession.Stdout = &paneID
+				if paneErr = paneSession.Run(paneCommand); paneErr == nil {
+					controlTracker.pane = strings.TrimSpace(paneID.String())
+				}
+				_ = paneSession.Close()
+			}
+			if captureErr = captureSession.Run(captureCommand); captureErr == nil && captured.Len() > 0 {
 				history.appendBytes(captured.Bytes())
 				_, _ = (&wsWriter{conn: conn}).Write(captured.Bytes())
 			}
