@@ -77,6 +77,11 @@ func TestPersistentTerminalControlCommandOptsIntoControlMode(t *testing.T) {
 	if !strings.Contains(command, "exec tmux -C attach-session") || strings.Contains(command, "exec tmux attach-session") {
 		t.Fatalf("command = %q, want only control-mode attach", command)
 	}
+	for _, hook := range []string{"client-attached", "client-resized", "window-resized"} {
+		if !strings.Contains(command, "set-hook -u -t wt-7-12-") || !strings.Contains(command, hook) {
+			t.Fatalf("command = %q, want stale %s hook cleanup", command, hook)
+		}
+	}
 }
 
 func TestPersistentTerminalResumeInputCommandIsFixedAndScoped(t *testing.T) {
