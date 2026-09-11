@@ -207,6 +207,13 @@ func terminalScreenSnapshot(captured []byte, state []string) []byte {
 	var out bytes.Buffer
 	fmt.Fprintf(&out, "\x1b]2;webterm-grid:%dx%d\x07%s\x1b[0m\x1b[2J\x1b[H", cols, rows, mode)
 	lines := bytes.Split(bytes.TrimSuffix(captured, []byte("\n")), []byte("\n"))
+	if state[6] == "0" {
+		// Restore shell scrollback too, so reconnecting does not discard the
+		// long output the user was reading. The last rows remain the viewport.
+		out.Write(terminalCaptureBytes(bytes.Join(lines, []byte("\n"))))
+		fmt.Fprintf(&out, "\x1b[0m\x1b[%d;%dH", y+1, x+1)
+		return out.Bytes()
+	}
 	for i, line := range lines {
 		if i >= rows {
 			break

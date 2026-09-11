@@ -33,3 +33,13 @@ func TestTerminalCaptureReturnsEveryRowToFirstColumn(t *testing.T) {
 		}
 	}
 }
+
+func TestShellSnapshotRetainsHistoryBeyondViewport(t *testing.T) {
+	got := string(terminalScreenSnapshot([]byte("oldest\nmiddle\nlast\n"), []string{"%2", "bash", "80", "2", "4", "1", "0"}))
+	if !strings.Contains(got, "oldest\r\nmiddle\r\nlast") {
+		t.Fatalf("history truncated: %q", got)
+	}
+	if !strings.HasSuffix(got, "\x1b[0m\x1b[2;5H") {
+		t.Fatalf("cursor not restored: %q", got)
+	}
+}

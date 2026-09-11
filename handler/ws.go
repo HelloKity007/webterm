@@ -440,6 +440,9 @@ func (h *WSHandler) HandleSSH(conn *websocket.Conn) {
 				}
 				_ = paneSession.Close()
 			}
+			if len(paneState) == 7 && paneState[6] == "0" {
+				captureCommand = scopeTmuxCommand("tmux capture-pane -p -e -S -20000 -t "+targetName, h.TmuxSocket)
+			}
 			if captureErr = captureSession.Run(captureCommand); captureErr == nil && captured.Len() > 0 {
 				snapshot := terminalScreenSnapshot(captured.Bytes(), paneState)
 				history.appendBytes(snapshot)
