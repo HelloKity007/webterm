@@ -12,6 +12,7 @@ export interface TerminalWheelState {
 }
 
 interface TerminalWheelOptions {
+  scrollNotch?: (lines: number) => void;
   alternateScreen?: boolean;
   state?: TerminalWheelState;
   sendPage?: (direction: 'up' | 'down') => void;
@@ -77,6 +78,14 @@ export function routeTerminalHistoryWheel(event: WheelEvent, options: TerminalWh
 }
 
 export function routeTerminalWheel(event: WheelEvent, options: TerminalWheelOptions = {}): boolean {
+  if (event.ctrlKey) return true;
+  if (options.scrollNotch) {
+    if (!event.deltaY) return true;
+    event.preventDefault();
+    event.stopPropagation();
+    options.scrollNotch(Math.sign(event.deltaY) * 3);
+    return false;
+  }
   // Keep the production-proven path for fullscreen TUIs: rate-limited
   // PageUp/PageDown avoids per-line SGR mouse repaint stalls in long Claude
   // sessions. Shift+wheel remains the explicit history override elsewhere.

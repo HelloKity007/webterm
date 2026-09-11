@@ -3,6 +3,26 @@ import { describe, expect, it, vi } from 'vitest';
 import { createTerminalWheelState, followTerminalInputAction, launchCodexScrollableAction, resumeTerminalInputAction, routeTerminalHistoryWheel, routeTerminalWheel, terminalActionMessage, terminalScrollbackLines } from './terminalCliSupport';
 
 describe('terminal CLI history support', () => {
+  it('scrolls exactly three lines per event regardless of delta size, mode or Shift', () => {
+    const scrollNotch = vi.fn();
+    for (const deltaMode of [0, 1, 2]) {
+      for (const deltaY of [-1, -120, -900, 1, 120, 900]) {
+        const event = new WheelEvent('wheel', { cancelable: true, deltaMode, deltaY, shiftKey: true });
+        expect(routeTerminalWheel(event, { scrollNotch })).toBe(false);
+        expect(scrollNotch).toHaveBeenLastCalledWith(Math.sign(deltaY) * 3);
+        expect(event.defaultPrevented).toBe(true);
+      }
+    }
+    expect(scrollNotch).toHaveBeenCalledTimes(18);
+  });
+
+  it('preserves browser zoom and ignores horizontal wheels', () => {
+    const scrollNotch = vi.fn();
+    for (const event of [new WheelEvent('wheel', { ctrlKey: true, deltaY: 120 }), new WheelEvent('wheel', { deltaX: 120 })]) {
+      expect(routeTerminalWheel(event, { scrollNotch })).toBe(true);
+    }
+    expect(scrollNotch).not.toHaveBeenCalled();
+  });
   it('replays Shift+wheel without Shift so xterm and tmux use the negotiated wheel path', () => {
     const target = document.createElement('div');
     const received = vi.fn();

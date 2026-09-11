@@ -463,8 +463,8 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       scrollOnUserInput: true,
       // Match native terminal applications: one wheel notch should advance
       // several rows instead of appearing to crawl through long scrollback.
-      scrollSensitivity: 5,
-      fastScrollSensitivity: 5,
+      scrollSensitivity: 3,
+      fastScrollSensitivity: 3,
       overviewRuler: { width: 5 },
       theme: {
         scrollbarSliderBackground: '#8fbd9180',
@@ -504,23 +504,20 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       // protocol reach readline, where wheel reports become history-up/down.
       const alternate = terminalModeRef.current === 'cli' ||
         (terminalModeRef.current === 'unknown' && (alternateScreenRef.current || term.buffer.active.type === 'alternate'));
-      if (terminalModeRef.current === 'shell') {
-        // tmux owns the shell's scrollback. Let xterm emit its SGR mouse
-        // report so tmux enters copy-mode instead of sending PageUp to
-        // readline (which appears as command-history navigation).
-        return true;
-      }
-      if (!alternate) {
-        event.preventDefault();
-        event.stopPropagation();
-        term.scrollLines(event.deltaY < 0 ? -3 : event.deltaY > 0 ? 3 : 0);
-        return false;
-      }
       return routeTerminalWheel(event, {
-        alternateScreen: alternate,
-        state: wheelStateRef.current,
-        sendPage: (direction) => {
-          sendRef.current(JSON.stringify({ data: direction === 'up' ? '\x1b[5~' : '\x1b[6~' }));
+        scrollNotch: (lines) => {
+          if (!alternate) {
+            term.scrollLines(lines);
+            return;
+          }
+          // Claude's negotiated SGR wheel handler advances three lines per
+          // report. Send one report, independent of browser pixel deltas.
+          const bounds = term.element?.querySelector('.xterm-screen')?.getBoundingClientRect();
+          if (!bounds) return;
+          const { col, row } = getTerminalGridPosition(
+            { x: event.clientX, y: event.clientY }, bounds, term.cols, term.rows,
+          );
+          sendRef.current(JSON.stringify({ data: `\x1b[<${lines < 0 ? 64 : 65};${col};${row}M` }));
         },
       });
     };
@@ -534,7 +531,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       if (!handleTerminalWheel(event)) return;
       event.preventDefault();
       event.stopPropagation();
-      term.scrollLines(event.deltaY < 0 ? -5 : event.deltaY > 0 ? 5 : 0);
+      if (event.deltaY) term.scrollLines(Math.sign(event.deltaY) * 3);
     };
 
     // xterm's default touch handler emits key-like gestures, which makes a
