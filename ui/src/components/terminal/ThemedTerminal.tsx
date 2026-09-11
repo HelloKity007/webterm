@@ -525,8 +525,11 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
             { x: event.clientX, y: bounds.top + bounds.height / 2 }, bounds, term.cols, term.rows,
           );
           // Separate reports so CLI render batching cannot collapse steps.
-          wheelReports.push(...Array<string>(Math.abs(lines)).fill(`\x1b[<${lines < 0 ? 64 : 65};${col};${row}M`));
-          if (!wheelReportTimer) flushWheelReport();
+          // Supersede unfinished steps instead of building a stale backlog.
+          clearTimeout(wheelReportTimer);
+          wheelReports.splice(0, wheelReports.length,
+            ...Array<string>(Math.abs(lines)).fill(`\x1b[<${lines < 0 ? 64 : 65};${col};${row}M`));
+          flushWheelReport();
         },
       });
     };
@@ -680,15 +683,16 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
         term.options.fontSize = responsiveFontSize;
         term.options.letterSpacing = 0;
         term.options.lineHeight = 1;
-        fitAddon.fit();
-
-        const nativeGrid = { cols: term.cols, rows: term.rows };
+        // fit() would temporarily shrink the alternate buffer and discard
+        // bottom rows (including the CLI composer). Only measure here.
+        const nativeGrid = fitAddon.proposeDimensions();
+        if (!nativeGrid) return;
         // Raw pane ANSI coordinates must use the server's exact grid, even
         // on a large display with many small split panels.
         const targetGrid = sharedGrid || (useSmallViewportBaseline ? defaultSharedTerminalGrid : nativeGrid);
         const screen = term.element?.querySelector<HTMLElement>('.xterm-screen');
-        const nativeCellWidth = screen && nativeGrid.cols > 0
-          ? screen.getBoundingClientRect().width / nativeGrid.cols
+        const nativeCellWidth = screen && term.cols > 0
+          ? screen.getBoundingClientRect().width / term.cols
           : 1;
         let scaleOptions = mobileBrowser
           ? { fontSize: responsiveFontSize, letterSpacing: 0, lineHeight: 1, scale: 1 }
