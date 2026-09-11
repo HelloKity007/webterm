@@ -1,0 +1,6 @@
+{
+  "session": "webterm-viewport",
+  "captured_at": "2026-09-11T15:50:42.118Z",
+  "count": 0,
+  "messages": []
+}
