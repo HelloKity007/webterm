@@ -46,7 +46,7 @@ func TestTmuxControlInputWaitsForPaneIdentity(t *testing.T) {
 	if err := input.write("echo ok"); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasPrefix(out.String(), "send-keys -t %3 -l -- '") {
+	if out.String() != "send-keys -t %3 -H 65 63 68 6f 20 6f 6b\n" {
 		t.Fatalf("encoded input = %q", out.String())
 	}
 }
@@ -64,8 +64,15 @@ func TestTmuxControlTerminalSessionEncodesResizeAsControlCommand(t *testing.T) {
 
 func TestEncodeTmuxControlSendKeysQuotesArbitraryInput(t *testing.T) {
 	got := encodeTmuxControlSendKeys("%7", "echo '你好'\\\n")
-	if !strings.HasPrefix(got, "send-keys -t %7 -l -- '") || !strings.HasSuffix(got, "'\n") || !strings.Contains(got, "\\''") {
+	if got != "send-keys -t %7 -H 65 63 68 6f 20 27 e4 bd a0 e5 a5 bd 27 5c 0a\n" {
 		t.Fatalf("command = %q, want a quoted control-mode send-keys command", got)
+	}
+}
+
+func TestControlEnterAndEscapeRemainOneProtocolLine(t *testing.T) {
+	got := encodeTmuxControlSendKeys("%7", "\r\n\x1b[5~")
+	if got != "send-keys -t %7 -H 0d 0a 1b 5b 35 7e\n" {
+		t.Fatalf("encoded=%q", got)
 	}
 }
 

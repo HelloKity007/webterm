@@ -6,6 +6,7 @@ import (
 	"io"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 // pumpTmuxControlOutput consumes a control-mode stream and forwards only
@@ -49,11 +50,17 @@ type tmuxControlEvent struct {
 // attach stream. A control-mode client must target this id in %send-keys;
 // pane ids are server-assigned and must never be guessed from terminal IDs.
 type tmuxControlPaneTracker struct {
+	mu   sync.RWMutex
 	pane string
 }
 
 func (t *tmuxControlPaneTracker) observe(event tmuxControlEvent) {
-	if t != nil && t.pane == "" && event.Name == "output" && event.Pane != "" {
+	if t == nil {
+		return
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.pane == "" && event.Name == "output" && event.Pane != "" {
 		t.pane = event.Pane
 	}
 }
@@ -62,7 +69,15 @@ func (t *tmuxControlPaneTracker) target() string {
 	if t == nil {
 		return ""
 	}
+	t.mu.RLock()
+	defer t.mu.RUnlock()
 	return t.pane
+}
+
+func (t *tmuxControlPaneTracker) setTarget(pane string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.pane = pane
 }
 
 // encodeTmuxControlSendKeys builds a control-mode command without allowing
@@ -73,8 +88,17 @@ func encodeTmuxControlSendKeys(pane, data string) string {
 	if pane == "" || data == "" {
 		return ""
 	}
-	quoted := "'" + strings.ReplaceAll(data, "'", "'\\''") + "'"
-	return "send-keys -t " + pane + " -l -- " + quoted + "\n"
+	// Hex bytes preserve control keys and UTF-8 without introducing protocol lines.
+	var command strings.Builder
+	command.WriteString("send-keys -t " + pane + " -H")
+	const hex = "0123456789abcdef"
+	for _, b := range []byte(data) {
+		command.WriteByte(' ')
+		command.WriteByte(hex[b>>4])
+		command.WriteByte(hex[b&15])
+	}
+	command.WriteByte('\n')
+	return command.String()
 }
 
 // tmuxControlInput forwards browser bytes only after the control stream has

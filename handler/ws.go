@@ -365,9 +365,11 @@ func (h *WSHandler) HandleSSH(conn *websocket.Conn) {
 		ssh.TTY_OP_ISPEED: 14400,
 		ssh.TTY_OP_OSPEED: 14400,
 	}
-	if err := requestDefaultTerminalPTY(session, modes); err != nil {
-		sendErr(conn, "pty failed: "+err.Error())
-		return
+	if !controlMode {
+		if err := requestDefaultTerminalPTY(session, modes); err != nil {
+			sendErr(conn, "pty failed: "+err.Error())
+			return
+		}
 	}
 
 	stdinPipe, _ := session.StdinPipe()
@@ -427,7 +429,7 @@ func (h *WSHandler) HandleSSH(conn *websocket.Conn) {
 				paneSession.Stdout = &paneID
 				if paneErr = paneSession.Run(paneCommand); paneErr == nil {
 					parts := strings.SplitN(strings.TrimSpace(paneID.String()), "\t", 2)
-					controlTracker.pane = strings.TrimSpace(parts[0])
+					controlTracker.setTarget(strings.TrimSpace(parts[0]))
 					mode := "shell"
 					if len(parts) == 2 && (strings.EqualFold(strings.TrimSpace(parts[1]), "claude") || strings.EqualFold(strings.TrimSpace(parts[1]), "claude-code")) {
 						mode = "cli"
