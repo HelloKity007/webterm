@@ -946,6 +946,28 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
     termRef.current?.focus();
   }, [showClipboardNotice]);
 
+  const replayTerminalHistory = useCallback(async () => {
+    const term = termRef.current;
+    if (!term || !terminalID) return;
+    try {
+      const response = await fetch(`/api/terminal-history/${encodeURIComponent(connId)}?terminal_id=${encodeURIComponent(terminalID)}`, {
+        headers: { Authorization: `Bearer ${localStorage.getItem('token') || ''}` },
+      });
+      if (!response.ok) throw new Error(`history replay failed (${response.status})`);
+      const payload = await response.json() as { data?: string; b64?: boolean };
+      if (!payload.data) return;
+      const binary = atob(payload.data);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      term.reset();
+      term.write(bytes);
+      showClipboardNotice(t('term_history_replay_sent'));
+      term.focus();
+    } catch (error) {
+      console.warn('terminal history replay:', error);
+    }
+  }, [connId, showClipboardNotice, terminalID]);
+
   // ZMODEM (sz/rz) support
   useEffect(() => {
     const makeSentry = (): ZSentry => {
@@ -1122,6 +1144,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
           termRef.current?.focus();
         }} onLaunchCodexScrollable={launchCodexScrollable}
           onResumeInput={resumeTerminalInput}
+          onReplayHistory={() => { void replayTerminalHistory(); }}
           onSelectCopy={() => {
             setHistoryHelpOpen(false);
             setSelectionCopyMode(true);

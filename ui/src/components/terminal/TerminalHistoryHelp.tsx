@@ -5,6 +5,7 @@ interface Props {
   onClose: () => void;
   onLaunchCodexScrollable: () => void;
   onResumeInput: () => void;
+  onReplayHistory: () => void;
   onSelectCopy: () => void;
   onCopySelection: () => void;
   onPaste: () => void;
@@ -29,7 +30,7 @@ const actionStyle = {
   background: colors.accentDim, color: colors.text, cursor: 'pointer', fontSize: font.sm,
 } as const;
 
-export default function TerminalHistoryHelp({ onClose, onLaunchCodexScrollable, onResumeInput, onSelectCopy, onCopySelection, onPaste }: Props) {
+export default function TerminalHistoryHelp({ onClose, onLaunchCodexScrollable, onResumeInput, onReplayHistory, onSelectCopy, onCopySelection, onPaste }: Props) {
   return (
     <section aria-label={t('term_history_title')} style={{
       position: 'absolute', top: 30, right: 8, zIndex: 20,
@@ -51,6 +52,9 @@ export default function TerminalHistoryHelp({ onClose, onLaunchCodexScrollable, 
         <div><Key>Shift</Key> + {t('term_history_wheel')} · <Key>q</Key> / <Key>Esc</Key> {t('term_history_exit')}</div>
         <button type="button" onClick={onResumeInput} style={{ ...actionStyle, marginTop: 6 }}>
           {t('term_history_resume_input')}
+        </button>
+        <button type="button" onClick={onReplayHistory} style={{ ...actionStyle, marginTop: 6, marginLeft: 6 }}>
+          {t('term_history_replay')}
         </button>
       </div>
 

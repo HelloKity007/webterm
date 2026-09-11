@@ -23,7 +23,7 @@ const en: Record<string, string> = {
   term_history: 'History', term_history_title: 'Terminal / CLI history', term_history_close: 'Close history help',
   term_history_tmux: 'Terminal and tmux history', term_history_tmux_hint: 'Normal wheel follows the active application. If a long fullscreen CLI stalls, Shift+wheel uses rate-limited PageUp/PageDown.',
   term_history_wheel: 'wheel', term_history_exit: 'exits history mode',
-  term_history_resume_input: 'Return to bottom and resume input', term_history_resume_sent: 'Exited tmux history mode or sent Ctrl+End to the CLI',
+  term_history_resume_input: 'Return to bottom and resume input', term_history_resume_sent: 'Exited tmux history mode or sent Ctrl+End to the CLI', term_history_replay: 'Replay cached output', term_history_replay_sent: 'Replayed cached terminal output',
   term_history_clipboard: 'Copy and paste inside CLIs', term_history_clipboard_hint: 'Drag directly to select and copy; a short click still goes to the CLI. Select & copy remains as a compatibility mode. Existing selections can use Copy or Ctrl+Shift+C.',
   term_history_claude_mode: 'For long sessions, switch to fullscreen:', term_history_claude_keys: 'Review with wheel or keys:',
   term_history_claude_transcript: 'Open transcript; write transcript to terminal scrollback:',
