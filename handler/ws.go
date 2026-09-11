@@ -404,7 +404,7 @@ func (h *WSHandler) HandleSSH(conn *websocket.Conn) {
 		}
 		targetName := captureTarget
 		captureCommand := scopeTmuxCommand("tmux capture-pane -p -e -t "+targetName, h.TmuxSocket)
-		paneCommand := scopeTmuxCommand("tmux display-message -p -t "+targetName+" '#{pane_id}\\t#{pane_current_command}'", h.TmuxSocket)
+		paneCommand := scopeTmuxCommand("tmux display-message -p -t "+targetName+" '#{pane_id}\t#{pane_current_command}'", h.TmuxSocket)
 		go func() {
 			captureClient, captureErr := newSSHClient()
 			if captureErr != nil {
