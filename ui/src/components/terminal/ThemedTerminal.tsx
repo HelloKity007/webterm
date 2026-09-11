@@ -510,14 +510,14 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
             term.scrollLines(lines);
             return;
           }
-          // Claude's negotiated SGR wheel handler advances three lines per
-          // report. Send one report, independent of browser pixel deltas.
+          // Claude advances one line per SGR report. Route panel-wide wheels
+          // to its history region, including wheels over the composer/footer.
           const bounds = term.element?.querySelector('.xterm-screen')?.getBoundingClientRect();
           if (!bounds) return;
           const { col, row } = getTerminalGridPosition(
-            { x: event.clientX, y: event.clientY }, bounds, term.cols, term.rows,
+            { x: event.clientX, y: bounds.top + bounds.height / 2 }, bounds, term.cols, term.rows,
           );
-          sendRef.current(JSON.stringify({ data: `\x1b[<${lines < 0 ? 64 : 65};${col};${row}M` }));
+          sendRef.current(JSON.stringify({ data: `\x1b[<${lines < 0 ? 64 : 65};${col};${row}M`.repeat(Math.abs(lines)) }));
         },
       });
     };
@@ -526,12 +526,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
     // last integral character row. Do not replay into another coordinate space.
     const handleSurfaceWheel = (event: WheelEvent) => {
       if (event.ctrlKey) return;
-      const viewport = term.element?.querySelector('.xterm-scrollable-element');
-      if (event.target instanceof Node && viewport?.contains(event.target)) return;
-      if (!handleTerminalWheel(event)) return;
-      event.preventDefault();
-      event.stopPropagation();
-      if (event.deltaY) term.scrollLines(Math.sign(event.deltaY) * 3);
+      if (!handleTerminalWheel(event)) event.stopImmediatePropagation();
     };
 
     // xterm's default touch handler emits key-like gestures, which makes a
