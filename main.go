@@ -34,6 +34,7 @@ func main() {
 	listenAddr := flag.String("listen-addr", "", "override loopback listen address")
 	databasePath := flag.String("database", "webterm.db", "path to SQLite database")
 	deploymentEnvironment := flag.String("environment", "production", "deployment environment name")
+	testAutoLogin := flag.Bool("test-auto-login", false, "temporarily allow admin auto-login in release-test only")
 	preserveTerminalSessions := flag.Bool("preserve-terminal-sessions", false, "do not kill shared tmux sessions when tabs close")
 	showVersion := flag.Bool("version", false, "print version and exit")
 	flag.Parse()
@@ -78,12 +79,13 @@ func main() {
 	}
 	auth.SetJWTSecret(jwtSecret)
 
-	authH := &handler.AuthHandler{Store: st}
+	authH := &handler.AuthHandler{Store: st, Environment: *deploymentEnvironment, TestAutoLogin: *testAutoLogin}
 	userH := &handler.UserHandler{Store: st}
 
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("POST /api/auth/login", authH.Login)
+	mux.HandleFunc("POST /api/auth/test-session", authH.TestSession)
 	mux.HandleFunc("POST /api/auth/logout", authH.Logout)
 
 	mux.Handle("GET /api/users", auth.Middleware(auth.AdminOnly(http.HandlerFunc(userH.List))))

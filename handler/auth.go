@@ -14,7 +14,34 @@ import (
 )
 
 type AuthHandler struct {
-	Store *store.Store
+	Store         *store.Store
+	Environment   string
+	TestAutoLogin bool
+}
+
+// TestSession is a temporary, explicitly enabled release-test convenience.
+// Production refuses it even if the flag was accidentally supplied.
+func (h *AuthHandler) TestSession(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	if h.Environment != "release-test" || !h.TestAutoLogin {
+		http.NotFound(w, r)
+		return
+	}
+	user, err := h.Store.GetUserByUsername("admin")
+	if err != nil || user.Disabled || user.Role != "admin" {
+		http.Error(w, "test account unavailable", http.StatusForbidden)
+		return
+	}
+	token, err := auth.GenerateToken(user.ID, user.Username, user.Role)
+	if err != nil {
+		http.Error(w, "session unavailable", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"token": token,
+		"user":  map[string]interface{}{"id": user.ID, "username": user.Username, "role": user.Role},
+	})
 }
 
 const (

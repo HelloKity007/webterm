@@ -112,7 +112,7 @@ lan_start_release() {
   fi
   (
     cd "$LAN_ROOT"
-    setsid "$LAN_RELEASE_BINARY" -config "$LAN_CONFIG" -listen-addr 127.0.0.1:8889 -database "$LAN_RELEASE_DATABASE" -environment release-test -preserve-terminal-sessions >"$LAN_RUNTIME_DIR/webterm-release.log" 2>&1 &
+    setsid "$LAN_RELEASE_BINARY" -config "$LAN_CONFIG" -listen-addr 127.0.0.1:8889 -database "$LAN_RELEASE_DATABASE" -environment release-test -test-auto-login -preserve-terminal-sessions >"$LAN_RUNTIME_DIR/webterm-release.log" 2>&1 &
     echo $! >"$LAN_RUNTIME_DIR/webterm-release.pid"
   )
 }
