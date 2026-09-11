@@ -19,6 +19,7 @@ import { deliverTerminalBytes } from './terminalOutput';
 import TerminalHistoryHelp from './TerminalHistoryHelp';
 import {
   createTerminalWheelState,
+  createLatestTerminalWheelSender,
   followTerminalInputAction,
   launchCodexScrollableAction,
   resumeTerminalInputAction,
@@ -498,13 +499,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
     term.loadAddon(fitAddon);
     term.loadAddon(searchAddon);
     const mobileBrowser = isMobileBrowserEnvironment();
-    const wheelReports: string[] = [];
-    let wheelReportTimer: ReturnType<typeof setTimeout> | undefined;
-    const flushWheelReport = () => {
-      const data = wheelReports.shift();
-      if (data) sendRef.current(JSON.stringify({ data }));
-      wheelReportTimer = wheelReports.length ? setTimeout(flushWheelReport, 50) : undefined;
-    };
+    const wheelSender = createLatestTerminalWheelSender((data) => sendRef.current(JSON.stringify({ data })));
     const handleTerminalWheel = (event: WheelEvent) => {
       if (event.deltaY < 0) inputViewportFollowedRef.current = false;
       // A normal shell has a local xterm scrollback. Do not let tmux's mouse
@@ -526,10 +521,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
           );
           // Separate reports so CLI render batching cannot collapse steps.
           // Supersede unfinished steps instead of building a stale backlog.
-          clearTimeout(wheelReportTimer);
-          wheelReports.splice(0, wheelReports.length,
-            ...Array<string>(Math.abs(lines)).fill(`\x1b[<${lines < 0 ? 64 : 65};${col};${row}M`));
-          flushWheelReport();
+          wheelSender.notch(`\x1b[<${lines < 0 ? 64 : 65};${col};${row}M`);
         },
       });
     };
@@ -838,8 +830,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       surfaceElement?.removeEventListener('touchmove', handleTouchMove, true);
       surfaceElement?.removeEventListener('touchend', handleTouchEnd, true);
       surfaceElement?.removeEventListener('wheel', handleSurfaceWheel, true);
-      clearTimeout(wheelReportTimer);
-      wheelReports.length = 0;
+      wheelSender.dispose();
       if (webglAddon) {
         try { webglAddon.dispose(); } catch { /* ignore */ }
         webglAddon = null;

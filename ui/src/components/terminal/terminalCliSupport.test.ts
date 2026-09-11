@@ -1,8 +1,27 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest';
+import { createLatestTerminalWheelSender } from './terminalCliSupport';
 import { createTerminalWheelState, followTerminalInputAction, launchCodexScrollableAction, resumeTerminalInputAction, routeTerminalHistoryWheel, routeTerminalWheel, terminalActionMessage, terminalScrollbackLines } from './terminalCliSupport';
 
 describe('terminal CLI history support', () => {
+  it('reverses immediately after a wheel flood without draining stale down events', () => {
+    vi.useFakeTimers();
+    try {
+      const send = vi.fn();
+      const wheel = createLatestTerminalWheelSender(send);
+      for (let i = 0; i < 100; i++) wheel.notch('down');
+      send.mockClear();
+      wheel.notch('up');
+      expect(send.mock.calls).toEqual([['up']]);
+      vi.runAllTimers();
+      expect(send.mock.calls).toEqual([['up'], ['up'], ['up']]);
+      wheel.notch('down');
+      wheel.dispose();
+      send.mockClear();
+      vi.runAllTimers();
+      expect(send).not.toHaveBeenCalled();
+    } finally { vi.useRealTimers(); }
+  });
   it('scrolls exactly three lines per event regardless of delta size, mode or Shift', () => {
     const scrollNotch = vi.fn();
     for (const deltaMode of [0, 1, 2]) {

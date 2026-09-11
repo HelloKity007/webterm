@@ -6,6 +6,29 @@ export const followTerminalInputAction = 'follow_terminal_input';
 
 const alternatePageIntervalMs = 120;
 
+/** Keep at most one notch pending; direction changes must not wait behind history. */
+export function createLatestTerminalWheelSender(send: (data: string) => void) {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let remaining = 0;
+  let report = '';
+  const cancel = () => { clearTimeout(timer); timer = undefined; remaining = 0; };
+  const flush = () => {
+    if (remaining <= 0) return;
+    send(report);
+    remaining--;
+    timer = remaining > 0 ? setTimeout(flush, 50) : undefined;
+  };
+  return {
+    notch(data: string) {
+      cancel();
+      report = data;
+      remaining = 3;
+      flush();
+    },
+    dispose: cancel,
+  };
+}
+
 export interface TerminalWheelState {
   lastPageAt: number;
   lastPageDirection: number;
