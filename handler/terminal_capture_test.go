@@ -1,6 +1,25 @@
 package handler
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
+
+func TestTerminalSnapshotRestoresGridScreenAndCursor(t *testing.T) {
+	got := string(terminalScreenSnapshot([]byte("first\nlast\n"), []string{"%4", "claude", "80", "2", "3", "1", "1"}))
+	if !strings.HasPrefix(got, "\x1b]2;webterm-grid:80x2\x07\x1b[?1049h") {
+		t.Fatalf("grid and alternate mode missing: %q", got)
+	}
+	if !strings.Contains(got, "\x1b[1;1Hfirst\x1b[2;1Hlast") {
+		t.Fatalf("row positions incorrect: %q", got)
+	}
+	if strings.Contains(got, "\n") {
+		t.Fatal("snapshot must not scroll the last row")
+	}
+	if !strings.HasSuffix(got, "\x1b[0m\x1b[2;4H") {
+		t.Fatalf("cursor not restored: %q", got)
+	}
+}
 
 func TestTerminalCaptureReturnsEveryRowToFirstColumn(t *testing.T) {
 	for _, test := range []struct{ input, want string }{

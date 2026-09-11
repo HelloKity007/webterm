@@ -406,7 +406,7 @@ func (h *WSHandler) HandleSSH(conn *websocket.Conn) {
 		}
 		targetName := captureTarget
 		captureCommand := scopeTmuxCommand("tmux capture-pane -p -e -t "+targetName, h.TmuxSocket)
-		paneCommand := scopeTmuxCommand("tmux display-message -p -t "+targetName+" '#{pane_id}\t#{pane_current_command}'", h.TmuxSocket)
+		paneCommand := scopeTmuxCommand("tmux display-message -p -t "+targetName+" '#{pane_id}\t#{pane_current_command}\t#{pane_width}\t#{pane_height}\t#{cursor_x}\t#{cursor_y}\t#{alternate_on}'", h.TmuxSocket)
 		go func() {
 			captureClient, captureErr := newSSHClient()
 			if captureErr != nil {
@@ -424,14 +424,16 @@ func (h *WSHandler) HandleSSH(conn *websocket.Conn) {
 			// Static capture does not emit a control %output event, so relying only
 			// on the live tracker would otherwise reject input for restored panes.
 			var paneID bytes.Buffer
+			var paneState []string
 			paneSession, paneErr := captureClient.NewSession()
 			if paneErr == nil {
 				paneSession.Stdout = &paneID
 				if paneErr = paneSession.Run(paneCommand); paneErr == nil {
-					parts := strings.SplitN(strings.TrimSpace(paneID.String()), "\t", 2)
+					parts := strings.Split(strings.TrimSpace(paneID.String()), "\t")
+					paneState = parts
 					controlTracker.setTarget(strings.TrimSpace(parts[0]))
 					mode := "shell"
-					if len(parts) == 2 && (strings.EqualFold(strings.TrimSpace(parts[1]), "claude") || strings.EqualFold(strings.TrimSpace(parts[1]), "claude-code")) {
+					if len(parts) >= 2 && (strings.EqualFold(strings.TrimSpace(parts[1]), "claude") || strings.EqualFold(strings.TrimSpace(parts[1]), "claude-code")) {
 						mode = "cli"
 					}
 					_ = websocket.JSON.Send(conn, map[string]string{"type": "terminal_mode", "mode": mode})
@@ -439,7 +441,7 @@ func (h *WSHandler) HandleSSH(conn *websocket.Conn) {
 				_ = paneSession.Close()
 			}
 			if captureErr = captureSession.Run(captureCommand); captureErr == nil && captured.Len() > 0 {
-				snapshot := terminalCaptureBytes(captured.Bytes())
+				snapshot := terminalScreenSnapshot(captured.Bytes(), paneState)
 				history.appendBytes(snapshot)
 				_, _ = (&wsWriter{conn: conn}).Write(snapshot)
 			}

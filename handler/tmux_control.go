@@ -3,6 +3,7 @@ package handler
 import (
 	"bufio"
 	"bytes"
+	"fmt"
 	"io"
 	"strconv"
 	"strings"
@@ -184,6 +185,37 @@ func parseTmuxControlLine(line string) (tmuxControlEvent, bool) {
 func terminalCaptureBytes(captured []byte) []byte {
 	text := bytes.ReplaceAll(captured, []byte("\r\n"), []byte("\n"))
 	return bytes.ReplaceAll(text, []byte("\n"), []byte("\r\n"))
+}
+
+func terminalScreenSnapshot(captured []byte, state []string) []byte {
+	if len(state) != 7 {
+		return terminalCaptureBytes(captured)
+	}
+	cols, e1 := strconv.Atoi(state[2])
+	rows, e2 := strconv.Atoi(state[3])
+	x, e3 := strconv.Atoi(state[4])
+	y, e4 := strconv.Atoi(state[5])
+	if e1 != nil || e2 != nil || e3 != nil || e4 != nil || cols < 2 || rows < 1 || x < 0 || y < 0 {
+		return terminalCaptureBytes(captured)
+	}
+	mode := "\x1b[?1049l"
+	if state[6] == "1" {
+		mode = "\x1b[?1049h"
+	}
+	// Announce the actual grid before any captured text. Position each row
+	// absolutely: trailing capture newlines must not scroll a full screen.
+	var out bytes.Buffer
+	fmt.Fprintf(&out, "\x1b]2;webterm-grid:%dx%d\x07%s\x1b[0m\x1b[2J\x1b[H", cols, rows, mode)
+	lines := bytes.Split(bytes.TrimSuffix(captured, []byte("\n")), []byte("\n"))
+	for i, line := range lines {
+		if i >= rows {
+			break
+		}
+		fmt.Fprintf(&out, "\x1b[%d;1H", i+1)
+		out.Write(bytes.TrimSuffix(line, []byte("\r")))
+	}
+	fmt.Fprintf(&out, "\x1b[0m\x1b[%d;%dH", y+1, x+1)
+	return out.Bytes()
 }
 
 func decodeTmuxControlData(encoded string) ([]byte, bool) {

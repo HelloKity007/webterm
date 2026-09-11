@@ -45,7 +45,7 @@ import {
   routeTerminalMouseUp,
   shouldAutoFocusTerminal,
 } from './terminalInteractions';
-import { calculateTerminalScale, defaultSharedTerminalGrid, parseSharedTerminalGridTitle, sharedGridForViewport, smallViewportWidth, type TerminalGrid } from './terminalScaling';
+import { calculateTerminalScale, defaultSharedTerminalGrid, parseSharedTerminalGridTitle, smallViewportWidth, type TerminalGrid } from './terminalScaling';
 import { getSharedTerminalGrid, setSharedTerminalGrid } from './terminalGridCache';
 import { isMobileBrowserEnvironment } from '../layout/mobileLayout';
 
@@ -668,17 +668,9 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
         fitAddon.fit();
 
         const nativeGrid = { cols: term.cols, rows: term.rows };
-        const viewportGrid = sharedGrid
-          ? (mobileBrowser ? sharedGrid : sharedGridForViewport(sharedGrid, displayWidth))
-          : (useSmallViewportBaseline ? defaultSharedTerminalGrid : null);
-        const targetGrid = mobileBrowser && viewportGrid
-          ? viewportGrid
-          : useSmallViewportBaseline && viewportGrid
-            ? {
-              cols: Math.max(nativeGrid.cols, viewportGrid.cols),
-              rows: Math.max(nativeGrid.rows, viewportGrid.rows),
-            }
-            : nativeGrid;
+        // Raw pane ANSI coordinates must use the server's exact grid, even
+        // on a large display with many small split panels.
+        const targetGrid = sharedGrid || (useSmallViewportBaseline ? defaultSharedTerminalGrid : nativeGrid);
         const screen = term.element?.querySelector<HTMLElement>('.xterm-screen');
         const nativeCellWidth = screen && nativeGrid.cols > 0
           ? screen.getBoundingClientRect().width / nativeGrid.cols
@@ -740,9 +732,13 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       // small-only client still needs the deterministic baseline. Otherwise
       // tmux echoes the small client's native grid and immediately erases the
       // scale that was applied during the first fit.
-      const nextGrid = mobileBrowser ? announcedGrid : sharedGridForViewport(announcedGrid, window.innerWidth);
+      const nextGrid = announcedGrid;
       if (sharedGrid?.cols === nextGrid.cols && sharedGrid.rows === nextGrid.rows) return;
       sharedGrid = nextGrid;
+      // Resize during the OSC callback, before parsing the following snapshot.
+      resizingForSharedGrid = true;
+      term.resize(nextGrid.cols, nextGrid.rows);
+      resizingForSharedGrid = false;
       if (myTabId) setSharedTerminalGrid(myTabId, nextGrid);
       scheduleFit();
     });
