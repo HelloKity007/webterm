@@ -404,7 +404,7 @@ func (h *WSHandler) HandleSSH(conn *websocket.Conn) {
 		}
 		targetName := captureTarget
 		captureCommand := scopeTmuxCommand("tmux capture-pane -p -e -t "+targetName, h.TmuxSocket)
-		paneCommand := scopeTmuxCommand("tmux display-message -p -t "+targetName+" '#{pane_id}'", h.TmuxSocket)
+		paneCommand := scopeTmuxCommand("tmux display-message -p -t "+targetName+" '#{pane_id}\\t#{pane_current_command}'", h.TmuxSocket)
 		go func() {
 			captureClient, captureErr := newSSHClient()
 			if captureErr != nil {
@@ -426,7 +426,13 @@ func (h *WSHandler) HandleSSH(conn *websocket.Conn) {
 			if paneErr == nil {
 				paneSession.Stdout = &paneID
 				if paneErr = paneSession.Run(paneCommand); paneErr == nil {
-					controlTracker.pane = strings.TrimSpace(paneID.String())
+					parts := strings.SplitN(strings.TrimSpace(paneID.String()), "\t", 2)
+					controlTracker.pane = strings.TrimSpace(parts[0])
+					mode := "shell"
+					if len(parts) == 2 && (strings.EqualFold(strings.TrimSpace(parts[1]), "claude") || strings.EqualFold(strings.TrimSpace(parts[1]), "claude-code")) {
+						mode = "cli"
+					}
+					_ = websocket.JSON.Send(conn, map[string]string{"type": "terminal_mode", "mode": mode})
 				}
 				_ = paneSession.Close()
 			}

@@ -871,6 +871,10 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       if (!term) return;
       try {
         const msg = JSON.parse(data);
+        if (msg.type === 'terminal_mode' && (msg.mode === 'shell' || msg.mode === 'cli')) {
+          terminalModeRef.current = msg.mode;
+          if (msg.mode === 'cli') alternateScreenRef.current = true;
+        }
         if (msg.data) {
           let bytes: Uint8Array;
           if (msg.b64) {
