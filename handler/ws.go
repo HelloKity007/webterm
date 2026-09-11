@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -38,6 +39,19 @@ type WSHandler struct {
 	// RunTerminalCommand is overridden by handler tests to replace remote SSH I/O.
 	RunTerminalCommand func(*store.Connection, string) error
 	terminalSessions   persistentSessionRegistry
+	terminalHistoryMu  sync.Mutex
+	terminalHistory    *terminalHistoryStore
+}
+
+const terminalHistoryMaxBytes = 8 * 1024 * 1024
+
+func (h *WSHandler) historyFor(key string) *terminalHistory {
+	h.terminalHistoryMu.Lock()
+	defer h.terminalHistoryMu.Unlock()
+	if h.terminalHistory == nil {
+		h.terminalHistory = newTerminalHistoryStore(terminalHistoryMaxBytes)
+	}
+	return h.terminalHistory.get(key)
 }
 
 // scopeTmuxCommand routes every tmux invocation, including invocations inside
@@ -352,6 +366,7 @@ func (h *WSHandler) HandleSSH(conn *websocket.Conn) {
 		UserID: user.UserID, ConnectionID: connID, Type: "ssh",
 	})
 	defer h.Store.EndSessionLog(logID)
+	history := h.historyFor(terminalKey)
 
 	go func() {
 		pumpTerminalInput(func(raw *json.RawMessage) error {
@@ -395,8 +410,8 @@ func (h *WSHandler) HandleSSH(conn *websocket.Conn) {
 		}
 	}()
 
-	go io.Copy(&wsWriter{conn}, stdoutPipe)
-	io.Copy(&wsWriter{conn}, stderrPipe)
+	go io.Copy(&recordingWSWriter{wsWriter: wsWriter{conn}, history: history}, stdoutPipe)
+	io.Copy(&recordingWSWriter{wsWriter: wsWriter{conn}, history: history}, stderrPipe)
 }
 
 func (h *WSHandler) HandleDB(conn *websocket.Conn) {
@@ -478,6 +493,16 @@ func (h *WSHandler) HandleDB(conn *websocket.Conn) {
 
 type wsWriter struct {
 	conn *websocket.Conn
+}
+
+type recordingWSWriter struct {
+	wsWriter
+	history *terminalHistory
+}
+
+func (w *recordingWSWriter) Write(p []byte) (int, error) {
+	w.history.appendBytes(p)
+	return w.wsWriter.Write(p)
 }
 
 func (w *wsWriter) Write(p []byte) (int, error) {
