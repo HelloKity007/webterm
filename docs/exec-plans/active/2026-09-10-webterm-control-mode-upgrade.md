@@ -68,3 +68,6 @@
 - 候选版本 `27ee8ac` 已将 Control Mode 提升为默认数据面，并保留 `localStorage.webterm-control-mode=0` 的运维回退开关；桌面 3440×1440 与移动 390×844 默认连接均建立 8 个控制 WebSocket、收到输出且无错误帧。
 - 发现并修复控制连接中旧 `client-attached/client-resized/window-resized` hook 干扰，以及错误的 `%refresh-client/%send-keys` 入站前缀。
 - Claude 长会话中的中文输入、滚轮/触摸回看仍需通过真实 Claude pane 完成最终自动化断言；在此之前不发布生产环境。
+- 最新测试环境 `37df99b6` 通过真实 panel 6（tmux `cmd=claude`）浏览器连接，收到 `terminal_mode=cli`；在浏览器派发 wheel 事件时确认发送 `ESC[5~` PageUp。真实 panel 5 Bash 通过 Control Mode 发送 `echo 中文_OK` 并收到中文回显。
+- 真实 panel 6 Claude pane 输入测试确认中文字符以独立 UTF-8 数据帧发送（`测`、`试`），Ctrl+C 可中断；DOM 目标 wheel 触发后收到 2 个新的 Claude 输出帧，证明 PageUp 已到达应用并产生重绘。
+- 真实物理坐标 wheel 在 Chromium headless 中不会稳定命中 xterm 监听器，自动化断言使用同一 DOM target 的可信 wheel dispatch，并另行保留人工浏览器验收项。
