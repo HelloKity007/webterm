@@ -77,6 +77,26 @@ func encodeTmuxControlSendKeys(pane, data string) string {
 	return "%send-keys -t " + pane + " -l -- " + quoted + "\n"
 }
 
+// tmuxControlInput forwards browser bytes only after the control stream has
+// announced a real pane id. Before that point input is rejected rather than
+// risking protocol corruption or sending keystrokes to an unintended pane.
+type tmuxControlInput struct {
+	tracker *tmuxControlPaneTracker
+	writer  io.Writer
+}
+
+func (i *tmuxControlInput) write(data string) error {
+	if i == nil || i.writer == nil {
+		return io.ErrClosedPipe
+	}
+	command := encodeTmuxControlSendKeys(i.tracker.target(), data)
+	if command == "" {
+		return io.ErrShortWrite
+	}
+	_, err := io.WriteString(i.writer, command)
+	return err
+}
+
 // parseTmuxControlLine parses one complete line from tmux -CC. tmux escapes
 // pane output using octal bytes (\ooo), backslash, and line continuations.
 func parseTmuxControlLine(line string) (tmuxControlEvent, bool) {

@@ -2,6 +2,8 @@ package handler
 
 import (
 	"bytes"
+	"errors"
+	"io"
 	"strings"
 	"testing"
 )
@@ -30,6 +32,22 @@ func TestTmuxControlPaneTrackerLearnsServerAssignedPane(t *testing.T) {
 	tracker.observe(tmuxControlEvent{Name: "output", Pane: "%8"})
 	if tracker.target() != "%7" {
 		t.Fatalf("target = %q, want first output pane", tracker.target())
+	}
+}
+
+func TestTmuxControlInputWaitsForPaneIdentity(t *testing.T) {
+	var out strings.Builder
+	tracker := &tmuxControlPaneTracker{}
+	input := &tmuxControlInput{tracker: tracker, writer: &out}
+	if err := input.write("echo no pane"); !errors.Is(err, io.ErrShortWrite) {
+		t.Fatalf("err = %v, want ErrShortWrite", err)
+	}
+	tracker.observe(tmuxControlEvent{Name: "output", Pane: "%3"})
+	if err := input.write("echo ok"); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(out.String(), "%send-keys -t %3 -l -- '") {
+		t.Fatalf("encoded input = %q", out.String())
 	}
 }
 
