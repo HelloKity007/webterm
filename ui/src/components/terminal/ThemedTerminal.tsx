@@ -124,6 +124,8 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
   const zsessionRef = useRef<ZSession | null>(null);
   const zmodemActiveRef = useRef(false);
   const pendingUploadRef = useRef<ZSession | null>(null);
+  const outputQueueRef = useRef<Uint8Array[]>([]);
+  const outputFrameRef = useRef<number | null>(null);
   const sendRef = useRef<(data: string) => void>(() => {});
   const inputViewportFollowedRef = useRef(false);
   const onStatusRef = useRef(onStatus);
@@ -139,6 +141,29 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
   const setSftpCdPath = useLayoutStore((s) => s.setSftpCdPath);
   const setStatusConn = useLayoutStore((s) => s.setStatusConn);
   const focusedPaneId = useLayoutStore((s) => s.focusedPaneId);
+
+  const enqueueTerminalOutput = useCallback((bytes: Uint8Array) => {
+    outputQueueRef.current.push(bytes);
+    if (outputFrameRef.current !== null) return;
+    outputFrameRef.current = requestAnimationFrame(() => {
+      outputFrameRef.current = null;
+      const term = termRef.current;
+      const queue = outputQueueRef.current.splice(0);
+      if (!term || queue.length === 0) return;
+      const total = queue.reduce((size, chunk) => size + chunk.byteLength, 0);
+      const merged = new Uint8Array(total);
+      let offset = 0;
+      for (const chunk of queue) {
+        merged.set(chunk, offset);
+        offset += chunk.byteLength;
+      }
+      try {
+        deliverTerminalBytes(term, zsentryRef.current, merged);
+      } catch (error) {
+        console.warn('terminal output delivery:', error);
+      }
+    });
+  }, []);
 
   useEffect(() => {
     rulesRef.current = rules;
@@ -808,6 +833,9 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
     return () => {
       if (pendingFitFrame !== null) cancelAnimationFrame(pendingFitFrame);
       if (pendingScreenScaleFrame !== null) cancelAnimationFrame(pendingScreenScaleFrame);
+      if (outputFrameRef.current !== null) cancelAnimationFrame(outputFrameRef.current);
+      outputFrameRef.current = null;
+      outputQueueRef.current = [];
       titleDisposable.dispose();
       surfaceElement?.removeEventListener('touchstart', handleTouchStart, true);
       surfaceElement?.removeEventListener('touchmove', handleTouchMove, true);
@@ -861,17 +889,11 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
           // an actual shell prompt is authoritative and must win over it.
           if (shellPrompt) terminalModeRef.current = 'shell';
           else if (/claude|context|bypass permissions|\[minimax/i.test(plain)) terminalModeRef.current = 'cli';
-          try {
-            deliverTerminalBytes(term, zsentryRef.current, bytes);
-          } catch (e) {
-            // Repeated ZMODEM handshakes (rz retries) can make the session throw;
-            // swallow them instead of dumping raw JSON into the terminal.
-            console.warn('zmodem consume:', e);
-          }
+            enqueueTerminalOutput(bytes);
         }
         if (msg.error) term.write(`\r\n\x1b[31m${msg.error}\x1b[0m\r\n`);
       } catch {
-        term.write(data);
+        enqueueTerminalOutput(new TextEncoder().encode(data));
       }
     },
     onClose: (final) => {
