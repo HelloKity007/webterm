@@ -698,7 +698,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
         // Font rasterisation can differ by a fraction of a pixel across DPRs.
         // Add a small correction only when xterm says the target would overflow.
         const proposed = fitAddon.proposeDimensions();
-        if (proposed && (proposed.cols < targetGrid.cols || proposed.rows < targetGrid.rows)) {
+        if (!mobileBrowser && proposed && (proposed.cols < targetGrid.cols || proposed.rows < targetGrid.rows)) {
           const correction = Math.min(proposed.cols / targetGrid.cols, proposed.rows / targetGrid.rows) * 0.995;
           scaleOptions = {
             ...scaleOptions,
