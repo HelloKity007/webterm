@@ -45,6 +45,26 @@ type tmuxControlEvent struct {
 	Raw  string
 }
 
+// tmuxControlPaneTracker learns the pane id emitted by tmux for a single
+// attach stream. A control-mode client must target this id in %send-keys;
+// pane ids are server-assigned and must never be guessed from terminal IDs.
+type tmuxControlPaneTracker struct {
+	pane string
+}
+
+func (t *tmuxControlPaneTracker) observe(event tmuxControlEvent) {
+	if t != nil && t.pane == "" && event.Name == "output" && event.Pane != "" {
+		t.pane = event.Pane
+	}
+}
+
+func (t *tmuxControlPaneTracker) target() string {
+	if t == nil {
+		return ""
+	}
+	return t.pane
+}
+
 // encodeTmuxControlSendKeys builds a control-mode command without allowing
 // terminal input to escape into the protocol. tmux control commands are
 // newline framed; shell-style single quoting keeps arbitrary UTF-8 and quote

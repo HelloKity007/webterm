@@ -20,6 +20,19 @@ func TestParseTmuxControlOutputDecodesPaneAndEscapes(t *testing.T) {
 	}
 }
 
+func TestTmuxControlPaneTrackerLearnsServerAssignedPane(t *testing.T) {
+	tracker := &tmuxControlPaneTracker{}
+	tracker.observe(tmuxControlEvent{Name: "session-changed", Pane: "%9"})
+	if tracker.target() != "" {
+		t.Fatal("non-output event selected a pane")
+	}
+	tracker.observe(tmuxControlEvent{Name: "output", Pane: "%7"})
+	tracker.observe(tmuxControlEvent{Name: "output", Pane: "%8"})
+	if tracker.target() != "%7" {
+		t.Fatalf("target = %q, want first output pane", tracker.target())
+	}
+}
+
 func TestEncodeTmuxControlSendKeysQuotesArbitraryInput(t *testing.T) {
 	got := encodeTmuxControlSendKeys("%7", "echo '你好'\\\n")
 	if !strings.HasPrefix(got, "%send-keys -t %7 -l -- '") || !strings.HasSuffix(got, "'\n") || !strings.Contains(got, "\\''") {
