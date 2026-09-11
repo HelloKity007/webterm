@@ -154,6 +154,14 @@ func parseTmuxControlLine(line string) (tmuxControlEvent, bool) {
 	return event, true
 }
 
+// capture-pane prints text lines, not a PTY byte stream. LF alone advances
+// xterm's row without resetting its column, causing a staircase on replay.
+// Normalize snapshots only: live pane output must retain its exact controls.
+func terminalCaptureBytes(captured []byte) []byte {
+	text := bytes.ReplaceAll(captured, []byte("\r\n"), []byte("\n"))
+	return bytes.ReplaceAll(text, []byte("\n"), []byte("\r\n"))
+}
+
 func decodeTmuxControlData(encoded string) ([]byte, bool) {
 	var out bytes.Buffer
 	for i := 0; i < len(encoded); i++ {

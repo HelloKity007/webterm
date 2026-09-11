@@ -437,8 +437,9 @@ func (h *WSHandler) HandleSSH(conn *websocket.Conn) {
 				_ = paneSession.Close()
 			}
 			if captureErr = captureSession.Run(captureCommand); captureErr == nil && captured.Len() > 0 {
-				history.appendBytes(captured.Bytes())
-				_, _ = (&wsWriter{conn: conn}).Write(captured.Bytes())
+				snapshot := terminalCaptureBytes(captured.Bytes())
+				history.appendBytes(snapshot)
+				_, _ = (&wsWriter{conn: conn}).Write(snapshot)
 			}
 		}()
 	}
