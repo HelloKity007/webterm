@@ -46,7 +46,7 @@ func TestTmuxControlInputWaitsForPaneIdentity(t *testing.T) {
 	if err := input.write("echo ok"); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasPrefix(out.String(), "%send-keys -t %3 -l -- '") {
+	if !strings.HasPrefix(out.String(), "send-keys -t %3 -l -- '") {
 		t.Fatalf("encoded input = %q", out.String())
 	}
 }
@@ -57,14 +57,14 @@ func TestTmuxControlTerminalSessionEncodesResizeAsControlCommand(t *testing.T) {
 	if err := session.WindowChange(44, 92); err != nil {
 		t.Fatal(err)
 	}
-	if out.String() != "%refresh-client -C 92x44\n" {
+	if out.String() != "refresh-client -C 92x44\n" {
 		t.Fatalf("resize command = %q", out.String())
 	}
 }
 
 func TestEncodeTmuxControlSendKeysQuotesArbitraryInput(t *testing.T) {
 	got := encodeTmuxControlSendKeys("%7", "echo '你好'\\\n")
-	if !strings.HasPrefix(got, "%send-keys -t %7 -l -- '") || !strings.HasSuffix(got, "'\n") || !strings.Contains(got, "\\''") {
+	if !strings.HasPrefix(got, "send-keys -t %7 -l -- '") || !strings.HasSuffix(got, "'\n") || !strings.Contains(got, "\\''") {
 		t.Fatalf("command = %q, want a quoted control-mode send-keys command", got)
 	}
 }

@@ -74,7 +74,7 @@ func encodeTmuxControlSendKeys(pane, data string) string {
 		return ""
 	}
 	quoted := "'" + strings.ReplaceAll(data, "'", "'\\''") + "'"
-	return "%send-keys -t " + pane + " -l -- " + quoted + "\n"
+	return "send-keys -t " + pane + " -l -- " + quoted + "\n"
 }
 
 // tmuxControlInput forwards browser bytes only after the control stream has
@@ -94,7 +94,10 @@ func (s *tmuxControlTerminalSession) WindowChange(rows, cols int) error {
 	if s == nil || s.writer == nil {
 		return io.ErrClosedPipe
 	}
-	_, err := io.WriteString(s.writer, "%refresh-client -C "+strconv.Itoa(cols)+"x"+strconv.Itoa(rows)+"\n")
+	// Control mode accepts regular tmux commands on stdin. The '%' prefix is
+	// reserved for server-to-client notifications; sending it here makes tmux
+	// parse the resize as a protocol command and return a syntax error.
+	_, err := io.WriteString(s.writer, "refresh-client -C "+strconv.Itoa(cols)+"x"+strconv.Itoa(rows)+"\n")
 	return err
 }
 
