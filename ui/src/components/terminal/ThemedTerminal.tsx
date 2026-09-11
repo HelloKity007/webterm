@@ -632,7 +632,6 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
     let resizingForSharedGrid = false;
     let sharedGrid: TerminalGrid | null = mobileBrowser ? null : (myTabId ? getSharedTerminalGrid(myTabId) : null);
     let pendingFitFrame: number | null = null;
-    let pendingScreenScaleFrame: number | null = null;
 
     term.onResize(({ cols, rows }) => {
       if (cols < 2 || rows < 1) return; // ignore zero-size (hidden terminal)
@@ -650,10 +649,6 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       if (!ref.current || ref.current.offsetWidth <= 0 || ref.current.offsetHeight <= 0) return;
       resizingForSharedGrid = true;
       try {
-        if (pendingScreenScaleFrame !== null) {
-          cancelAnimationFrame(pendingScreenScaleFrame);
-          pendingScreenScaleFrame = null;
-        }
         const currentScreen = term.element?.querySelector<HTMLElement>('.xterm-screen');
         if (currentScreen) currentScreen.style.transform = '';
 
@@ -721,36 +716,6 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
         ref.current.dataset.screenScaleY = '1.000';
         sharedGrid = targetGrid;
         if (myTabId) setSharedTerminalGrid(myTabId, targetGrid);
-
-        if (targetGrid.cols !== nativeGrid.cols || targetGrid.rows !== nativeGrid.rows) {
-          pendingScreenScaleFrame = requestAnimationFrame(() => {
-            pendingScreenScaleFrame = requestAnimationFrame(() => {
-              pendingScreenScaleFrame = null;
-              const surface = ref.current;
-              const scaledScreen = term.element?.querySelector<HTMLElement>('.xterm-screen');
-              if (!surface || !scaledScreen) return;
-              const surfaceStyle = getComputedStyle(surface);
-              const availableWidth = surface.clientWidth - parseFloat(surfaceStyle.paddingLeft) - parseFloat(surfaceStyle.paddingRight);
-              const availableHeight = surface.clientHeight;
-              const screenRect = scaledScreen.getBoundingClientRect();
-              if (availableWidth <= 0 || availableHeight <= 0 || screenRect.width <= 0 || screenRect.height <= 0) return;
-              // Wait one extra paint for xterm's canvas/scroll-area dimensions;
-              // measuring immediately after resize can apply a stale scale and
-              // leave a partially painted screen with blank space.
-              // A phone must preserve xterm's native line height. Applying the
-              // horizontal fit factor to Y compresses a 44-row Claude screen
-              // into the upper half of the pane and makes the composer appear
-              // stranded in the middle. Compress only X; keep Y at 1 so rows
-              // remain readable and occupy the full portrait viewport.
-              const screenScaleX = mobileBrowser ? Math.min(1, availableWidth / screenRect.width) : availableWidth / screenRect.width;
-              const screenScaleY = mobileBrowser ? Math.min(1, availableHeight / screenRect.height) : availableHeight / screenRect.height;
-              scaledScreen.style.transformOrigin = 'top left';
-              scaledScreen.style.transform = `scale(${screenScaleX}, ${screenScaleY})`;
-              surface.dataset.screenScaleX = screenScaleX.toFixed(3);
-              surface.dataset.screenScaleY = screenScaleY.toFixed(3);
-            });
-          });
-        }
 
         sendRef.current(JSON.stringify({ cols: targetGrid.cols, rows: targetGrid.rows }));
         onResizeDimRef.current?.(targetGrid.cols, targetGrid.rows);
@@ -835,7 +800,6 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
 
     return () => {
       if (pendingFitFrame !== null) cancelAnimationFrame(pendingFitFrame);
-      if (pendingScreenScaleFrame !== null) cancelAnimationFrame(pendingScreenScaleFrame);
       if (outputFrameRef.current !== null) cancelAnimationFrame(outputFrameRef.current);
       outputFrameRef.current = null;
       outputQueueRef.current = [];
