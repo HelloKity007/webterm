@@ -74,7 +74,7 @@ func TestPersistentTerminalControlCommandOptsIntoControlMode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(command, "exec tmux -CC attach-session") || strings.Contains(command, "exec tmux attach-session") {
+	if !strings.Contains(command, "exec tmux -C attach-session") || strings.Contains(command, "exec tmux attach-session") {
 		t.Fatalf("command = %q, want only control-mode attach", command)
 	}
 }

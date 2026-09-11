@@ -59,11 +59,14 @@ func persistentTerminalCommand(userID, connectionID int64, terminalID string) (s
 // opt-in because the browser must also switch its input path to %send-keys;
 // normal WebTerm clients continue using the raw PTY command above.
 func persistentTerminalControlCommand(userID, connectionID int64, terminalID string) (string, error) {
-	command, err := persistentTerminalCommand(userID, connectionID, terminalID)
+	sessionName, err := persistentTerminalSessionName(userID, connectionID, terminalID)
 	if err != nil {
 		return "", err
 	}
-	return strings.Replace(command, "exec tmux attach-session", "exec tmux -CC attach-session", 1), nil
+	// Hooks that reference #{hook_client} are valid for normal tmux clients but
+	// are not populated by -C control clients. Keep control mode's setup
+	// deliberately side-effect free and let the browser own its viewport.
+	return fmt.Sprintf("tmux start-server \\; set-option -g history-limit %d && (tmux has-session -t %s 2>/dev/null || tmux new-session -d -s %s) && tmux set-option -t %s window-size largest && tmux set-option -t %s status off && tmux set-option -t %s set-titles on && tmux set-option -t %s set-titles-string 'webterm-grid:#{window_width}x#{window_height}' && tmux set-option -t %s mouse on && tmux set-option -t %s @webterm_mouse_passthrough on && exec tmux -C attach-session -t %s", terminalHistoryLines, sessionName, sessionName, sessionName, sessionName, sessionName, sessionName, sessionName, sessionName, sessionName), nil
 }
 
 func persistentTerminalFollowInputCommand(userID, connectionID int64, terminalID string) (string, error) {
