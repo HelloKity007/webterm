@@ -665,7 +665,8 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
         const currentScreen = term.element?.querySelector<HTMLElement>('.xterm-screen');
         if (currentScreen) currentScreen.style.transform = '';
 
-        const displayWidth = Math.max(window.innerWidth, window.screen?.width || 0);
+        // Adapt to the browser viewport, not the largest attached monitor.
+        const displayWidth = window.innerWidth;
         const useSmallViewportBaseline = !mobileBrowser && displayWidth < smallViewportWidth;
         // Increase only the small client's base glyph size. Large displays
         // retain the production-native font metrics and scroll behavior.
