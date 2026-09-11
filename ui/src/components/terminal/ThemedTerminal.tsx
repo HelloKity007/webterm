@@ -498,6 +498,13 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
     term.loadAddon(fitAddon);
     term.loadAddon(searchAddon);
     const mobileBrowser = isMobileBrowserEnvironment();
+    const wheelReports: string[] = [];
+    let wheelReportTimer: ReturnType<typeof setTimeout> | undefined;
+    const flushWheelReport = () => {
+      const data = wheelReports.shift();
+      if (data) sendRef.current(JSON.stringify({ data }));
+      wheelReportTimer = wheelReports.length ? setTimeout(flushWheelReport, 50) : undefined;
+    };
     const handleTerminalWheel = (event: WheelEvent) => {
       if (event.deltaY < 0) inputViewportFollowedRef.current = false;
       // A normal shell has a local xterm scrollback. Do not let tmux's mouse
@@ -517,7 +524,9 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
           const { col, row } = getTerminalGridPosition(
             { x: event.clientX, y: bounds.top + bounds.height / 2 }, bounds, term.cols, term.rows,
           );
-          sendRef.current(JSON.stringify({ data: `\x1b[<${lines < 0 ? 64 : 65};${col};${row}M`.repeat(Math.abs(lines)) }));
+          // Separate reports so CLI render batching cannot collapse steps.
+          wheelReports.push(...Array<string>(Math.abs(lines)).fill(`\x1b[<${lines < 0 ? 64 : 65};${col};${row}M`));
+          if (!wheelReportTimer) flushWheelReport();
         },
       });
     };
@@ -825,6 +834,8 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       surfaceElement?.removeEventListener('touchmove', handleTouchMove, true);
       surfaceElement?.removeEventListener('touchend', handleTouchEnd, true);
       surfaceElement?.removeEventListener('wheel', handleSurfaceWheel, true);
+      clearTimeout(wheelReportTimer);
+      wheelReports.length = 0;
       if (webglAddon) {
         try { webglAddon.dispose(); } catch { /* ignore */ }
         webglAddon = null;
