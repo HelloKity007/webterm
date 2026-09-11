@@ -22,6 +22,7 @@ import {
   followTerminalInputAction,
   launchCodexScrollableAction,
   resumeTerminalInputAction,
+  openClaudeTranscriptAction,
   routeTerminalWheel,
   terminalActionMessage,
   terminalScrollbackLines,
@@ -968,6 +969,13 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
     }
   }, [connId, showClipboardNotice, terminalID]);
 
+  const openClaudeTranscript = useCallback(() => {
+    sendRef.current(terminalActionMessage(openClaudeTranscriptAction));
+    showClipboardNotice(t('term_history_claude_transcript_sent'));
+    setHistoryHelpOpen(false);
+    termRef.current?.focus();
+  }, [showClipboardNotice]);
+
   // ZMODEM (sz/rz) support
   useEffect(() => {
     const makeSentry = (): ZSentry => {
@@ -1145,6 +1153,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
         }} onLaunchCodexScrollable={launchCodexScrollable}
           onResumeInput={resumeTerminalInput}
           onReplayHistory={() => { void replayTerminalHistory(); }}
+          onOpenClaudeTranscript={openClaudeTranscript}
           onSelectCopy={() => {
             setHistoryHelpOpen(false);
             setSelectionCopyMode(true);

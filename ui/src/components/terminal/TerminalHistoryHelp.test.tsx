@@ -11,6 +11,7 @@ describe('TerminalHistoryHelp', () => {
     onLaunchCodexScrollable: vi.fn(),
     onResumeInput: vi.fn(),
     onReplayHistory: vi.fn(),
+    onOpenClaudeTranscript: vi.fn(),
     onSelectCopy: vi.fn(),
     onCopySelection: vi.fn(),
     onPaste: vi.fn(),

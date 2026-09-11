@@ -108,6 +108,19 @@ func TestPersistentTerminalCodexScrollableCommandIsFixedAndShellGuarded(t *testi
 	}
 }
 
+func TestPersistentTerminalClaudeTranscriptCommandIsFixedAndGuarded(t *testing.T) {
+	command, err := persistentTerminalClaudeTranscriptCommand(7, 12, "ssh-12-pane-a; rm -rf /")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(command, `case "$pane_command" in claude|claude-code) tmux send-keys`) || !strings.Contains(command, "C-o") {
+		t.Fatalf("command = %q, want Claude-only Ctrl+O action", command)
+	}
+	if strings.Contains(command, "pane-a") || strings.Contains(command, "rm -rf") {
+		t.Fatalf("unsafe terminal ID leaked into command: %q", command)
+	}
+}
+
 func TestPersistentTerminalCommandRejectsMissingTerminalID(t *testing.T) {
 	if _, err := persistentTerminalCommand(7, 12, ""); err == nil {
 		t.Fatal("missing terminal ID was accepted")

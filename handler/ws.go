@@ -267,6 +267,11 @@ func (h *WSHandler) HandleSSH(conn *websocket.Conn) {
 		sendErr(conn, err.Error())
 		return
 	}
+	claudeTranscriptCommand, err := persistentTerminalClaudeTranscriptCommand(user.UserID, connID, terminalID)
+	if err != nil {
+		sendErr(conn, err.Error())
+		return
+	}
 	followInputCommand, err := persistentTerminalFollowInputCommand(user.UserID, connID, terminalID)
 	if err != nil {
 		sendErr(conn, err.Error())
@@ -276,11 +281,13 @@ func (h *WSHandler) HandleSSH(conn *websocket.Conn) {
 	clearCommand = applyPanelSessionName(clearCommand, user.UserID, connID, terminalID, workspaceIndex, panelNumber)
 	codexScrollableCommand = applyPanelSessionName(codexScrollableCommand, user.UserID, connID, terminalID, workspaceIndex, panelNumber)
 	resumeInputCommand = applyPanelSessionName(resumeInputCommand, user.UserID, connID, terminalID, workspaceIndex, panelNumber)
+	claudeTranscriptCommand = applyPanelSessionName(claudeTranscriptCommand, user.UserID, connID, terminalID, workspaceIndex, panelNumber)
 	followInputCommand = applyPanelSessionName(followInputCommand, user.UserID, connID, terminalID, workspaceIndex, panelNumber)
 	tmuxCommand = scopeTmuxCommand(tmuxCommand, h.TmuxSocket)
 	clearCommand = scopeTmuxCommand(clearCommand, h.TmuxSocket)
 	codexScrollableCommand = scopeTmuxCommand(codexScrollableCommand, h.TmuxSocket)
 	resumeInputCommand = scopeTmuxCommand(resumeInputCommand, h.TmuxSocket)
+	claudeTranscriptCommand = scopeTmuxCommand(claudeTranscriptCommand, h.TmuxSocket)
 	followInputCommand = scopeTmuxCommand(followInputCommand, h.TmuxSocket)
 
 	terminalKey := terminalKeyFor(user.UserID, connID, terminalID)
@@ -380,6 +387,8 @@ func (h *WSHandler) HandleSSH(conn *websocket.Conn) {
 				command = codexScrollableCommand
 			case "resume_terminal_input":
 				command = resumeInputCommand
+			case "open_claude_transcript":
+				command = claudeTranscriptCommand
 			case "follow_terminal_input":
 				command = followInputCommand
 			default:

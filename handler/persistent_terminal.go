@@ -86,6 +86,21 @@ func persistentTerminalCodexScrollableCommand(userID, connectionID int64, termin
 	), nil
 }
 
+// persistentTerminalClaudeTranscriptCommand asks an already-running Claude
+// fullscreen pane to enter its native transcript view. The command is
+// intentionally guarded by pane_current_command so a shell never receives a
+// surprising Ctrl+O byte.
+func persistentTerminalClaudeTranscriptCommand(userID, connectionID int64, terminalID string) (string, error) {
+	sessionName, err := persistentTerminalSessionName(userID, connectionID, terminalID)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf(
+		`pane_command="$(tmux display-message -p -t %s '#{pane_current_command}')" && case "$pane_command" in claude|claude-code) tmux send-keys -t %s C-o ;; *) tmux display-message -t %s 'Claude transcript requires an active Claude pane' && exit 64 ;; esac`,
+		sessionName, sessionName, sessionName,
+	), nil
+}
+
 // persistentTerminalResumeInputCommand returns a shared fullscreen TUI to its
 // live input area. tmux copy-mode must be cancelled through tmux itself; when
 // tmux is already live, Ctrl+End is forwarded to Claude/Codex as their native

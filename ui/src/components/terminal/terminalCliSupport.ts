@@ -1,6 +1,7 @@
 export const terminalScrollbackLines = 20_000;
 export const launchCodexScrollableAction = 'launch_codex_scrollable';
 export const resumeTerminalInputAction = 'resume_terminal_input';
+export const openClaudeTranscriptAction = 'open_claude_transcript';
 export const followTerminalInputAction = 'follow_terminal_input';
 
 const alternatePageIntervalMs = 120;

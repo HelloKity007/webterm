@@ -6,6 +6,7 @@ interface Props {
   onLaunchCodexScrollable: () => void;
   onResumeInput: () => void;
   onReplayHistory: () => void;
+  onOpenClaudeTranscript: () => void;
   onSelectCopy: () => void;
   onCopySelection: () => void;
   onPaste: () => void;
@@ -30,7 +31,7 @@ const actionStyle = {
   background: colors.accentDim, color: colors.text, cursor: 'pointer', fontSize: font.sm,
 } as const;
 
-export default function TerminalHistoryHelp({ onClose, onLaunchCodexScrollable, onResumeInput, onReplayHistory, onSelectCopy, onCopySelection, onPaste }: Props) {
+export default function TerminalHistoryHelp({ onClose, onLaunchCodexScrollable, onResumeInput, onReplayHistory, onOpenClaudeTranscript, onSelectCopy, onCopySelection, onPaste }: Props) {
   return (
     <section aria-label={t('term_history_title')} style={{
       position: 'absolute', top: 30, right: 8, zIndex: 20,
@@ -73,6 +74,9 @@ export default function TerminalHistoryHelp({ onClose, onLaunchCodexScrollable, 
         <div>{t('term_history_claude_mode')} <Key>/tui fullscreen</Key></div>
         <div>{t('term_history_claude_keys')} <Key>PgUp/PgDn</Key> · <Key>Ctrl+Home/End</Key></div>
         <div>{t('term_history_claude_transcript')} <Key>Ctrl+O</Key> · <Key>[</Key></div>
+        <button type="button" onClick={onOpenClaudeTranscript} style={{ ...actionStyle, marginTop: 6 }}>
+          {t('term_history_claude_transcript_action')}
+        </button>
       </div>
 
       <div style={{ marginBottom: 10 }}>

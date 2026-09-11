@@ -26,7 +26,7 @@ const zh: Record<string, string> = {
   term_history_resume_input: '回到底部并恢复输入', term_history_resume_sent: '已退出 tmux 历史模式，或向 CLI 发送 Ctrl+End', term_history_replay: '回放缓存输出', term_history_replay_sent: '已回放缓存终端输出',
   term_history_clipboard: 'CLI 内复制与粘贴', term_history_clipboard_hint: '直接拖动即可选择并自动复制，短按仍会交给 CLI；“选择并复制”按钮保留为兼容模式。已有选区也可点复制或按 Ctrl+Shift+C。',
   term_history_claude_mode: '长会话建议切换全屏模式：', term_history_claude_keys: '滚轮或键盘回看：',
-  term_history_claude_transcript: '打开 transcript；在 transcript 中写回终端滚动区：',
+  term_history_claude_transcript: '打开 transcript；在 transcript 中写回终端滚动区：', term_history_claude_transcript_action: '打开 Claude transcript', term_history_claude_transcript_sent: '已请求打开 Claude transcript 模式',
   term_history_codex_hint: '默认 TUI 使用 transcript：', term_history_codex_launch: '在空闲 shell 启动可回看模式',
   term_history_codex_sent: '已请求启动 codex --no-alt-screen；非空闲 shell 会被服务端拒绝',
   term_history_shared: '提示：全屏 TUI 是共享 tmux 画面，历史导航可能会同步影响同一会话的其他浏览器。',
