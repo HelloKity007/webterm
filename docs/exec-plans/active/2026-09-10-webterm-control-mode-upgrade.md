@@ -13,7 +13,7 @@
 
 ## 分阶段实现
 
-### M1：渲染与输出管线（已开始）
+### M1：渲染与输出管线（已完成）
 
 - xterm WebGL renderer，WebGL context loss 自动回退 DOM。
 - WS 输出按 animation frame 合并，减少高频全屏重绘造成的前端帧爆炸。
@@ -21,7 +21,7 @@
 
 出口：UI tests、lint、build、Go tests 全绿；无 WebGL 浏览器仍可连接。
 
-### M2：main-screen 独立滚动
+### M2：main-screen 独立滚动（基础能力已完成，真实长历史验收进行中）
 
 - 为每个 terminal key 建立服务端输出 ring buffer/快照接口，重连时按客户端 viewport 回放。
 - Bash 普通 buffer 由 xterm 本地 `scrollToLine` 承载，滚轮/触摸不发送 ArrowUp/ArrowDown。
@@ -29,7 +29,7 @@
 
 出口：Linux/Windows SSH 各生成 5,000 行 marker；移动端触摸和桌面滚轮都能回到首个 marker，输入命令历史不变化；两端同时连接不互相改变 pane 内容。
 
-### M3：Claude/Codex Control Mode
+### M3：Claude/Codex Control Mode（传输骨架已完成，应用级历史验收进行中）
 
 - Claude fullscreen：识别 alternate screen，提供 copy-mode open/seek/close/realtime 状态协议；历史滚动通过 transcript/replay 数据，不依赖 xterm scrollbar。
 - Claude 输入区保持 live viewport；Ctrl+End/“返回实时”取消回看并恢复输入。
@@ -58,3 +58,11 @@
 - 仅调 CSS、font size 或 `window-size smallest` 不能解决共享 tmux 尺寸冲突，不能作为最终方案。
 - 现存 alternate-screen Claude 会话没有可由 tmux 直接恢复的历史；必须通过 Claude transcript、受控重启回放或新会话录制验证，不能伪造完整历史。
 - WebGL 是性能优化，不替代 Control Mode；无 GPU 时必须保留 DOM fallback。
+
+## 2026-09-10 验证记录
+
+- 测试环境版本 `a60df91d79309480fc4a588ab16dfeacfcebf787` 已通过 UI 74/74、lint、build、Go tests。
+- 真实 Chromium 390×844 移动视口启用实验 flag 后，8 个 Control Mode SSH WebSocket 均建立，收到真实 pane `%output` 数据且无错误帧。
+- 真实 Chromium 桌面视口默认仍走 raw PTY，确保现有生产路径不受实验 Control Mode 影响。
+- 发现并修复控制连接中旧 `client-attached/client-resized/window-resized` hook 干扰，以及错误的 `%refresh-client/%send-keys` 入站前缀。
+- 尚未将 Control Mode 默认开启；仍需完成 Claude 长会话、中文输入、滚轮/触摸回看、桌面+移动端同时连接的浏览器自动化断言后，才可视为 M3 完成。
