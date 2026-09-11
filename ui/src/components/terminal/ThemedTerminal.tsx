@@ -465,7 +465,11 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       // several rows instead of appearing to crawl through long scrollback.
       scrollSensitivity: 5,
       fastScrollSensitivity: 5,
+      overviewRuler: { width: 5 },
       theme: {
+        scrollbarSliderBackground: '#8fbd9180',
+        scrollbarSliderHoverBackground: '#8fbd9199',
+        scrollbarSliderActiveBackground: '#8fbd91b3',
         background: themeConfig.background,
         foreground: themeConfig.foreground,
         scrollbarSliderBackground: colors.border,
@@ -497,7 +501,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
     term.loadAddon(fitAddon);
     term.loadAddon(searchAddon);
     const mobileBrowser = isMobileBrowserEnvironment();
-    term.attachCustomWheelEventHandler((event) => {
+    const handleTerminalWheel = (event: WheelEvent) => {
       if (event.deltaY < 0) inputViewportFollowedRef.current = false;
       // A normal shell has a local xterm scrollback. Do not let tmux's mouse
       // protocol reach readline, where wheel reports become history-up/down.
@@ -522,7 +526,19 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
           sendRef.current(JSON.stringify({ data: direction === 'up' ? '\x1b[5~' : '\x1b[6~' }));
         },
       });
-    });
+    };
+    term.attachCustomWheelEventHandler(handleTerminalWheel);
+    // Handle wheels on the complete panel, including the area below xterm's
+    // last integral character row. Do not replay into another coordinate space.
+    const handleSurfaceWheel = (event: WheelEvent) => {
+      if (event.ctrlKey) return;
+      const viewport = term.element?.querySelector('.xterm-scrollable-element');
+      if (event.target instanceof Node && viewport?.contains(event.target)) return;
+      if (!handleTerminalWheel(event)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      term.scrollLines(event.deltaY < 0 ? -5 : event.deltaY > 0 ? 5 : 0);
+    };
 
     // xterm's default touch handler emits key-like gestures, which makes a
     // phone swipe change the bash command history instead of scrolling. Map a
@@ -699,6 +715,20 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
         }
 
         term.resize(targetGrid.cols, targetGrid.rows);
+        if (useSmallViewportBaseline) {
+          // Width fitting above may reduce the font after lineHeight was
+          // calculated. Re-measure the final native cell height; otherwise a
+          // tall, narrow pane keeps only half its vertical character area.
+          const fitted = fitAddon.proposeDimensions();
+          if (fitted && fitted.rows > targetGrid.rows) {
+            term.options.lineHeight *= fitted.rows / targetGrid.rows;
+            // Keep the final row within the panel despite device-pixel rounding.
+            const checked = fitAddon.proposeDimensions();
+            if (checked && checked.rows < targetGrid.rows) {
+              term.options.lineHeight *= checked.rows / targetGrid.rows;
+            }
+          }
+        }
         ref.current.dataset.nativeCols = String(nativeGrid.cols);
         ref.current.dataset.nativeRows = String(nativeGrid.rows);
         ref.current.dataset.sharedCols = String(targetGrid.cols);
@@ -765,6 +795,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       surfaceElement.addEventListener('touchstart', handleTouchStart, { passive: true, capture: true });
       surfaceElement.addEventListener('touchmove', handleTouchMove, { passive: false, capture: true });
       surfaceElement.addEventListener('touchend', handleTouchEnd, { passive: true, capture: true });
+      surfaceElement.addEventListener('wheel', handleSurfaceWheel, { passive: false, capture: true });
       // xterm sizes its canvas to integral character cells.  Keep its viewport
       // itself stretched to the pane so the few remaining pixels (or a
       // transient pre-resize canvas) cannot reveal the page behind it.
@@ -803,6 +834,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       surfaceElement?.removeEventListener('touchstart', handleTouchStart, true);
       surfaceElement?.removeEventListener('touchmove', handleTouchMove, true);
       surfaceElement?.removeEventListener('touchend', handleTouchEnd, true);
+      surfaceElement?.removeEventListener('wheel', handleSurfaceWheel, true);
       if (webglAddon) {
         try { webglAddon.dispose(); } catch { /* ignore */ }
         webglAddon = null;
