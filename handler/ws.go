@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -388,6 +389,38 @@ func (h *WSHandler) HandleSSH(conn *websocket.Conn) {
 	if controlMode {
 		inputWriter = &tmuxControlInput{tracker: controlTracker, writer: stdinPipe}
 		inputSession = &tmuxControlTerminalSession{base: session, writer: stdinPipe}
+	}
+	// A quiet, already-running pane may not emit a %output notification when a
+	// control client attaches. Seed the browser with a real capture of the
+	// current screen so restored Claude/Bash sessions are immediately visible.
+	if controlMode {
+		captureTarget, _ := persistentTerminalSessionName(user.UserID, connID, terminalID)
+		if ws, wsErr := strconv.ParseInt(workspaceIndex, 10, 64); wsErr == nil {
+			if pn, pnErr := strconv.ParseInt(panelNumber, 10, 64); pnErr == nil {
+				if panelTarget, panelErr := persistentTerminalPanelSessionName(user.UserID, ws, pn, terminalID); panelErr == nil {
+					captureTarget = panelTarget
+				}
+			}
+		}
+		captureTarget = scopeTmuxCommand("tmux capture-pane -p -e -t "+captureTarget, h.TmuxSocket)
+		go func() {
+			captureClient, captureErr := newSSHClient()
+			if captureErr != nil {
+				return
+			}
+			defer captureClient.Close()
+			captureSession, captureErr := captureClient.NewSession()
+			if captureErr != nil {
+				return
+			}
+			defer captureSession.Close()
+			var captured bytes.Buffer
+			captureSession.Stdout = &captured
+			if captureErr = captureSession.Run(captureTarget); captureErr == nil && captured.Len() > 0 {
+				history.appendBytes(captured.Bytes())
+				_, _ = (&wsWriter{conn: conn}).Write(captured.Bytes())
+			}
+		}()
 	}
 
 	go func() {
