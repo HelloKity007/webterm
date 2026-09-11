@@ -737,11 +737,13 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
               // Wait one extra paint for xterm's canvas/scroll-area dimensions;
               // measuring immediately after resize can apply a stale scale and
               // leave a partially painted screen with blank space.
-              const uniformScale = mobileBrowser
-                ? Math.min(1, availableWidth / screenRect.width, availableHeight / screenRect.height)
-                : 1;
-              const screenScaleX = mobileBrowser ? uniformScale : availableWidth / screenRect.width;
-              const screenScaleY = mobileBrowser ? uniformScale : availableHeight / screenRect.height;
+              // A phone must preserve xterm's native line height. Applying the
+              // horizontal fit factor to Y compresses a 44-row Claude screen
+              // into the upper half of the pane and makes the composer appear
+              // stranded in the middle. Compress only X; keep Y at 1 so rows
+              // remain readable and occupy the full portrait viewport.
+              const screenScaleX = mobileBrowser ? Math.min(1, availableWidth / screenRect.width) : availableWidth / screenRect.width;
+              const screenScaleY = mobileBrowser ? Math.min(1, availableHeight / screenRect.height) : availableHeight / screenRect.height;
               scaledScreen.style.transformOrigin = 'top left';
               scaledScreen.style.transform = `scale(${screenScaleX}, ${screenScaleY})`;
               surface.dataset.screenScaleX = screenScaleX.toFixed(3);
