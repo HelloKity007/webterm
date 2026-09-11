@@ -856,7 +856,8 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
   const token = localStorage.getItem('token') || '';
   const terminalID = myTabId || '';
   const layoutQuery = workspaceIndex && panelNumber ? `&workspace_index=${workspaceIndex}&panel_number=${panelNumber}` : '';
-  const wsUrl = `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws/ssh/${connId}?token=${encodeURIComponent(token)}&terminal_id=${encodeURIComponent(terminalID)}${layoutQuery}`;
+  const controlQuery = isMobileBrowserEnvironment() ? '&control=1' : '';
+  const wsUrl = `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws/ssh/${connId}?token=${encodeURIComponent(token)}&terminal_id=${encodeURIComponent(terminalID)}${layoutQuery}${controlQuery}`;
 
   const { send } = useWebSocket({
     url: wsUrl,
