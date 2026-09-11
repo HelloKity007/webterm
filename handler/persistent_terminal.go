@@ -55,6 +55,17 @@ func persistentTerminalCommand(userID, connectionID int64, terminalID string) (s
 	return fmt.Sprintf("tmux start-server \\; set-option -g history-limit %d && (tmux has-session -t %s 2>/dev/null || tmux new-session -d -s %s) && tmux set-option -t %s window-size largest && tmux set-option -t %s status off && tmux set-option -t %s set-titles on && tmux set-option -t %s set-titles-string 'webterm-grid:#{window_width}x#{window_height}' && tmux set-hook -t %s 'client-attached[200]' 'set-option -t %s window-size largest; refresh-client -D -t \"#{hook_client}\" 9999' && tmux set-hook -t %s 'client-resized[200]' 'set-option -t %s window-size largest; refresh-client -D -t \"#{hook_client}\" 9999' && tmux set-hook -w -t %s 'window-resized[200]' 'run-shell \"tmux list-clients -t %s | cut -d: -f1 | xargs -r -I{} tmux refresh-client -D -t {} 9999\"' && tmux set-option -t %s mouse on && tmux set-option -t %s @webterm_mouse_passthrough on && tmux bind-key -n -T root WheelUpPane if-shell -F '#{&&:#{@webterm_mouse_passthrough},#{mouse_any_flag}}' 'send-keys -M' 'if-shell -F \"#{pane_in_mode}\" \"send-keys -M\" \"copy-mode -e; send-keys -M\"' && exec tmux attach-session -t %s", terminalHistoryLines, sessionName, sessionName, sessionName, sessionName, sessionName, sessionName, sessionName, sessionName, sessionName, sessionName, sessionName, sessionName, sessionName, sessionName, sessionName), nil
 }
 
+// persistentTerminalControlCommand uses tmux's control-mode framing. It is
+// opt-in because the browser must also switch its input path to %send-keys;
+// normal WebTerm clients continue using the raw PTY command above.
+func persistentTerminalControlCommand(userID, connectionID int64, terminalID string) (string, error) {
+	command, err := persistentTerminalCommand(userID, connectionID, terminalID)
+	if err != nil {
+		return "", err
+	}
+	return strings.Replace(command, "exec tmux attach-session", "exec tmux -CC attach-session", 1), nil
+}
+
 func persistentTerminalFollowInputCommand(userID, connectionID int64, terminalID string) (string, error) {
 	sessionName, err := persistentTerminalSessionName(userID, connectionID, terminalID)
 	if err != nil {

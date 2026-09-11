@@ -69,6 +69,16 @@ func TestPersistentTerminalCommandIsStableIsolatedAndShellSafe(t *testing.T) {
 	}
 }
 
+func TestPersistentTerminalControlCommandOptsIntoControlMode(t *testing.T) {
+	command, err := persistentTerminalControlCommand(7, 12, "ssh-12-pane-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(command, "exec tmux -CC attach-session") || strings.Contains(command, "exec tmux attach-session") {
+		t.Fatalf("command = %q, want only control-mode attach", command)
+	}
+}
+
 func TestPersistentTerminalResumeInputCommandIsFixedAndScoped(t *testing.T) {
 	command, err := persistentTerminalResumeInputCommand(7, 12, "ssh-12-pane-a; rm -rf /")
 	if err != nil {

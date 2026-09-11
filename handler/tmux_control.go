@@ -85,6 +85,13 @@ type tmuxControlInput struct {
 	writer  io.Writer
 }
 
+func (i *tmuxControlInput) Write(data []byte) (int, error) {
+	if err := i.write(string(data)); err != nil {
+		return 0, err
+	}
+	return len(data), nil
+}
+
 func (i *tmuxControlInput) write(data string) error {
 	if i == nil || i.writer == nil {
 		return io.ErrClosedPipe

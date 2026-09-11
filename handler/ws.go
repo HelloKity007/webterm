@@ -250,6 +250,14 @@ func (h *WSHandler) HandleSSH(conn *websocket.Conn) {
 		sendErr(conn, err.Error())
 		return
 	}
+	controlMode := conn.Request().URL.Query().Get("control") == "1"
+	if controlMode {
+		tmuxCommand, err = persistentTerminalControlCommand(user.UserID, connID, terminalID)
+		if err != nil {
+			sendErr(conn, err.Error())
+			return
+		}
+	}
 	clearCommand, err := persistentTerminalClearCommand(user.UserID, connID, terminalID)
 	if err != nil {
 		sendErr(conn, err.Error())
@@ -374,11 +382,16 @@ func (h *WSHandler) HandleSSH(conn *websocket.Conn) {
 	})
 	defer h.Store.EndSessionLog(logID)
 	history := h.historyFor(terminalKey)
+	controlTracker := &tmuxControlPaneTracker{}
+	var inputWriter io.Writer = stdinPipe
+	if controlMode {
+		inputWriter = &tmuxControlInput{tracker: controlTracker, writer: stdinPipe}
+	}
 
 	go func() {
 		pumpTerminalInput(func(raw *json.RawMessage) error {
 			return websocket.JSON.Receive(conn, raw)
-		}, session, stdinPipe, func(action string) error {
+		}, session, inputWriter, func(action string) error {
 			var command string
 			switch action {
 			case "clear_history":
@@ -419,6 +432,18 @@ func (h *WSHandler) HandleSSH(conn *websocket.Conn) {
 		}
 	}()
 
+	if controlMode {
+		go pumpTmuxControlOutput(stdoutPipe, "", func(data []byte) error {
+			history.appendBytes(data)
+			_, err := (&wsWriter{conn: conn}).Write(data)
+			return err
+		}, func(event tmuxControlEvent) error {
+			controlTracker.observe(event)
+			return nil
+		})
+		io.Copy(&recordingWSWriter{wsWriter: wsWriter{conn}, history: history}, stderrPipe)
+		return
+	}
 	go io.Copy(&recordingWSWriter{wsWriter: wsWriter{conn}, history: history}, stdoutPipe)
 	io.Copy(&recordingWSWriter{wsWriter: wsWriter{conn}, history: history}, stderrPipe)
 }
