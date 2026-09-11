@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState, type MouseEvent as ReactMouse
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { SearchAddon } from '@xterm/addon-search';
+import { WebglAddon } from '@xterm/addon-webgl';
 import { useHighlightRules } from '../../hooks/useTerminalTheme';
 import type { HighlightRule } from '../../hooks/useTerminalTheme';
 import { useWebSocket } from '../../hooks/useWebSocket';
@@ -754,9 +755,24 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
     });
 
     const surfaceElement = ref.current;
+    let webglAddon: WebglAddon | null = null;
     if (surfaceElement) {
       surfaceElement.style.backgroundColor = themeConfig.background;
       term.open(surfaceElement);
+      // Full-screen CLIs repaint the alternate buffer heavily. Prefer GPU
+      // rendering, but gracefully retain xterm's DOM renderer when WebGL is
+      // unavailable (for example in headless or embedded browsers).
+      try {
+        webglAddon = new WebglAddon();
+        term.loadAddon(webglAddon);
+        webglAddon.onContextLoss(() => {
+          webglAddon?.dispose();
+          webglAddon = null;
+        });
+      } catch (error) {
+        console.warn('WebGL renderer unavailable; using xterm DOM renderer', error);
+        webglAddon = null;
+      }
       surfaceElement.addEventListener('touchstart', handleTouchStart, { passive: true, capture: true });
       surfaceElement.addEventListener('touchmove', handleTouchMove, { passive: false, capture: true });
       surfaceElement.addEventListener('touchend', handleTouchEnd, { passive: true, capture: true });
@@ -796,6 +812,10 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       surfaceElement?.removeEventListener('touchstart', handleTouchStart, true);
       surfaceElement?.removeEventListener('touchmove', handleTouchMove, true);
       surfaceElement?.removeEventListener('touchend', handleTouchEnd, true);
+      if (webglAddon) {
+        try { webglAddon.dispose(); } catch { /* ignore */ }
+        webglAddon = null;
+      }
       term.dispose();
       resizeObserver.disconnect();
       window.removeEventListener('resize', handleResize);
