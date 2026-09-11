@@ -109,6 +109,7 @@ func main() {
 	}
 
 	mux.Handle("GET /api/connections", auth.Middleware(http.HandlerFunc(connH.List)))
+	mux.Handle("GET /api/terminal-history/{conn_id}", auth.Middleware(http.HandlerFunc(wsH.ReplayTerminalHistory)))
 	mux.Handle("POST /api/connections", auth.Middleware(http.HandlerFunc(connH.Create)))
 	mux.Handle("PUT /api/connections/{id}", auth.Middleware(http.HandlerFunc(connH.Update)))
 	mux.Handle("DELETE /api/connections/{id}", auth.Middleware(http.HandlerFunc(connH.Delete)))

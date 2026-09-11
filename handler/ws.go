@@ -283,7 +283,7 @@ func (h *WSHandler) HandleSSH(conn *websocket.Conn) {
 	resumeInputCommand = scopeTmuxCommand(resumeInputCommand, h.TmuxSocket)
 	followInputCommand = scopeTmuxCommand(followInputCommand, h.TmuxSocket)
 
-	terminalKey := fmt.Sprintf("%d:%d:%s", user.UserID, connID, terminalID)
+	terminalKey := terminalKeyFor(user.UserID, connID, terminalID)
 	releaseTerminal, err := h.terminalSessions.acquire(terminalKey, persistentTerminalSessionLimit)
 	if err != nil {
 		sendErr(conn, fmt.Sprintf("会话数已达上限(%d)，请关闭一些 panel 后重试", persistentTerminalSessionLimit))
