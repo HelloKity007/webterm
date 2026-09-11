@@ -856,7 +856,9 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
   const token = localStorage.getItem('token') || '';
   const terminalID = myTabId || '';
   const layoutQuery = workspaceIndex && panelNumber ? `&workspace_index=${workspaceIndex}&panel_number=${panelNumber}` : '';
-  const controlQuery = isMobileBrowserEnvironment() ? '&control=1' : '';
+  // Control Mode remains an opt-in diagnostic until the remote tmux stream is
+  // proven to emit a complete redraw on every supported SSH implementation.
+  const controlQuery = isMobileBrowserEnvironment() && localStorage.getItem('webterm-control-mode') === '1' ? '&control=1' : '';
   const wsUrl = `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws/ssh/${connId}?token=${encodeURIComponent(token)}&terminal_id=${encodeURIComponent(terminalID)}${layoutQuery}${controlQuery}`;
 
   const { send } = useWebSocket({
