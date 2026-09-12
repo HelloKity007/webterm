@@ -49,7 +49,7 @@ import {
   routeTerminalMouseUp,
   shouldAutoFocusTerminal,
 } from './terminalInteractions';
-import { calculateTerminalScale, constrainTerminalHeight, defaultSharedTerminalGrid, fillTerminalWidth, parseSharedTerminalGridTitle, sharedGridForViewport, smallViewportWidth, type TerminalGrid } from './terminalScaling';
+import { calculateTerminalScale, constrainTerminalHeight, defaultSharedTerminalGrid, mobileSharedTerminalGrid, parseSharedTerminalGridTitle, sharedGridForViewport, smallViewportWidth, type TerminalGrid } from './terminalScaling';
 import { getSharedTerminalGrid, setSharedTerminalGrid } from './terminalGridCache';
 import { isMobileBrowserEnvironment } from '../layout/mobileLayout';
 
@@ -647,7 +647,6 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
     let resizingForSharedGrid = false;
     let sharedGrid: TerminalGrid | null = mobileBrowser ? null : (myTabId ? getSharedTerminalGrid(myTabId) : null);
     let pendingFitFrame: number | null = null;
-    let pendingWidthFillFrame: number | null = null;
 
     term.onResize(({ cols, rows }) => {
       if (cols < 2 || rows < 1) return; // ignore zero-size (hidden terminal)
@@ -689,7 +688,9 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
         if (!nativeGrid) return;
         // Raw pane ANSI coordinates must use the server's exact grid, even
         // on a large display with many small split panels.
-        const targetGrid = sharedGrid || (useCappedViewportGrid ? defaultSharedTerminalGrid : nativeGrid);
+        const targetGrid = useCappedViewportGrid
+          ? (mobileBrowser ? mobileSharedTerminalGrid : sharedGridForViewport(sharedGrid || defaultSharedTerminalGrid, displayWidth))
+          : (sharedGrid || nativeGrid);
         const screen = term.element?.querySelector<HTMLElement>('.xterm-screen');
         const nativeCellWidth = screen && term.cols > 0
           ? screen.getBoundingClientRect().width / term.cols
@@ -757,37 +758,6 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
         onResizeDimRef.current?.(targetGrid.cols, targetGrid.rows);
         inputViewportFollowedRef.current = false;
 
-        // Option changes are painted by xterm after this call stack. Measure
-        // and correct on subsequent animation frames; a same-frame rectangle
-        // still describes the previous glyph atlas and cannot close the gap.
-        if (useCappedViewportGrid) {
-          if (pendingWidthFillFrame !== null) cancelAnimationFrame(pendingWidthFillFrame);
-          let remainingPasses = 3;
-          const fillRenderedWidth = () => {
-            pendingWidthFillFrame = null;
-            const renderedScreen = term.element?.querySelector<HTMLElement>('.xterm-screen');
-            const renderedWidth = renderedScreen?.getBoundingClientRect().width || 0;
-            const terminalWidth = term.element?.getBoundingClientRect().width || 0;
-            const scrollbarWidth = mobileBrowser ? 0 : 5;
-            const availableWidth = Math.max(1, terminalWidth - scrollbarWidth);
-            const widthError = availableWidth - renderedWidth;
-            if (Math.abs(widthError) <= 0.75 || remainingPasses-- <= 0) return;
-            const oldFontSize = term.options.fontSize || responsiveFontSize;
-            const oldLineHeight = term.options.lineHeight || 1;
-            const widthFilled = fillTerminalWidth(oldFontSize, term.options.letterSpacing || 0, renderedWidth, availableWidth, targetGrid.cols);
-            if (widthFilled.fontSize !== oldFontSize) {
-              // Preserve the already fitted cell height while changing glyph
-              // width so the lower terminal rows do not gain empty space.
-              term.options.lineHeight = Math.max(1, oldLineHeight * oldFontSize / widthFilled.fontSize);
-            }
-            term.options.fontSize = widthFilled.fontSize;
-            term.options.letterSpacing = widthFilled.letterSpacing;
-            term.resize(targetGrid.cols, targetGrid.rows);
-            ref.current?.style.setProperty('--terminal-width-error', `${widthError.toFixed(2)}px`);
-            pendingWidthFillFrame = requestAnimationFrame(fillRenderedWidth);
-          };
-          pendingWidthFillFrame = requestAnimationFrame(fillRenderedWidth);
-        }
       } finally {
         resizingForSharedGrid = false;
       }
@@ -795,7 +765,6 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
 
     const scheduleFit = () => {
       if (pendingFitFrame !== null) cancelAnimationFrame(pendingFitFrame);
-      if (pendingWidthFillFrame !== null) cancelAnimationFrame(pendingWidthFillFrame);
       pendingFitFrame = requestAnimationFrame(() => {
         pendingFitFrame = null;
         fitWhenVisible();
@@ -811,7 +780,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       // grid back to this control client instead of silently restoring tiny
       // glyphs. Mobile uses the same grid for its native input canvas while
       // retaining the separately sized 12px wrapped reader.
-      const nextGrid = sharedGridForViewport(announcedGrid, window.innerWidth);
+      const nextGrid = mobileBrowser ? mobileSharedTerminalGrid : sharedGridForViewport(announcedGrid, window.innerWidth);
       if (sharedGrid?.cols === nextGrid.cols && sharedGrid.rows === nextGrid.rows) return;
       sharedGrid = nextGrid;
       // Resize during the OSC callback, before parsing the following snapshot.
@@ -876,7 +845,6 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
 
     return () => {
       if (pendingFitFrame !== null) cancelAnimationFrame(pendingFitFrame);
-      if (pendingWidthFillFrame !== null) cancelAnimationFrame(pendingWidthFillFrame);
       if (outputFrameRef.current !== null) cancelAnimationFrame(outputFrameRef.current);
       outputFrameRef.current = null;
       outputQueueRef.current = [];

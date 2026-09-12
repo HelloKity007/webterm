@@ -10,25 +10,21 @@ export interface TerminalScaleOptions {
   scale: number;
 }
 
-export interface TerminalWidthOptions {
-  fontSize: number;
-  letterSpacing: number;
-}
-
 // Give a small-only client a deterministic shared grid. A larger client can
 // still grow this target through the authoritative tmux title announcement.
-export const defaultSharedTerminalGrid: TerminalGrid = { cols: 69, rows: 21 };
+export const defaultSharedTerminalGrid: TerminalGrid = { cols: 76, rows: 21 };
+export const mobileSharedTerminalGrid: TerminalGrid = { cols: 69, rows: 21 };
 // A 1920-wide desktop is the small side when paired with a 3440px authority.
 // Narrower screens use the deterministic shared-grid baseline and adaptive
 // glyph sizing.
 export const smallViewportWidth = 2400;
 // The measured eight-pane 1920x1080 layout previously squeezed a 104-column
-// authority into each pane. 69 columns makes the glyphs about 104/69 = 1.51
-// times larger. With two panel rows per viewport, 21 terminal rows avoid
-// height-driven glyph shrinkage, so content uses the panel width without
-// hiding the final row beyond the panel edge. Older output remains reachable
-// through the terminal scrollback buffer.
-export const smallViewportGridLimit: TerminalGrid = { cols: 69, rows: 21 };
+// authority into each pane. At the measured 619px panel width, 76 columns map
+// to 76 eight-pixel cells: exactly the 608px before the five-pixel scrollbar
+// after the left inset. With two panel rows per viewport, 21 terminal rows
+// avoid height-driven glyph shrinkage. Older output remains reachable through
+// the terminal scrollback buffer.
+export const smallViewportGridLimit: TerminalGrid = { cols: 76, rows: 21 };
 
 export function sharedGridForViewport(announced: TerminalGrid, viewportWidth: number): TerminalGrid {
   if (viewportWidth >= smallViewportWidth) return announced;
@@ -69,23 +65,6 @@ export function constrainTerminalHeight(fontSize: number, lineHeight: number, re
     return { fontSize, lineHeight: round(correctedLineHeight, 4) };
   }
   return { fontSize: round(fontSize * correction, 4), lineHeight: 1 };
-}
-
-export function fillTerminalWidth(fontSize: number, letterSpacing: number, renderedWidth: number, availableWidth: number, cols: number): TerminalWidthOptions {
-  if (!Number.isFinite(fontSize) || !Number.isFinite(letterSpacing) || !Number.isFinite(renderedWidth) || !Number.isFinite(availableWidth) ||
-      !Number.isInteger(cols) || fontSize <= 0 || renderedWidth <= 0 || availableWidth <= 0 || cols < 1) {
-    return { fontSize, letterSpacing };
-  }
-  const spacingCorrection = (availableWidth - renderedWidth) / cols;
-  const correctedSpacing = letterSpacing + spacingCorrection;
-  if (correctedSpacing >= 0) {
-    return { fontSize, letterSpacing: round(correctedSpacing) };
-  }
-  // Once spacing reaches zero, correct the glyph itself. This also handles a
-  // readable-font floor that left the final columns beyond the panel edge.
-  const unspacedWidth = renderedWidth - letterSpacing * cols;
-  const correctedFontSize = unspacedWidth > 0 ? fontSize * availableWidth / unspacedWidth : fontSize;
-  return { fontSize: round(correctedFontSize), letterSpacing: 0 };
 }
 
 export function calculateTerminalScale(
