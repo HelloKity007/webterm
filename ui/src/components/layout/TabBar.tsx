@@ -1,7 +1,6 @@
 import { t } from '../../i18n';
 import React, { useEffect, useRef, useState } from 'react';
-import { useLayoutStore } from '../../store/layout';
-import type { Tab, BroadcastScope } from '../../store/layout';
+import type { Tab } from '../../store/layout';
 import Icon from '../common/Icon';
 import { colors, font } from '../../theme/tokens';
 
@@ -16,16 +15,8 @@ interface Props {
   filterType?: string;
 }
 
-const scopeLabels: Record<BroadcastScope, string> = {
-  off: t('broadcast_off'),
-  pane: t('broadcast_pane'),
-  all: t('broadcast_all'),
-};
-
 export default function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab, onRenameTab, onReceiveTab, onAddTab, filterType }: Props) {
   const filtered = filterType ? tabs.filter((t) => t.type === filterType) : tabs;
-  const broadcastScope = useLayoutStore((s) => s.broadcastScope);
-  const setBroadcastScope = useLayoutStore((s) => s.setBroadcastScope);
   const [dragOverAdd, setDragOverAdd] = useState(false);
   const [editingTabID, setEditingTabID] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState('');
@@ -35,12 +26,6 @@ export default function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab, onR
       barRef.current?.querySelector<HTMLElement>('[data-active="true"]')?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
     }
   }, [activeTabId]);
-
-  const cycleScope = () => {
-    const order: BroadcastScope[] = ['off', 'pane', 'all'];
-    const idx = order.indexOf(broadcastScope);
-    setBroadcastScope(order[(idx + 1) % order.length]);
-  };
 
   const beginRename = (tab: Tab) => {
     if (!onRenameTab) return;
@@ -122,17 +107,6 @@ export default function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab, onR
       {onAddTab && (
         <button type="button" aria-label={t('tab_new')} title={t('tab_new')} onClick={(e) => { e.stopPropagation(); onAddTab(); }}
           style={{ width: 24, height: 24, flexShrink: 0, border: `1px solid ${colors.border}`, borderRadius: 4, cursor: 'pointer', color: colors.accent, background: colors.bg, fontSize: font.lg, lineHeight: '20px', padding: 0 }}>+</button>
-      )}
-      {(!filterType || filterType === 'ssh') && (
-        <span onClick={cycleScope} title={t("broadcast_toggle")}
-          style={{
-            padding: '4px 8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4,
-            background: broadcastScope !== 'off' ? colors.dangerBg : 'transparent',
-            color: broadcastScope !== 'off' ? colors.white : colors.textDim,
-            borderRadius: 4, fontSize: font.md, flexShrink: 0, alignSelf: 'center',
-          }}>
-          <Icon name="radio" size={12} /> {scopeLabels[broadcastScope]}
-        </span>
       )}
     </div>
   );

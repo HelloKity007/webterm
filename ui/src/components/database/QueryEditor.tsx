@@ -7,6 +7,7 @@ import { format } from 'sql-formatter';
 import ResultTable from './ResultTable';
 import DbTree from './DbTree';
 import { colors, font } from '../../theme/tokens';
+import { websocketTicketURL, WebSocketAuthError } from '../../api/wsTicket';
 
 interface Props {
   connId: number;
@@ -24,14 +25,30 @@ export default function QueryEditor({ connId }: Props) {
     let closed = false;
     let retries = 0;
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const token = localStorage.getItem('token') || '';
-
-    const connect = () => {
-      const socket = new WebSocket(`${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws/db/${connId}?token=${token}`);
+    let heartbeat: ReturnType<typeof setInterval> | undefined;
+    const connect = async () => {
+      if (!navigator.onLine) return;
+      let url: string;
+      try {
+        url = await websocketTicketURL(`/ws/db/${connId}`, { endpoint: 'db', connId });
+      } catch (ticketError) {
+        if (!closed && !(ticketError instanceof WebSocketAuthError)) timer = setTimeout(connect, Math.random() * Math.min(1000 * 2 ** Math.min(retries++, 5), 30000));
+        return;
+      }
+      if (closed) return;
+      const socket = new WebSocket(url);
       wsRef.current = socket;
-      socket.onopen = () => { retries = 0; setWs(socket); };
+      socket.onopen = () => {
+        retries = 0;
+        setWs(socket);
+        clearInterval(heartbeat);
+        heartbeat = setInterval(() => {
+          if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ action: 'ping' }));
+        }, 20000);
+      };
       socket.onmessage = (e) => {
         const msg = JSON.parse(e.data);
+        if (msg.type === 'pong' || msg.type === 'ping') return;
         if (msg.type === 'query_result') {
           setResult(msg.result);
           setError('');
@@ -40,21 +57,25 @@ export default function QueryEditor({ connId }: Props) {
         }
       };
       socket.onclose = () => {
+        clearInterval(heartbeat);
         if (wsRef.current === socket) wsRef.current = null;
         setWs((cur) => (cur === socket ? null : cur));
-        if (!closed && retries < 3) {
-          const delay = Math.min(1000 * Math.pow(2, retries), 8000);
-          retries++;
-          timer = setTimeout(connect, delay);
-        }
+        if (!closed && navigator.onLine) timer = setTimeout(connect, Math.random() * Math.min(1000 * 2 ** Math.min(retries++, 5), 30000));
       };
       socket.onerror = () => socket.close();
     };
-    connect();
+    const reconnect = () => { clearTimeout(timer); retries = 0; void connect(); };
+    const pause = () => { clearTimeout(timer); wsRef.current?.close(); };
+    window.addEventListener('online', reconnect);
+    window.addEventListener('offline', pause);
+    void connect();
 
     return () => {
       closed = true;
       clearTimeout(timer);
+      clearInterval(heartbeat);
+      window.removeEventListener('online', reconnect);
+      window.removeEventListener('offline', pause);
       wsRef.current?.close();
       wsRef.current = null;
     };

@@ -3,9 +3,11 @@ package sshmgr
 import (
 	"errors"
 	"sync"
+	"time"
 )
 
 var ErrMaxSessions = errors.New("ssh session limit reached")
+var ErrTransportDead = errors.New("ssh transport keepalive failed")
 
 // MaxChannelsPerTransport matches OpenSSH's default MaxSessions. More active
 // terminal panes are sharded across transports instead of overfilling one.
@@ -28,6 +30,9 @@ type sessionSlot struct {
 	sessions int
 	ready    chan struct{}
 	err      error
+	dead     bool
+	stop     chan struct{}
+	stopOnce sync.Once
 }
 
 type Pool struct {
@@ -35,6 +40,9 @@ type Pool struct {
 	entries        map[int64]*poolEntry
 	sessionEntries map[int64]*sessionPoolEntry
 	dialGate       chan struct{}
+	keepaliveEvery time.Duration
+	keepaliveLimit int
+	probeAlive     func(*Client) bool
 }
 
 func NewPool() *Pool {
@@ -49,6 +57,9 @@ func NewPoolWithDialLimit(limit int) *Pool {
 		entries:        make(map[int64]*poolEntry),
 		sessionEntries: make(map[int64]*sessionPoolEntry),
 		dialGate:       make(chan struct{}, limit),
+		keepaliveEvery: 20 * time.Second,
+		keepaliveLimit: 3,
+		probeAlive:     func(client *Client) bool { return client.IsAlive() },
 	}
 }
 
@@ -90,7 +101,7 @@ func (p *Pool) AcquireSession(connID int64, maxSessions, channelsPerTransport in
 	}
 
 	for _, slot := range entry.slots {
-		if slot.sessions < channelsPerTransport {
+		if !slot.dead && slot.sessions < channelsPerTransport {
 			slot.sessions++
 			entry.active++
 			p.mu.Unlock()
@@ -98,7 +109,7 @@ func (p *Pool) AcquireSession(connID int64, maxSessions, channelsPerTransport in
 		}
 	}
 
-	slot := &sessionSlot{sessions: 1, ready: make(chan struct{})}
+	slot := &sessionSlot{sessions: 1, ready: make(chan struct{}), stop: make(chan struct{})}
 	entry.slots = append(entry.slots, slot)
 	entry.active++
 	p.mu.Unlock()
@@ -115,6 +126,7 @@ func (p *Pool) AcquireSession(connID int64, maxSessions, channelsPerTransport in
 		p.releaseSession(connID, entry, slot)
 		return nil, err
 	}
+	go p.monitorSessionTransport(slot)
 	return &SessionLease{pool: p, connID: connID, entry: entry, slot: slot, Client: client}, nil
 }
 
@@ -123,10 +135,15 @@ func (p *Pool) awaitSession(connID int64, entry *sessionPoolEntry, slot *session
 	p.mu.Lock()
 	err := slot.err
 	client := slot.client
+	dead := slot.dead
 	p.mu.Unlock()
 	if err != nil {
 		p.releaseSession(connID, entry, slot)
 		return nil, err
+	}
+	if dead {
+		p.releaseSession(connID, entry, slot)
+		return nil, ErrTransportDead
 	}
 	return &SessionLease{pool: p, connID: connID, entry: entry, slot: slot, Client: client}, nil
 }
@@ -142,6 +159,9 @@ func (p *Pool) releaseSession(connID int64, entry *sessionPoolEntry, slot *sessi
 	if slot.sessions != 0 {
 		return
 	}
+	if slot.stop != nil {
+		slot.stopOnce.Do(func() { close(slot.stop) })
+	}
 	if slot.client != nil {
 		_ = slot.client.Close()
 	}
@@ -153,6 +173,32 @@ func (p *Pool) releaseSession(connID int64, entry *sessionPoolEntry, slot *sessi
 	}
 	if entry.active == 0 && len(entry.slots) == 0 && p.sessionEntries[connID] == entry {
 		delete(p.sessionEntries, connID)
+	}
+}
+
+func (p *Pool) monitorSessionTransport(slot *sessionSlot) {
+	ticker := time.NewTicker(p.keepaliveEvery)
+	defer ticker.Stop()
+	failures := 0
+	for {
+		select {
+		case <-slot.stop:
+			return
+		case <-ticker.C:
+			if p.probeAlive(slot.client) {
+				failures = 0
+				continue
+			}
+			failures++
+			if failures < p.keepaliveLimit {
+				continue
+			}
+			p.mu.Lock()
+			slot.dead = true
+			p.mu.Unlock()
+			_ = slot.client.Close()
+			return
+		}
 	}
 }
 

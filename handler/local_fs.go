@@ -20,6 +20,17 @@ type LocalFileInfo struct {
 }
 
 func HandleLocalFS(conn *websocket.Conn) {
+	handleLocalFS(conn, nil)
+}
+
+func HandleLocalFSWithRegistry(registry *WSRegistry) func(*websocket.Conn) {
+	return func(conn *websocket.Conn) { handleLocalFS(conn, registry) }
+}
+
+func handleLocalFS(conn *websocket.Conn, registry *WSRegistry) {
+	conn.MaxPayloadBytes = maxWSInboundPayloadBytes
+	outbound := newWSOutbound(conn, registry)
+	defer outbound.Close()
 	var msg struct {
 		Action  string `json:"action"`
 		Path    string `json:"path"`
@@ -28,16 +39,18 @@ func HandleLocalFS(conn *websocket.Conn) {
 	}
 
 	for {
-		if err := websocket.JSON.Receive(conn, &msg); err != nil {
+		if err := receiveWebSocketJSON(conn, &msg); err != nil {
 			return
 		}
 		switch msg.Action {
+		case "ping":
+			_ = outbound.Send(map[string]string{"type": "pong"})
 		case "getwd":
 			wd, err := os.Getwd()
 			if err != nil {
-				websocket.JSON.Send(conn, map[string]interface{}{"type": "error", "error": err.Error()})
+				outbound.Send(map[string]interface{}{"type": "error", "error": err.Error()})
 			} else {
-				websocket.JSON.Send(conn, map[string]interface{}{"type": "pwd", "path": wd})
+				outbound.Send(map[string]interface{}{"type": "pwd", "path": wd})
 			}
 		case "list":
 			path := msg.Path
@@ -46,7 +59,7 @@ func HandleLocalFS(conn *websocket.Conn) {
 			}
 			entries, err := os.ReadDir(path)
 			if err != nil {
-				websocket.JSON.Send(conn, map[string]interface{}{"type": "error", "error": err.Error()})
+				outbound.Send(map[string]interface{}{"type": "error", "error": err.Error()})
 				continue
 			}
 			var files []LocalFileInfo
@@ -73,7 +86,7 @@ func HandleLocalFS(conn *websocket.Conn) {
 				}
 				return strings.ToLower(files[i].Name) < strings.ToLower(files[j].Name)
 			})
-			websocket.JSON.Send(conn, map[string]interface{}{
+			outbound.Send(map[string]interface{}{
 				"type":  "file_list",
 				"path":  path,
 				"files": files,
@@ -81,9 +94,9 @@ func HandleLocalFS(conn *websocket.Conn) {
 		case "read":
 			data, err := os.ReadFile(msg.Path)
 			if err != nil {
-				websocket.JSON.Send(conn, map[string]interface{}{"type": "error", "error": err.Error()})
+				outbound.Send(map[string]interface{}{"type": "error", "error": err.Error()})
 			} else {
-				websocket.JSON.Send(conn, map[string]interface{}{
+				outbound.Send(map[string]interface{}{
 					"type":    "file_content",
 					"path":    msg.Path,
 					"content": string(data),
@@ -92,30 +105,30 @@ func HandleLocalFS(conn *websocket.Conn) {
 		case "write":
 			err := os.WriteFile(msg.Path, []byte(msg.Content), 0644)
 			if err != nil {
-				websocket.JSON.Send(conn, map[string]interface{}{"type": "error", "error": err.Error()})
+				outbound.Send(map[string]interface{}{"type": "error", "error": err.Error()})
 			} else {
-				websocket.JSON.Send(conn, map[string]interface{}{"type": "write_done", "path": msg.Path})
+				outbound.Send(map[string]interface{}{"type": "write_done", "path": msg.Path})
 			}
 		case "delete":
 			err := os.Remove(msg.Path)
 			if err != nil {
-				websocket.JSON.Send(conn, map[string]interface{}{"type": "error", "error": err.Error()})
+				outbound.Send(map[string]interface{}{"type": "error", "error": err.Error()})
 			} else {
-				websocket.JSON.Send(conn, map[string]interface{}{"type": "delete_done", "path": msg.Path})
+				outbound.Send(map[string]interface{}{"type": "delete_done", "path": msg.Path})
 			}
 		case "mkdir":
 			err := os.MkdirAll(msg.Path, 0755)
 			if err != nil {
-				websocket.JSON.Send(conn, map[string]interface{}{"type": "error", "error": err.Error()})
+				outbound.Send(map[string]interface{}{"type": "error", "error": err.Error()})
 			} else {
-				websocket.JSON.Send(conn, map[string]interface{}{"type": "mkdir_done", "path": msg.Path})
+				outbound.Send(map[string]interface{}{"type": "mkdir_done", "path": msg.Path})
 			}
 		case "rename":
 			err := os.Rename(msg.Path, msg.NewPath)
 			if err != nil {
-				websocket.JSON.Send(conn, map[string]interface{}{"type": "error", "error": err.Error()})
+				outbound.Send(map[string]interface{}{"type": "error", "error": err.Error()})
 			} else {
-				websocket.JSON.Send(conn, map[string]interface{}{"type": "rename_done", "path": msg.Path, "new_path": msg.NewPath})
+				outbound.Send(map[string]interface{}{"type": "rename_done", "path": msg.Path, "new_path": msg.NewPath})
 			}
 		}
 	}

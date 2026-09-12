@@ -35,6 +35,18 @@ func (s *Store) GetUserByUsername(username string) (*User, error) {
 	return u, nil
 }
 
+func (s *Store) GetUser(id int64) (*User, error) {
+	u := &User{}
+	err := s.DB.QueryRow(
+		"SELECT id, username, password_hash, role, disabled, created_at, updated_at FROM users WHERE id = ?",
+		id,
+	).Scan(&u.ID, &u.Username, &u.PasswordHash, &u.Role, &u.Disabled, &u.CreatedAt, &u.UpdatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return u, nil
+}
+
 func (s *Store) ListUsers() ([]User, error) {
 	rows, err := s.DB.Query("SELECT id, username, password_hash, role, disabled, created_at, updated_at FROM users ORDER BY id")
 	if err != nil {

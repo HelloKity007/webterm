@@ -5,6 +5,7 @@ const FileEditor = lazy(() => import('../common/FileEditor'));
 import { useLayoutStore } from '../../store/layout';
 import Icon from '../common/Icon';
 import { colors, font } from '../../theme/tokens';
+import { websocketTicketURL, WebSocketAuthError } from '../../api/wsTicket';
 
 export interface SftpFile {
   name: string;
@@ -44,6 +45,7 @@ export default function SftpPanel({ connId, tabId, localMode, currentPath, onPat
   const wsRef = useRef<WebSocket | null>(null);
   const [editorSocket, setEditorSocket] = useState<WebSocket | null>(null);
   const [wsNonce, setWsNonce] = useState(0);
+  const reconnectAttemptsRef = useRef(0);
   const pathRef = useRef(path);
   const prevKeyRef = useRef(sessionKey);
 
@@ -87,8 +89,35 @@ export default function SftpPanel({ connId, tabId, localMode, currentPath, onPat
   // Create or reuse WebSocket for current connId
   useEffect(() => {
     if (connId == null) return;
+    let cancelled = false;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    let heartbeat: ReturnType<typeof setInterval> | undefined;
     const prevId = connKeyRef.current;
     connKeyRef.current = connId;
+    const retry = () => {
+      if (cancelled || !navigator.onLine || retryTimer !== undefined) return;
+      const ceiling = Math.min(1000 * 2 ** Math.min(reconnectAttemptsRef.current++, 5), 30000);
+      retryTimer = setTimeout(() => setWsNonce((value) => value + 1), Math.random() * ceiling);
+    };
+    const startHeartbeat = (socket: WebSocket) => {
+      clearInterval(heartbeat);
+      heartbeat = setInterval(() => {
+        if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ action: 'ping' }));
+      }, 20000);
+    };
+    const reconnectOnline = () => {
+      clearTimeout(retryTimer);
+      retryTimer = undefined;
+      reconnectAttemptsRef.current = 0;
+      setWsNonce((value) => value + 1);
+    };
+    const pauseOffline = () => {
+      clearTimeout(retryTimer);
+      retryTimer = undefined;
+      wsRef.current?.close();
+    };
+    window.addEventListener('online', reconnectOnline);
+    window.addEventListener('offline', pauseOffline);
 
     // If we have a socket for the new connId, reuse it
     const existing = poolRef.current.get(connId);
@@ -106,7 +135,13 @@ export default function SftpPanel({ connId, tabId, localMode, currentPath, onPat
       if (cached) setFiles(cached.files);
       setPath(initPath);
       setLoading(!cached);
-      return;
+      startHeartbeat(existing);
+      return () => {
+        cancelled = true;
+        clearInterval(heartbeat);
+        window.removeEventListener('online', reconnectOnline);
+        window.removeEventListener('offline', pauseOffline);
+      };
     }
 
     // Save old socket to pool if old connId still has SSH tabs; otherwise close it
@@ -130,41 +165,64 @@ export default function SftpPanel({ connId, tabId, localMode, currentPath, onPat
     setLoading(!cached);
     setError('');
 
-    const token = localStorage.getItem('token') || '';
-    const wsUrl = localMode
-      ? `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws/local-fs?token=${token}`
-      : `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws/sftp/${connId}?token=${token}`;
-    const socket = new WebSocket(wsUrl);
-    wsRef.current = socket;
-    setEditorSocket(socket);
+    void (async () => {
+      const wsUrl = localMode
+        ? await websocketTicketURL('/ws/local-fs', { endpoint: 'local-fs' })
+        : await websocketTicketURL(`/ws/sftp/${connId}`, { endpoint: 'sftp', connId });
+      if (cancelled) return;
+      const socket = new WebSocket(wsUrl);
+      wsRef.current = socket;
+      setEditorSocket(socket);
 
-    socket.onopen = () => {
-      setDisconnected(false);
-      if (cached) {
-        socket.send(JSON.stringify({ action: 'list', path: initPath }));
-      } else {
-        socket.send(JSON.stringify({ action: 'getwd' }));
-      }
-    };
-    socket.onclose = () => { setDisconnected(true); setLoading(false); };
-    socket.onerror = () => socket.close();
-    socket.onmessage = (event) => {
-      try {
-        const msg = JSON.parse(event.data);
-        if (msg.type === 'file_list') {
-          setFiles(msg.files || []);
-          setPath(msg.path || pathRef.current);
-          setLoading(false);
-        } else if (msg.type === 'error') {
-          setError(msg.error);
-          setLoading(false);
-        } else if (msg.type === 'pwd') {
-          setPath(msg.path);
-          fetchDir(msg.path);
-        } else if (msg.type === 'delete_done' || msg.type === 'mkdir_done' || msg.type === 'rename_done') {
-          fetchDir(pathRef.current, true);
+      socket.onopen = () => {
+        reconnectAttemptsRef.current = 0;
+        setDisconnected(false);
+        startHeartbeat(socket);
+        if (cached) {
+          socket.send(JSON.stringify({ action: 'list', path: initPath }));
+        } else {
+          socket.send(JSON.stringify({ action: 'getwd' }));
         }
-      } catch { /* ignore malformed SFTP responses */ }
+      };
+      socket.onclose = () => {
+        clearInterval(heartbeat);
+        if (cancelled) return;
+        setDisconnected(true);
+        setLoading(false);
+        retry();
+      };
+      socket.onerror = () => socket.close();
+      socket.onmessage = (event) => {
+        try {
+          const msg = JSON.parse(event.data);
+          if (msg.type === 'pong' || msg.type === 'ping') return;
+          if (msg.type === 'file_list') {
+            setFiles(msg.files || []);
+            setPath(msg.path || pathRef.current);
+            setLoading(false);
+          } else if (msg.type === 'error') {
+            setError(msg.error);
+            setLoading(false);
+          } else if (msg.type === 'pwd') {
+            setPath(msg.path);
+            fetchDir(msg.path);
+          } else if (msg.type === 'delete_done' || msg.type === 'mkdir_done' || msg.type === 'rename_done') {
+            fetchDir(pathRef.current, true);
+          }
+        } catch { /* ignore malformed SFTP responses */ }
+      };
+    })().catch((ticketError) => {
+      if (cancelled) return;
+      setDisconnected(true);
+      setLoading(false);
+      if (!(ticketError instanceof WebSocketAuthError)) retry();
+    });
+    return () => {
+      cancelled = true;
+      clearTimeout(retryTimer);
+      clearInterval(heartbeat);
+      window.removeEventListener('online', reconnectOnline);
+      window.removeEventListener('offline', pauseOffline);
     };
   }, [connId, defaultPath, fetchDir, localMode, sessionKey, tabId, wsNonce]);
 

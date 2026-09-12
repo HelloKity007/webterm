@@ -154,6 +154,38 @@ func TestPumpTerminalInputRoutesFollowInputWithoutTypingIt(t *testing.T) {
 	}
 }
 
+func TestPumpTerminalInputRejectsOutOfRangeAndUnknownMessages(t *testing.T) {
+	session := &fakeTerminalSession{}
+	messages := []json.RawMessage{
+		json.RawMessage(`{"cols":1001,"rows":40}`),
+		json.RawMessage(`{"action":"run_arbitrary_command"}`),
+		json.RawMessage(`{"data":"` + strings.Repeat("x", maxWSInboundPayloadBytes+1) + `"}`),
+	}
+	var input strings.Builder
+	var codes []string
+	pumpTerminalInputWithErrors(func(raw *json.RawMessage) error {
+		if len(messages) == 0 {
+			return errors.New("browser websocket closed")
+		}
+		*raw = messages[0]
+		messages = messages[1:]
+		return nil
+	}, session, &input, nil, func(code, _ string) { codes = append(codes, code) })
+
+	if input.Len() != 0 || session.rows != 0 || session.cols != 0 {
+		t.Fatalf("invalid messages changed terminal: input=%d resize=%dx%d", input.Len(), session.rows, session.cols)
+	}
+	want := []string{"INVALID_RESIZE", "UNSUPPORTED_ACTION", "PAYLOAD_TOO_LARGE"}
+	if len(codes) != len(want) {
+		t.Fatalf("error codes = %#v, want %#v", codes, want)
+	}
+	for index := range want {
+		if codes[index] != want[index] {
+			t.Fatalf("error codes = %#v, want %#v", codes, want)
+		}
+	}
+}
+
 type fakePTYSession struct {
 	term   string
 	height int

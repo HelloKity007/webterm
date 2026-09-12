@@ -17,6 +17,7 @@ describe('TabBar', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '新建标签' }));
     expect(onAddTab).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText('广播')).toBeNull();
   });
 
   it('keeps a fixed tab number while a double-click renames only the title', () => {

@@ -101,3 +101,41 @@ func TestSessionPoolBoundsConcurrentTransportDials(t *testing.T) {
 		lease.Release()
 	}
 }
+
+func TestSessionPoolReplacesTransportAfterKeepaliveFailures(t *testing.T) {
+	pool := NewPool()
+	pool.keepaliveEvery = time.Millisecond
+	pool.keepaliveLimit = 3
+	pool.probeAlive = func(*Client) bool { return false }
+	var dials atomic.Int32
+	factory := func() (*Client, error) {
+		dials.Add(1)
+		return &Client{}, nil
+	}
+	first, err := pool.AcquireSession(88, 0, 10, factory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(time.Second)
+	for {
+		pool.mu.Lock()
+		dead := first.slot.dead
+		pool.mu.Unlock()
+		if dead {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("transport was not marked dead after keepalive failures")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	second, err := pool.AcquireSession(88, 0, 10, factory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dials.Load() != 2 {
+		t.Fatalf("transport dials = %d, want a replacement transport", dials.Load())
+	}
+	first.Release()
+	second.Release()
+}

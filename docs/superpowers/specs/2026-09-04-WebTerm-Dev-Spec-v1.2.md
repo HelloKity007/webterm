@@ -52,7 +52,7 @@ v1.1 的产品方向成立：WebTerm 的近期核心仍是“同一账号、多�
 - 同一账号在 3 个桌面浏览器和 1 个移动 viewport 打开后，看到相同的 pane 树、比例、tab 标题、连接映射和终端会话。
 - 8 个可见 pane 可共同操作；任一设备离线不影响其他设备或远端长任务。
 - 网络中断后自动恢复布局控制通道和各终端通道，不要求刷新页面。
-- 用户清楚看到终端在线端数、连接/重连状态和广播武装状态。
+- 用户清楚看到终端在线端数和连接/重连状态。
 - 在定义过的负载与硬件基线上满足性能、内存和稳定性门槛。
 - 所有 WS 在升级前完成认证、资源授权和 Origin 检查。
 
@@ -81,7 +81,7 @@ v1.1 的产品方向成立：WebTerm 的近期核心仍是“同一账号、多�
 | 拖动比例 | 未完成 | 树有 ratios，UI 无 divider drag | 实现拖动结束提交 |
 | pane 内会话 Tab | 已完成基础并验收 | `TabBar.tsx`、`layoutPersistence.ts`、`labelNumber`；`9dcb110` | 作为既有能力保留，不等同于下一阶段工作区 Tab |
 | 工作区 Tab | 已完成并通过发布测试验收 | `workspaceLayout.ts`、`WorkspaceTabBar.tsx`、schema v2 handler；`f812186`、`e8f2eef` | 转为回归门禁；M3 WS 安全成为下一阶段 |
-| 广播 | 部分完成 | 当前浏览器内 off/pane/all | 明确 active-visible 范围，增加共享组配置 |
+| 跨 Panel 广播 | 产品取消 | 2026-09-11 用户确认多端同会话输入默认共享，不保留广播按钮 | 删除按钮、状态和跨 Panel 转发；不同 Panel 保持独立 |
 | SFTP 跟随 cd | 已完成基础 | OSC 7 → `sftpCdPaths` | 移出新增功能，保留回归 |
 | 自动重连 | 部分完成 | 最多 3 次指数退避 | 改为有界退避、无限生命周期、online 感知 |
 | 心跳 | 无闭环 | 服务端发 JSON ping，客户端不 pong | 建立 ping/pong 与超时状态机 |
@@ -280,7 +280,6 @@ v1.1 的产品方向成立：WebTerm 的近期核心仍是“同一账号、多�
 - pane tree、direction、ratios；
 - pane ID 与每个 pane 的 tabs；
 - tab ID、type、title、labelNumber、connId；
-- P0 新增的 broadcast group 配置。
 
 浏览器本地字段不得共享：active workspace Tab、focused pane、pane 内 active session Tab、临时 zoom、滚动位置、selection、输入法状态、移动端只读偏好。
 
@@ -305,7 +304,7 @@ v1.1 的产品方向成立：WebTerm 的近期核心仍是“同一账号、多�
 - A/B 同时修改时只产生一个权威 revision 序列；失败端明确提示且最终收敛。
 - 服务端重启后布局 revision 和共享字段保持。
 
-### P0-COLLAB：presence 与广播
+### P0-COLLAB：presence 与默认多端会话共享
 
 #### COLLAB-1 presence
 
@@ -314,19 +313,15 @@ v1.1 的产品方向成立：WebTerm 的近期核心仍是“同一账号、多�
 - 在线数按 distinct `clientID` 计，不按瞬时 socket 数计；重连 grace 期默认 15 秒，避免数字闪烁。
 - `/ws/layout` 控制通道扩展 typed event：`layout_revision`、`presence_snapshot`、`presence_delta`、`server_shutdown`。慢客户端的 layout revision 仍只保留最新值。
 
-#### COLLAB-2 广播范围
+#### COLLAB-2 默认输入共享边界
 
-- P0 广播目标严格定义为“当前共享布局中，每个可见 pane 的 active SSH tab”；不承诺向未 mount 的隐藏 tab 发送。
-- group 成员使用 `terminalID`；source/leader 是 source terminal，不是人员权限角色。
-- group 配置随布局共享；focused/source device 等临时状态本地保存。
-- 输入由发起设备恰好发送一次到每个目标 session。其他观察设备通过各自 attach 的 tmux 看到结果，不二次转发。
-- 广播开启时所有客户端显示醒目、可访问的 armed 状态；粘贴多行命令前二次确认可配置。
+- 同一 `terminalID` 的多个设备 attach 同一 tmux session，任一设备输入默认进入该会话，不设置额外开关。
+- 不同 Panel/不同 `terminalID` 保持独立；不提供跨 Panel 批量输入按钮，避免命令意外在多台主机执行。
 
 #### COLLAB 验收
 
 - 两设备连接同一 terminal 显示 2 端；关闭一端后在 grace 期结束显示 1。
 - 快速重连不出现 0→2→1 抖动，也不会残留 ghost client。
-- 8 pane 广播命令每个目标只执行一次；关闭广播后相互独立。
 - 同账号的另一设备可以输入，因此 UI 不得把“观看”宣传成安全只读。
 
 ### P0-PERF：渲染与容量
@@ -430,7 +425,7 @@ JWT signing secret 必须来自稳定的生产配置/环境变量，使服务重
 | E2E-4 | 断网 30 秒/5 分钟后恢复 | 同 terminalID/tmux session、无需 reload |
 | E2E-5 | 服务重启 | 远端任务继续、JWT/重新鉴权语义符合配置、布局不丢 |
 | E2E-6 | presence join/leave/reconnect | distinct client 计数，无 ghost |
-| E2E-7 | 广播到 8 active-visible terminals | 每个目标恰好执行一次，armed UI 截图 |
+| E2E-7 | 同一 terminalID 多端默认输入共享 | 无开关即可输入；不同 terminalID 不串扰 |
 | E2E-8 | WebGL 禁用/context loss | DOM fallback、终端继续、无白屏 |
 | E2E-9 | 非法 WS | upgrade 前 401/403、Origin 拒绝、日志无 token |
 | PERF-1 | 受控 8 pane 输出 | trace、帧间隔、memory timeline、环境清单 |
@@ -479,7 +474,7 @@ JWT signing secret 必须来自稳定的生产配置/环境变量，使服务重
 
 ## 13. 变更记录
 
-- v1.2（2026-09-11 / dev-1.0.4）：生产基线推进至 `2df868a`；归并 MOB-01–08，修正旧完整 grid 缩放承诺和移动端 P2 分类；用户验收、自动化覆盖、尚未实现的主计划门禁分别记录。
+- v1.2（2026-09-11 / dev-1.0.4）：生产基线推进至 `2df868a`；归并 MOB-01–08，修正旧完整 grid 缩放承诺和移动端 P2 分类；取消容易误解且有误操作风险的跨 Panel 广播按钮，同一 terminalID 多端输入继续默认共享。
 
 - v1.2（2026-09-05 同步）：基线推进到 `1cb938f`；将 pengguanzhen 已提交的功能改动登记为验收通过；明确一屏 8 pane 已完成；把承载 pane 布局的工作区 Tab 设为下一优先级 P0，并补充“可重命名、前置固定数字索引”及迁移/持久化/验收要求。
 - v1.2（2026-09-05 M2 验收）：工作区 Tab schema v2、v1 迁移、固定编号、重命名、空白/复制与多端本地 active workspace 已通过真实 Chrome 8-pane 自动化；下一阶段切换为 M3 WS 安全与单写者。

@@ -9,7 +9,7 @@
 
 ## 1. 目标
 
-在不回退布局、tmux 会话、桌面交互与已验收移动端能力的前提下，归并 P0-MOB、建立可重复的移动端回归入口，并审计 M0/M3–M8 的剩余工作。工作区 Tab 已实现，不再列为下一新增功能。安全握手、断线恢复、布局增强、presence、广播组和完整性能验收仍按依赖执行，不因移动端已发布而整体打勾。
+在不回退布局、tmux 会话、桌面交互与已验收移动端能力的前提下，归并 P0-MOB、建立可重复的移动端回归入口，并审计 M0/M3–M8 的剩余工作。工作区 Tab 已实现，不再列为下一新增功能。安全握手、断线恢复、布局增强、presence 和完整性能验收仍按依赖执行，不因移动端已发布而整体打勾；跨 Panel 广播已按 2026-09-11 产品决策取消。
 
 本计划只授权 P0 的设计与实现。P1/P2 先保留 backlog，不在 P0 顺手实现。
 
@@ -75,7 +75,7 @@ M3–M8 是否全部纳入本次1.0.4完成范围，需要用户确认本轮交�
 | M3 | **WS 安全与单写者（下一优先级）** | M2 | upgrade 前授权、Origin、ticket、无 race |
 | M4 | tmux/SSH 保活与自动重连 | M3 | 断网/服务重启恢复、明确生命周期 |
 | M5 | 布局增强、divider 与冲突 UX | M2、M4 | 保持已验收 8 pane，补 1×1/4×2、拖动同步、CAS 收敛 |
-| M6 | presence 与共享广播组 | M5 | distinct client presence、8 pane 一次广播 |
+| M6 | presence 与多端会话状态 | M5 | distinct client presence、同 terminalID 默认共享输入且不同会话不串扰 |
 | M7 | WebGL fallback 与性能稳定 | M4、M5 | 受控负载达到门槛、context loss 可恢复 |
 | M8 | 三端系统验收与 P0 发布 | M1–M7 | 全门禁、证据包；复用已验收双环境提升/回滚链路 |
 
@@ -286,7 +286,7 @@ M6 和 M7 在 M5 契约稳定后可并行开发，但合并前分别在最新共
 
 ### 数据与协议任务
 
-1. 冻结现有 schema v2 工作区共享/本地字段；广播组需要升级 schema 时，先定义新版本与 round-trip 迁移，不重复迁移至已经存在的v2。
+1. 冻结现有 schema v2 工作区共享/本地字段；不再为已取消的跨 Panel 广播增加 schema 字段。
 2. 统一 API 字段为现有 `schema_version/revision/layout`，删除实现文档中的 `baseRevision` 第二套叫法。
 3. 服务端错误返回稳定 code（如 `LAYOUT_CONFLICT`），前端不匹配中文 message。
 
@@ -314,7 +314,7 @@ M6 和 M7 在 M5 契约稳定后可并行开发，但合并前分别在最新共
 - 无 pane remount、terminalID 改变或 tmux session 重建。
 - axe/键盘检查覆盖 divider 与模板入口。
 
-## 10. M6 — presence 与广播组
+## 10. M6 — presence 与多端会话状态
 
 ### 后端任务
 
@@ -327,21 +327,20 @@ M6 和 M7 在 M5 契约稳定后可并行开发，但合并前分别在最新共
 
 1. 建立 sessionStorage `clientID` 和可选本地 device label；escape 后显示。
 2. 在 terminal/tab title 附近显示 online count 与 tooltip，避免把 socket 数称为“人数”。
-3. schema v2（若采用）保存 `broadcastGroup`；source terminal 与 source device 仍为本地态。
-4. 广播只覆盖每个可见 pane 的 active SSH tab；去重 terminalID，源端之外每目标只 send 一次。
-5. 增加明显 armed 状态、关闭快捷入口和多行 paste 确认。
+3. 不增加广播组 schema；同一 terminalID 的多设备输入由共享 tmux 会话天然承载。
+4. 保证不同 terminalID 之间不转发输入，界面不提供跨 Panel 广播开关。
 
 ### 必测场景
 
 - join/leave、refresh grace、网络抖动、重复 socket、abrupt close、server shutdown。
 - 跨用户隔离，device label XSS。
-- 8 目标一次广播、隐藏 tab 不执行、重复 terminalID 去重、DB tab 排除。
+- 同一 terminalID 两端均可输入，不同 terminalID 不串扰，DB tab 不参与终端输入。
 - 另一设备输入仍可生效；产品文案不宣称强制只读。
 
 ### 出口门禁
 
 - Spec `COLLAB-*` 全绿。
-- 多端录屏/截图和 server counter 共同证明 presence 与广播一次性。
+- 多端录屏/截图和 server counter 共同证明 presence 与默认会话共享。
 - registry 在 soak 后回到零，无 goroutine/timer leak。
 
 ## 11. M7 — WebGL fallback 与性能稳定
@@ -374,7 +373,7 @@ M6 和 M7 在 M5 契约稳定后可并行开发，但合并前分别在最新共
 
 1. 生产 build + Go + Caddy LAN 配置启动，验证 loopback/allowlist/certificate。
 2. 三个独立桌面客户端 + mobile viewport，以同一账号恢复 8 pane。
-3. 先复验工作区 Tab 的固定编号、重命名、切换和 v1 布局迁移，再复验 Claude/Codex 多屏历史，之后依次执行：layout drag、冲突、presence、广播、30 秒断网、5 分钟断网、服务重启、WebGL fallback。
+3. 先复验工作区 Tab 的固定编号、重命名、切换和 v1 布局迁移，再复验 Claude/Codex 多屏历史，之后依次执行：layout drag、冲突、presence、同会话多端输入、30 秒断网、5 分钟断网、服务重启、WebGL fallback。
 4. 验证 A 关闭后 B/C 不中断；A 重开恢复，且不覆盖 B/C 当前权威布局。
 5. 运行 24 shell gate；资源允许时复跑现有 1,000 pane non-regression。
 6. 在数据库副本验证升级和旧二进制回滚；远端 tmux session 不因部署切换被 kill。
@@ -426,10 +425,12 @@ git diff --check
 | 2026-09-05 | 工作区 Tab 编号与名称分离 | 固定数字索引用于稳定识别，重命名只改变名称；pane 内会话 Tab 保持现状 |
 | 2026-09-05 | 新建工作区 Tab 可选空白或复制，默认空白 | 默认操作保持轻量且不意外复制现有布局；需要时由用户显式选择复制 |
 | 2026-09-05 | 复制布局生成新的 pane、会话 Tab 与 terminalID | 当前 `Tab.id` 即 terminalID；生成全新身份可避免关闭副本时误杀原 tmux 会话，仅复用连接、标题和显示编号 |
+| 2026-09-11 | 删除跨 Panel 广播按钮与转发状态 | 用户要求多端同会话输入默认共享，不需要开关；不同 Panel 独立可降低误执行风险 |
 
 ## 15. Progress Notes
 
 - [2026-09-11] `2df868a`生产版本用户确认；创建dev-1.0.4。主Spec追加MOB-01–08，归并横滑标签、换行、触摸历史、去白线、统一字号和键盘视口恢复；同步主/补充计划，不将剩余P0自动视为验收。
+- [2026-09-11] 用户取消跨 Panel 广播入口；删除按钮、前端广播 store 和转发逻辑，同一 terminalID 的多设备 tmux attach 输入默认共享保持不变。
 
 - [2026-09-04] 计划创建。完成代码事实核对、现有 evidence 核对、官方 xterm/tmux/Go websocket 资料核对。
 - [2026-09-04] 基线通过：Go 全测；UI 14 files / 39 tests；lint；production build。

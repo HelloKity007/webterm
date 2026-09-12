@@ -16,23 +16,49 @@ import (
 const maxLayoutBytes = 256 * 1024
 
 type LayoutHandler struct {
-	Store *store.Store
-	Hub   *LayoutHub
+	Store    *store.Store
+	Hub      *LayoutHub
+	Registry *WSRegistry
 }
 
 // HandleEvents sends revision-only notifications. The browser fetches the
 // actual layout with its existing authorized GET request after an event.
 func (h *LayoutHandler) HandleEvents(conn *websocket.Conn) {
+	conn.MaxPayloadBytes = maxWSInboundPayloadBytes
 	user := auth.GetUserWS(conn.Request())
 	if user == nil || h.Hub == nil {
 		_ = conn.Close()
 		return
 	}
+	outbound := newWSOutbound(conn, h.Registry)
+	defer outbound.Close()
 	events, unsubscribe := h.Hub.Subscribe(user.UserID)
 	defer unsubscribe()
-	for revision := range events {
-		if err := websocket.JSON.Send(conn, map[string]int64{"revision": revision}); err != nil {
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for {
+			var control struct {
+				Action string `json:"action"`
+			}
+			if err := receiveWebSocketJSON(conn, &control); err != nil {
+				return
+			}
+			if control.Action == "ping" {
+				if err := outbound.Send(map[string]string{"type": "pong"}); err != nil {
+					return
+				}
+			}
+		}
+	}()
+	for {
+		select {
+		case <-done:
 			return
+		case revision, ok := <-events:
+			if !ok || outbound.Send(map[string]int64{"revision": revision}) != nil {
+				return
+			}
 		}
 	}
 }

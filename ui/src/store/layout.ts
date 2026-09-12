@@ -1,7 +1,6 @@
 import { create } from 'zustand';
 
 export type ModuleType = 'ssh' | 'sftp' | 'database' | 'config';
-export type BroadcastScope = 'off' | 'pane' | 'all';
 
 export interface Tab {
   id: string;
@@ -17,9 +16,6 @@ interface LayoutState {
   newTabQueue: Tab[];
   sftpCdPaths: Record<string, string>;
   focusedPaneId: string | null;
-  broadcastScope: BroadcastScope;
-  broadcastSourceId: string | null;
-  terminalRegistry: string[];
   removedTabQueue: string[];
   setActiveModule: (m: ModuleType) => void;
   requestTab: (tab: Tab) => void;
@@ -28,10 +24,6 @@ interface LayoutState {
   notifyTabMoved: (tabId: string) => void;
   setSftpCdPath: (tabId: string, path: string) => void;
   setFocusedPane: (paneId: string | null) => void;
-  setBroadcastScope: (scope: BroadcastScope) => void;
-  setBroadcastSource: (id: string | null) => void;
-  registerTerminal: (tabId: string) => void;
-  unregisterTerminal: (tabId: string) => void;
   sftpDisconnectSignal: number;
   signalSftpDisconnect: () => void;
   sftpPruneConn: number | null;
@@ -45,9 +37,6 @@ export const useLayoutStore = create<LayoutState>((set, get) => ({
       newTabQueue: [],
       sftpCdPaths: {},
       focusedPaneId: 'root',
-      broadcastScope: 'off',
-      broadcastSourceId: null,
-      terminalRegistry: [],
       removedTabQueue: [],
       sftpDisconnectSignal: 0,
       sftpPruneConn: null,
@@ -75,13 +64,4 @@ export const useLayoutStore = create<LayoutState>((set, get) => ({
       notifyTabMoved: (tabId) => set((s) => ({ removedTabQueue: [...s.removedTabQueue, tabId] })),
       setFocusedPane: (paneId) => set({ focusedPaneId: paneId }),
       setSftpCdPath: (tabId, path) => set((s) => ({ sftpCdPaths: { ...s.sftpCdPaths, [tabId]: path } })),
-      setBroadcastScope: (scope) => set({ broadcastScope: scope, broadcastSourceId: scope !== 'off' ? get().broadcastSourceId : null }),
-      setBroadcastSource: (id) => set({ broadcastSourceId: id }),
-      registerTerminal: (tabId) => set((s) => {
-        if (s.terminalRegistry.includes(tabId)) return s;
-        return { terminalRegistry: [...s.terminalRegistry, tabId] };
-      }),
-      unregisterTerminal: (tabId) => set((s) => ({
-        terminalRegistry: s.terminalRegistry.filter((id) => id !== tabId),
-      })),
 }));

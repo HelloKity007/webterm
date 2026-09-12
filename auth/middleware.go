@@ -49,6 +49,12 @@ func GetUser(r *http.Request) *Claims {
 	return claims
 }
 
+// WithUser carries already-authenticated claims into handlers that use a
+// short-lived credential rather than parsing the long-lived JWT again.
+func WithUser(r *http.Request, claims *Claims) *http.Request {
+	return r.WithContext(context.WithValue(r.Context(), UserContextKey, claims))
+}
+
 // GetUserWS extracts JWT from Authorization header or "token" query param (for WebSocket).
 func GetUserWS(r *http.Request) *Claims {
 	// Try context first (set by Middleware)

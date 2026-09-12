@@ -2,9 +2,11 @@ package main
 
 import (
 	"bytes"
-	"crypto/rand"
+	"context"
+	"crypto/sha256"
 	"embed"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -12,6 +14,8 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/xufanchn/webterm/auth"
@@ -73,11 +77,10 @@ func main() {
 	}, os.Getenv(cfg.LocalQuickConnect.PasswordEnv)); err != nil {
 		log.Fatalf("failed to initialize local quick connection: %v", err)
 	}
-	jwtSecret := make([]byte, 32)
-	if _, err := rand.Read(jwtSecret); err != nil {
-		log.Fatalf("failed to generate jwt secret: %v", err)
-	}
-	auth.SetJWTSecret(jwtSecret)
+	// Derive a stable, domain-separated signing key from the deployment secret.
+	// This keeps browser sessions valid across service restarts without adding a
+	// second secret that operators could accidentally omit.
+	auth.SetJWTSecret(deriveJWTSigningKey(cfg.EncryptionKey))
 
 	authH := &handler.AuthHandler{Store: st, Environment: *deploymentEnvironment, TestAutoLogin: *testAutoLogin}
 	userH := &handler.UserHandler{Store: st}
@@ -94,11 +97,15 @@ func main() {
 	mux.Handle("DELETE /api/users/{id}", auth.Middleware(auth.AdminOnly(http.HandlerFunc(userH.Delete))))
 
 	pool := sshmgr.NewPool()
+	wsRegistry := handler.NewWSRegistry()
 	connH := &handler.ConnectionHandler{Store: st, Pool: pool, AESCipher: aesCipher}
 	quickConnectH := &handler.QuickConnectHandler{Store: st}
-	layoutH := &handler.LayoutHandler{Store: st, Hub: handler.NewLayoutHub()}
+	layoutH := &handler.LayoutHandler{Store: st, Hub: handler.NewLayoutHub(), Registry: wsRegistry}
+	wsTickets := handler.NewWSTicketService()
+	wsTicketH := &handler.WSTicketHandler{Store: st, Tickets: wsTickets}
 	wsH := &handler.WSHandler{
 		Store: st, Pool: pool, AESCipher: aesCipher,
+		Registry:                 wsRegistry,
 		PreserveTerminalSessions: *preserveTerminalSessions,
 		// Release-test gets a private tmux server. Its copied layout may use the
 		// same terminal IDs, but must never resize or mutate production sessions.
@@ -118,7 +125,8 @@ func main() {
 	mux.Handle("POST /api/quick-connect/local", auth.Middleware(http.HandlerFunc(quickConnectH.OpenLocal)))
 	mux.Handle("GET /api/layout", auth.Middleware(http.HandlerFunc(layoutH.Get)))
 	mux.Handle("PUT /api/layout", auth.Middleware(http.HandlerFunc(layoutH.Save)))
-	mux.Handle("/ws/layout", websocket.Handler(layoutH.HandleEvents))
+	mux.Handle("POST /api/ws-tickets", auth.Middleware(http.HandlerFunc(wsTicketH.Issue)))
+	mux.Handle("/ws/layout", handler.TicketWebSocketHandler{Store: st, Tickets: wsTickets, Endpoint: "layout", Next: websocket.Handler(layoutH.HandleEvents)})
 
 	sftpRestH := &handler.SftpHandler{Store: st, Pool: pool, AESCipher: aesCipher}
 
@@ -138,11 +146,11 @@ func main() {
 	mux.Handle("PUT /api/groups/{id}", auth.Middleware(http.HandlerFunc(groupH.Update)))
 	mux.Handle("DELETE /api/groups/{id}", auth.Middleware(http.HandlerFunc(groupH.Delete)))
 
-	mux.Handle("/ws/ssh/{conn_id}", websocket.Handler(wsH.HandleSSH))
+	mux.Handle("/ws/ssh/{conn_id}", handler.TicketWebSocketHandler{Store: st, Tickets: wsTickets, Endpoint: "ssh", Next: websocket.Handler(wsH.HandleSSH)})
 	mux.Handle("DELETE /api/terminal-sessions/{conn_id}", auth.Middleware(http.HandlerFunc(wsH.CloseTerminalSession)))
-	mux.Handle("/ws/sftp/{conn_id}", websocket.Handler(wsH.HandleSFTP))
-	mux.Handle("/ws/db/{conn_id}", websocket.Handler(wsH.HandleDB))
-	mux.Handle("/ws/local-fs", auth.Middleware(websocket.Handler(handler.HandleLocalFS)))
+	mux.Handle("/ws/sftp/{conn_id}", handler.TicketWebSocketHandler{Store: st, Tickets: wsTickets, Endpoint: "sftp", Next: websocket.Handler(wsH.HandleSFTP)})
+	mux.Handle("/ws/db/{conn_id}", handler.TicketWebSocketHandler{Store: st, Tickets: wsTickets, Endpoint: "db", Next: websocket.Handler(wsH.HandleDB)})
+	mux.Handle("/ws/local-fs", handler.TicketWebSocketHandler{Store: st, Tickets: wsTickets, Endpoint: "local-fs", Next: websocket.Handler(handler.HandleLocalFSWithRegistry(wsRegistry))})
 
 	mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -162,9 +170,29 @@ func main() {
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       60 * time.Second,
 	}
-	if err := srv.ListenAndServe(); err != nil {
-		log.Fatalf("server error: %v", err)
+	serverError := make(chan error, 1)
+	go func() { serverError <- srv.ListenAndServe() }()
+	shutdownSignal := make(chan os.Signal, 1)
+	signal.Notify(shutdownSignal, syscall.SIGINT, syscall.SIGTERM)
+	select {
+	case sig := <-shutdownSignal:
+		log.Printf("received %s; notifying websocket clients", sig)
+		wsRegistry.Shutdown()
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := srv.Shutdown(ctx); err != nil {
+			log.Printf("graceful shutdown: %v", err)
+		}
+	case err := <-serverError:
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Fatalf("server error: %v", err)
+		}
 	}
+}
+
+func deriveJWTSigningKey(encryptionKey string) []byte {
+	digest := sha256.Sum256([]byte("webterm-jwt-signing-v1\x00" + encryptionKey))
+	return digest[:]
 }
 
 func spaHandler() http.HandlerFunc {

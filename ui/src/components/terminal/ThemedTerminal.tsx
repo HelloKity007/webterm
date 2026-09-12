@@ -4,6 +4,7 @@ import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { SearchAddon } from '@xterm/addon-search';
 import { WebglAddon } from '@xterm/addon-webgl';
+import { websocketTicketURL } from '../../api/wsTicket';
 import { useHighlightRules } from '../../hooks/useTerminalTheme';
 import type { HighlightRule } from '../../hooks/useTerminalTheme';
 import { useWebSocket } from '../../hooks/useWebSocket';
@@ -58,7 +59,6 @@ interface Props {
   onStatus?: (connected: boolean) => void;
   onResizeDim?: (cols: number, rows: number) => void;
   extraMenuItems?: { label: string; action: () => void }[];
-  tabs?: import('../../store/layout').Tab[];
   myTabId?: string;
   workspaceIndex?: number;
   panelNumber?: number;
@@ -69,8 +69,6 @@ interface ZSentry { consume: (octets: Uint8Array) => void; }
 interface ZTransfer { accept: () => Promise<void>; get_payloads: () => unknown; get_details: () => { name: string }; }
 interface ZSession { type: 'send' | 'receive'; on: (event: string, callback: (value?: ZTransfer) => void) => void; start: () => void; abort: () => void; }
 interface ZDetection { deny: () => void; confirm: () => ZSession; }
-type TerminalSendRegistry = Window & Record<string, (data: string) => void>;
-
 interface PendingLeftGesture {
   anchor: { col: number; row: number };
   clientX: number;
@@ -101,7 +99,7 @@ function highlightText(text: string, rules: HighlightRule[]): string {
   return text;
 }
 
-export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMenuItems, tabs, myTabId, workspaceIndex, panelNumber }: Props) {
+export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMenuItems, myTabId, workspaceIndex, panelNumber }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const [termKey, setTermKey] = useState(0);
@@ -136,12 +134,6 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
   const onResizeDimRef = useRef(onResizeDim);
   const themeName = usePreferencesStore((s) => s.themeName);
   const fontSize = usePreferencesStore((s) => s.fontSize);
-  const broadcastScope = useLayoutStore((s) => s.broadcastScope);
-  const broadcastSourceId = useLayoutStore((s) => s.broadcastSourceId);
-  const setBroadcastSource = useLayoutStore((s) => s.setBroadcastSource);
-  const terminalRegistry = useLayoutStore((s) => s.terminalRegistry);
-  const registerTerminal = useLayoutStore((s) => s.registerTerminal);
-  const unregisterTerminal = useLayoutStore((s) => s.unregisterTerminal);
   const setSftpCdPath = useLayoutStore((s) => s.setSftpCdPath);
   const setStatusConn = useLayoutStore((s) => s.setStatusConn);
   const focusedPaneId = useLayoutStore((s) => s.focusedPaneId);
@@ -856,19 +848,21 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
     };
   }, [copyCurrentSelection, fontSize, myTabId, pasteFromClipboard, setSftpCdPath, themeName]);
 
-  const token = localStorage.getItem('token') || '';
   const terminalID = myTabId || '';
-  const layoutQuery = workspaceIndex && panelNumber ? `&workspace_index=${workspaceIndex}&panel_number=${panelNumber}` : '';
   // Control Mode remains an opt-in diagnostic until the remote tmux stream is
   // proven to emit a complete redraw on every supported SSH implementation.
   // Control Mode provides per-client viewport state and deterministic replay
   // for both desktop and mobile. Keep an emergency opt-out for operators
   // during rollout, but make the tested transport the normal data plane.
-  const controlQuery = localStorage.getItem('webterm-control-mode') === '0' ? '' : '&control=1';
-  const wsUrl = `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws/ssh/${connId}?token=${encodeURIComponent(token)}&terminal_id=${encodeURIComponent(terminalID)}${layoutQuery}${controlQuery}`;
+  const createWsUrl = useCallback(() => websocketTicketURL(`/ws/ssh/${connId}`,
+    { endpoint: 'ssh', connId, terminalId: terminalID }, {
+      terminal_id: terminalID,
+      ...(workspaceIndex && panelNumber ? { workspace_index: String(workspaceIndex), panel_number: String(panelNumber) } : {}),
+      ...(localStorage.getItem('webterm-control-mode') === '0' ? {} : { control: '1' }),
+    }), [connId, panelNumber, terminalID, workspaceIndex]);
 
   const { send } = useWebSocket({
-    url: wsUrl,
+    createUrl: createWsUrl,
     onMessage: (data) => {
       const term = termRef.current;
       if (!term) return;
@@ -895,12 +889,11 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       }
     },
     onClose: (final) => {
+      onStatusRef.current?.(false);
+      const currentStatus = useLayoutStore.getState().statusConn;
+      if (currentStatus) setStatusConn({ ...currentStatus, connected: false });
       if (final) {
-        onStatusRef.current?.(false);
-        setStatusConn(null);
         termRef.current?.write('\r\n\x1b[33m[' + t('term_disconnected') + ']\x1b[0m\r\n');
-      } else {
-        termRef.current?.write('\r\n\x1b[33m[' + t('term_reconnecting') + ']\x1b[0m\r\n');
       }
     },
     onOpen: (sendNow) => {
@@ -1048,25 +1041,6 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
     };
   }, [sendBinary]);
 
-  // Register this terminal's send function globally for broadcast
-  useEffect(() => {
-    if (!myTabId) return;
-    const key = `webterm-ws-${myTabId}`;
-    (window as unknown as TerminalSendRegistry)[key] = send;
-    registerTerminal(myTabId);
-    return () => {
-      delete (window as unknown as TerminalSendRegistry)[key];
-      unregisterTerminal(myTabId);
-    };
-  }, [myTabId, send, registerTerminal, unregisterTerminal]);
-
-  // Auto-register as broadcast source
-  useEffect(() => {
-    if (broadcastScope !== 'off' && !broadcastSourceId && myTabId) {
-      setBroadcastSource(myTabId);
-    }
-  }, [broadcastScope, broadcastSourceId, myTabId, setBroadcastSource]);
-
   useEffect(() => {
     const term = termRef.current;
     if (!term) return;
@@ -1103,26 +1077,10 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
         inputViewportFollowedRef.current = true;
       }
       selectionSnapshotRef.current = '';
-      const isSource = myTabId === broadcastSourceId;
-      const isTarget = broadcastScope !== 'off' && !isSource;
-
-      if (isTarget) return; // Target terminal - input comes from broadcast
-
       send(JSON.stringify({ data }));
-
-      // Broadcast to other terminals
-      if (isSource && broadcastScope !== 'off') {
-        const targets = broadcastScope === 'all' ? terminalRegistry : tabs?.map((t) => t.id) || [];
-        targets.forEach((tid) => {
-          if (tid !== myTabId) {
-            const targetSend = (window as unknown as TerminalSendRegistry)[`webterm-ws-${tid}`];
-            if (targetSend) targetSend(JSON.stringify({ data }));
-          }
-        });
-      }
     });
     return () => disposable.dispose();
-  }, [send, sendTextAsBinary, broadcastScope, broadcastSourceId, myTabId, tabs, terminalRegistry, termKey]);
+  }, [send, sendTextAsBinary, termKey]);
 
   return (
     <div className="terminal-root" style={{ position: 'relative', flex: 1, display: 'flex', minWidth: 0, minHeight: 0, overflow: 'hidden', background: getTheme(themeName || 'XTerminal Green').background }}>

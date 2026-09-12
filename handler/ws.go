@@ -14,7 +14,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"unicode/utf8"
 
 	"github.com/xufanchn/webterm/auth"
 	"github.com/xufanchn/webterm/crypto"
@@ -39,12 +38,24 @@ type WSHandler struct {
 	TmuxSocket string
 	// RunTerminalCommand is overridden by handler tests to replace remote SSH I/O.
 	RunTerminalCommand func(*store.Connection, string) error
-	terminalSessions   persistentSessionRegistry
-	terminalHistoryMu  sync.Mutex
-	terminalHistory    *terminalHistoryStore
+	// RunTmuxPreflight is overridden by unit tests; production executes tmux -V
+	// over the already authorized SSH transport.
+	RunTmuxPreflight  func(*sshmgr.Client) (string, error)
+	Registry          *WSRegistry
+	terminalSessions  persistentSessionRegistry
+	terminalHistoryMu sync.Mutex
+	terminalHistory   *terminalHistoryStore
+	tmuxPreflightMu   sync.Mutex
+	tmuxPreflights    map[int64]*tmuxPreflightEntry
 }
 
 const terminalHistoryMaxBytes = 8 * 1024 * 1024
+
+const (
+	maxWSInboundPayloadBytes = 1024 * 1024
+	maxTerminalCols          = 1000
+	maxTerminalRows          = 500
+)
 
 func (h *WSHandler) historyFor(key string) *terminalHistory {
 	h.terminalHistoryMu.Lock()
@@ -185,7 +196,16 @@ func requestDefaultTerminalPTY(session terminalPTYSession, modes ssh.TerminalMod
 }
 
 func pumpTerminalInput(receive func(*json.RawMessage) error, session terminalInputSession, stdin io.Writer, handleAction func(string) error) {
+	pumpTerminalInputWithErrors(receive, session, stdin, handleAction, nil)
+}
+
+func pumpTerminalInputWithErrors(receive func(*json.RawMessage) error, session terminalInputSession, stdin io.Writer, handleAction func(string) error, report func(string, string)) {
 	defer session.Close()
+	reportError := func(code, message string) {
+		if report != nil {
+			report(code, message)
+		}
+	}
 	for {
 		var raw json.RawMessage
 		if err := receive(&raw); err != nil {
@@ -195,10 +215,16 @@ func pumpTerminalInput(receive func(*json.RawMessage) error, session terminalInp
 			Action string `json:"action"`
 		}
 		if err := json.Unmarshal(raw, &actionMsg); err == nil && actionMsg.Action != "" {
+			if actionMsg.Action == "ping" || actionMsg.Action == "pong" {
+				continue
+			}
 			if handleAction != nil {
 				if err := handleAction(actionMsg.Action); err != nil {
 					log.Printf("terminal action %q failed: %v", actionMsg.Action, err)
+					reportError("UNSUPPORTED_ACTION", err.Error())
 				}
+			} else {
+				reportError("UNSUPPORTED_ACTION", "unsupported terminal action")
 			}
 			continue
 		}
@@ -206,8 +232,10 @@ func pumpTerminalInput(receive func(*json.RawMessage) error, session terminalInp
 			Cols int `json:"cols"`
 			Rows int `json:"rows"`
 		}
-		if err := json.Unmarshal(raw, &resizeMsg); err == nil && resizeMsg.Cols > 1 && resizeMsg.Rows > 0 {
-			if err := session.WindowChange(resizeMsg.Rows, resizeMsg.Cols); err != nil {
+		if err := json.Unmarshal(raw, &resizeMsg); err == nil && (resizeMsg.Cols != 0 || resizeMsg.Rows != 0) {
+			if resizeMsg.Cols < 2 || resizeMsg.Cols > maxTerminalCols || resizeMsg.Rows < 1 || resizeMsg.Rows > maxTerminalRows {
+				reportError("INVALID_RESIZE", "terminal dimensions are outside the allowed range")
+			} else if err := session.WindowChange(resizeMsg.Rows, resizeMsg.Cols); err != nil {
 				log.Printf("SSH resize failed: %v", err)
 			}
 			continue
@@ -218,17 +246,26 @@ func pumpTerminalInput(receive func(*json.RawMessage) error, session terminalInp
 		}
 		if err := json.Unmarshal(raw, &dataMsg); err == nil && dataMsg.Data != "" {
 			if dataMsg.B64 {
-				if bin, derr := base64.StdEncoding.DecodeString(dataMsg.Data); derr == nil {
+				if bin, derr := base64.StdEncoding.DecodeString(dataMsg.Data); derr != nil {
+					reportError("INVALID_INPUT", "invalid base64 terminal input")
+				} else if len(bin) > maxWSInboundPayloadBytes {
+					reportError("PAYLOAD_TOO_LARGE", "terminal input exceeds the allowed size")
+				} else {
 					_, _ = stdin.Write(bin)
 				}
+			} else if len(dataMsg.Data) > maxWSInboundPayloadBytes {
+				reportError("PAYLOAD_TOO_LARGE", "terminal input exceeds the allowed size")
 			} else {
 				_, _ = io.WriteString(stdin, dataMsg.Data)
 			}
+			continue
 		}
+		reportError("INVALID_MESSAGE", "invalid terminal websocket message")
 	}
 }
 
 func (h *WSHandler) HandleSSH(conn *websocket.Conn) {
+	conn.MaxPayloadBytes = maxWSInboundPayloadBytes
 	connID, _ := strconv.ParseInt(conn.Request().PathValue("conn_id"), 10, 64)
 	user := auth.GetUserWS(conn.Request())
 	if user == nil {
@@ -245,45 +282,47 @@ func (h *WSHandler) HandleSSH(conn *websocket.Conn) {
 		sendErr(conn, "forbidden")
 		return
 	}
+	outbound := newWSOutbound(conn, h.Registry)
+	defer outbound.Close()
 	terminalID := conn.Request().URL.Query().Get("terminal_id")
 	tmuxCommand, err := persistentTerminalCommand(user.UserID, connID, terminalID)
 	if err != nil {
-		sendErr(conn, err.Error())
+		sendOutboundErr(outbound, err.Error())
 		return
 	}
 	controlMode := conn.Request().URL.Query().Get("control") == "1"
 	if controlMode {
 		tmuxCommand, err = persistentTerminalControlCommand(user.UserID, connID, terminalID)
 		if err != nil {
-			sendErr(conn, err.Error())
+			sendOutboundErr(outbound, err.Error())
 			return
 		}
 	}
 	clearCommand, err := persistentTerminalClearCommand(user.UserID, connID, terminalID)
 	if err != nil {
-		sendErr(conn, err.Error())
+		sendOutboundErr(outbound, err.Error())
 		return
 	}
 	workspaceIndex := conn.Request().URL.Query().Get("workspace_index")
 	panelNumber := conn.Request().URL.Query().Get("panel_number")
 	codexScrollableCommand, err := persistentTerminalCodexScrollableCommand(user.UserID, connID, terminalID)
 	if err != nil {
-		sendErr(conn, err.Error())
+		sendOutboundErr(outbound, err.Error())
 		return
 	}
 	resumeInputCommand, err := persistentTerminalResumeInputCommand(user.UserID, connID, terminalID)
 	if err != nil {
-		sendErr(conn, err.Error())
+		sendOutboundErr(outbound, err.Error())
 		return
 	}
 	claudeTranscriptCommand, err := persistentTerminalClaudeTranscriptCommand(user.UserID, connID, terminalID)
 	if err != nil {
-		sendErr(conn, err.Error())
+		sendOutboundErr(outbound, err.Error())
 		return
 	}
 	followInputCommand, err := persistentTerminalFollowInputCommand(user.UserID, connID, terminalID)
 	if err != nil {
-		sendErr(conn, err.Error())
+		sendOutboundErr(outbound, err.Error())
 		return
 	}
 	tmuxCommand = applyPanelSessionName(tmuxCommand, user.UserID, connID, terminalID, workspaceIndex, panelNumber)
@@ -302,7 +341,7 @@ func (h *WSHandler) HandleSSH(conn *websocket.Conn) {
 	terminalKey := terminalKeyFor(user.UserID, connID, terminalID)
 	releaseTerminal, err := h.terminalSessions.acquire(terminalKey, persistentTerminalSessionLimit)
 	if err != nil {
-		sendErr(conn, fmt.Sprintf("会话数已达上限(%d)，请关闭一些 panel 后重试", persistentTerminalSessionLimit))
+		sendOutboundErr(outbound, fmt.Sprintf("会话数已达上限(%d)，请关闭一些 panel 后重试", persistentTerminalSessionLimit))
 		return
 	}
 	defer releaseTerminal()
@@ -342,17 +381,26 @@ func (h *WSHandler) HandleSSH(conn *websocket.Conn) {
 	lease, err := h.Pool.AcquireSession(connID, 0, sshmgr.MaxChannelsPerTransport, newSSHClient)
 	if err != nil {
 		if errors.Is(err, sshmgr.ErrMaxSessions) {
-			sendErr(conn, "SSH 传输通道暂时不可用，请稍后重试")
+			sendOutboundErr(outbound, "SSH 传输通道暂时不可用，请稍后重试")
 		} else {
-			sendErr(conn, "连接失败: "+friendlyErr(err))
+			sendOutboundErr(outbound, "连接失败: "+friendlyErr(err))
 		}
 		return
 	}
 	defer lease.Release()
+	if err := h.ensureTmuxPreflight(connInfo, lease.Client); err != nil {
+		var preflightErr *tmuxPreflightError
+		if errors.As(err, &preflightErr) {
+			_ = outbound.Send(map[string]interface{}{"type": "error", "code": preflightErr.Code, "error": preflightErr.Message})
+		} else {
+			sendOutboundErr(outbound, "tmux 预检失败: "+friendlyErr(err))
+		}
+		return
+	}
 
 	session, err := lease.Client.NewSession()
 	if err != nil {
-		sendErr(conn, "创建会话失败: "+friendlyErr(err))
+		sendOutboundErr(outbound, "创建会话失败: "+friendlyErr(err))
 		return
 	}
 	defer session.Close()
@@ -367,7 +415,7 @@ func (h *WSHandler) HandleSSH(conn *websocket.Conn) {
 	}
 	if !controlMode {
 		if err := requestDefaultTerminalPTY(session, modes); err != nil {
-			sendErr(conn, "pty failed: "+err.Error())
+			sendOutboundErr(outbound, "pty failed: "+err.Error())
 			return
 		}
 	}
@@ -377,7 +425,7 @@ func (h *WSHandler) HandleSSH(conn *websocket.Conn) {
 	stderrPipe, _ := session.StderrPipe()
 
 	if err := session.Start(tmuxCommand); err != nil {
-		sendErr(conn, "无法启动持久终端（远端必须安装 tmux）: "+friendlyErr(err))
+		sendOutboundErr(outbound, "无法启动持久终端（远端必须安装 tmux）: "+friendlyErr(err))
 		return
 	}
 	logID, _ := h.Store.CreateSessionLog(&store.SessionLog{
@@ -436,7 +484,7 @@ func (h *WSHandler) HandleSSH(conn *websocket.Conn) {
 					if len(parts) >= 2 {
 						mode = terminalModeForPane(parts[1], len(parts) == 7 && parts[6] == "1")
 					}
-					_ = websocket.JSON.Send(conn, map[string]string{"type": "terminal_mode", "mode": mode})
+					_ = outbound.Send(map[string]string{"type": "terminal_mode", "mode": mode})
 				}
 				_ = paneSession.Close()
 			}
@@ -446,14 +494,23 @@ func (h *WSHandler) HandleSSH(conn *websocket.Conn) {
 			if captureErr = captureSession.Run(captureCommand); captureErr == nil && captured.Len() > 0 {
 				snapshot := terminalScreenSnapshot(captured.Bytes(), paneState)
 				history.appendBytes(snapshot)
-				_, _ = (&wsWriter{conn: conn}).Write(snapshot)
+				_, _ = (&wsWriter{outbound: outbound}).Write(snapshot)
 			}
 		}()
 	}
 
 	go func() {
-		pumpTerminalInput(func(raw *json.RawMessage) error {
-			return websocket.JSON.Receive(conn, raw)
+		pumpTerminalInputWithErrors(func(raw *json.RawMessage) error {
+			err := receiveWebSocketJSON(conn, raw)
+			if err == nil {
+				var control struct {
+					Action string `json:"action"`
+				}
+				if json.Unmarshal(*raw, &control) == nil && control.Action == "ping" {
+					_ = outbound.Send(map[string]string{"type": "pong"})
+				}
+			}
+			return err
 		}, inputSession, inputWriter, func(action string) error {
 			var command string
 			switch action {
@@ -481,37 +538,29 @@ func (h *WSHandler) HandleSSH(conn *websocket.Conn) {
 			}
 			defer controlSession.Close()
 			return controlSession.Run(command)
+		}, func(code, message string) {
+			_ = outbound.Send(map[string]interface{}{"type": "error", "code": code, "error": message})
 		})
-	}()
-
-	// Heartbeat: send ping every 10s
-	go func() {
-		ticker := time.NewTicker(10 * time.Second)
-		defer ticker.Stop()
-		for range ticker.C {
-			if err := websocket.JSON.Send(conn, map[string]string{"type": "ping"}); err != nil {
-				return
-			}
-		}
 	}()
 
 	if controlMode {
 		go pumpTmuxControlOutput(stdoutPipe, "", func(data []byte) error {
 			history.appendBytes(data)
-			_, err := (&wsWriter{conn: conn}).Write(data)
+			_, err := (&wsWriter{outbound: outbound}).Write(data)
 			return err
 		}, func(event tmuxControlEvent) error {
 			controlTracker.observe(event)
 			return nil
 		})
-		io.Copy(&recordingWSWriter{wsWriter: wsWriter{conn}, history: history}, stderrPipe)
+		io.Copy(&recordingWSWriter{wsWriter: wsWriter{outbound: outbound}, history: history}, stderrPipe)
 		return
 	}
-	go io.Copy(&recordingWSWriter{wsWriter: wsWriter{conn}, history: history}, stdoutPipe)
-	io.Copy(&recordingWSWriter{wsWriter: wsWriter{conn}, history: history}, stderrPipe)
+	go io.Copy(&recordingWSWriter{wsWriter: wsWriter{outbound: outbound}, history: history}, stdoutPipe)
+	io.Copy(&recordingWSWriter{wsWriter: wsWriter{outbound: outbound}, history: history}, stderrPipe)
 }
 
 func (h *WSHandler) HandleDB(conn *websocket.Conn) {
+	conn.MaxPayloadBytes = maxWSInboundPayloadBytes
 	connID, _ := strconv.ParseInt(conn.Request().PathValue("conn_id"), 10, 64)
 	user := auth.GetUserWS(conn.Request())
 	if user == nil {
@@ -528,12 +577,14 @@ func (h *WSHandler) HandleDB(conn *websocket.Conn) {
 		sendErr(conn, "forbidden")
 		return
 	}
+	outbound := newWSOutbound(conn, h.Registry)
+	defer outbound.Close()
 
 	password, _ := h.AESCipher.Decrypt(dbInfo.PasswordEncrypted)
 
 	client, err := dbmgr.NewClient(dbInfo.Host, dbInfo.Port, dbInfo.Username, password, dbInfo.DatabaseName)
 	if err != nil {
-		sendErr(conn, "db connect failed: "+err.Error())
+		sendOutboundErr(outbound, "db connect failed: "+err.Error())
 		return
 	}
 	defer client.Close()
@@ -550,46 +601,44 @@ func (h *WSHandler) HandleDB(conn *websocket.Conn) {
 		Table    string `json:"table"`
 	}
 	for {
-		if err := websocket.JSON.Receive(conn, &msg); err != nil {
+		if err := receiveWebSocketJSON(conn, &msg); err != nil {
 			return
 		}
 		switch msg.Action {
+		case "ping":
+			_ = outbound.Send(map[string]string{"type": "pong"})
 		case "query":
 			result, err := client.Execute(msg.Query)
 			if err != nil {
-				websocket.JSON.Send(conn, map[string]interface{}{"type": "error", "error": err.Error()})
+				outbound.Send(map[string]interface{}{"type": "error", "error": err.Error()})
 			} else {
-				websocket.JSON.Send(conn, map[string]interface{}{"type": "query_result", "result": result})
+				outbound.Send(map[string]interface{}{"type": "query_result", "result": result})
 			}
 		case "databases":
 			dbs, err := client.ListDatabases()
 			if err != nil {
-				websocket.JSON.Send(conn, map[string]interface{}{"type": "error", "error": err.Error()})
+				outbound.Send(map[string]interface{}{"type": "error", "error": err.Error()})
 			} else {
-				websocket.JSON.Send(conn, map[string]interface{}{"type": "database_list", "databases": dbs})
+				outbound.Send(map[string]interface{}{"type": "database_list", "databases": dbs})
 			}
 		case "tables":
 			tables, err := client.ListTables(msg.Database)
 			if err != nil {
-				websocket.JSON.Send(conn, map[string]interface{}{"type": "error", "error": err.Error()})
+				outbound.Send(map[string]interface{}{"type": "error", "error": err.Error()})
 			} else {
-				websocket.JSON.Send(conn, map[string]interface{}{"type": "table_list", "database": msg.Database, "tables": tables})
+				outbound.Send(map[string]interface{}{"type": "table_list", "database": msg.Database, "tables": tables})
 			}
 		case "describe":
 			cols, err := client.DescribeTable(msg.Database, msg.Table)
 			if err != nil {
-				websocket.JSON.Send(conn, map[string]interface{}{"type": "error", "error": err.Error()})
+				outbound.Send(map[string]interface{}{"type": "error", "error": err.Error()})
 			} else {
-				websocket.JSON.Send(conn, map[string]interface{}{"type": "describe_result", "database": msg.Database, "table": msg.Table, "columns": cols})
+				outbound.Send(map[string]interface{}{"type": "describe_result", "database": msg.Database, "table": msg.Table, "columns": cols})
 			}
 		default:
-			websocket.JSON.Send(conn, map[string]interface{}{"type": "error", "error": "unknown action"})
+			outbound.Send(map[string]interface{}{"type": "error", "error": "unknown action"})
 		}
 	}
-}
-
-type wsWriter struct {
-	conn *websocket.Conn
 }
 
 type recordingWSWriter struct {
@@ -602,20 +651,8 @@ func (w *recordingWSWriter) Write(p []byte) (int, error) {
 	return w.wsWriter.Write(p)
 }
 
-func (w *wsWriter) Write(p []byte) (int, error) {
-	msg := map[string]interface{}{"data": string(p)}
-	if !utf8.Valid(p) {
-		// Binary data (e.g. ZMODEM) must not be mangled by JSON/UTF-8
-		msg["data"] = base64.StdEncoding.EncodeToString(p)
-		msg["b64"] = true
-	}
-	if err := websocket.JSON.Send(w.conn, msg); err != nil {
-		return 0, err
-	}
-	return len(p), nil
-}
-
 func (h *WSHandler) HandleSFTP(conn *websocket.Conn) {
+	conn.MaxPayloadBytes = maxWSInboundPayloadBytes
 	connID, _ := strconv.ParseInt(conn.Request().PathValue("conn_id"), 10, 64)
 	user := auth.GetUserWS(conn.Request())
 	if user == nil {
@@ -632,6 +669,8 @@ func (h *WSHandler) HandleSFTP(conn *websocket.Conn) {
 		sendErr(conn, "forbidden")
 		return
 	}
+	outbound := newWSOutbound(conn, h.Registry)
+	defer outbound.Close()
 
 	// Get or create SSH client (with retry if existing client is stale)
 	var sshClient *sshmgr.Client
@@ -661,18 +700,18 @@ func (h *WSHandler) HandleSFTP(conn *websocket.Conn) {
 
 		sshClient, err = sshmgr.NewClient(connInfo.Host, connInfo.Port, connInfo.Username, password, privateKey, passphrase)
 		if err != nil {
-			sendErr(conn, "SSH 连接失败: "+friendlyErr(err))
+			sendOutboundErr(outbound, "SSH 连接失败: "+friendlyErr(err))
 			return
 		}
 		if err := sshClient.Connect(); err != nil {
-			sendErr(conn, "SSH 连接失败: "+friendlyErr(err))
+			sendOutboundErr(outbound, "SSH 连接失败: "+friendlyErr(err))
 			return
 		}
 		h.Pool.Add(connID, sshClient)
 
 		sftpClient, err = sftpmgr.NewClient(sshClient.RawConn())
 		if err != nil {
-			sendErr(conn, "SFTP 初始化失败: "+friendlyErr(err))
+			sendOutboundErr(outbound, "SFTP 初始化失败: "+friendlyErr(err))
 			return
 		}
 	}
@@ -693,78 +732,85 @@ func (h *WSHandler) HandleSFTP(conn *websocket.Conn) {
 		Mode    string `json:"mode"`
 	}
 	for {
-		if err := websocket.JSON.Receive(conn, &msg); err != nil {
+		if err := receiveWebSocketJSON(conn, &msg); err != nil {
 			return
 		}
 		switch msg.Action {
+		case "ping":
+			_ = outbound.Send(map[string]string{"type": "pong"})
 		case "list":
 			files, err := sftpClient.ListDir(msg.Path)
 			if err != nil {
-				websocket.JSON.Send(conn, map[string]interface{}{"type": "error", "error": err.Error()})
+				outbound.Send(map[string]interface{}{"type": "error", "error": err.Error()})
 			} else {
-				websocket.JSON.Send(conn, map[string]interface{}{"type": "file_list", "path": msg.Path, "files": files})
+				outbound.Send(map[string]interface{}{"type": "file_list", "path": msg.Path, "files": files})
 			}
 		case "read":
 			data, err := sftpClient.ReadFile(msg.Path)
 			if err != nil {
-				websocket.JSON.Send(conn, map[string]interface{}{"type": "error", "error": err.Error()})
+				outbound.Send(map[string]interface{}{"type": "error", "error": err.Error()})
 			} else {
-				websocket.JSON.Send(conn, map[string]interface{}{"type": "file_content", "path": msg.Path, "content": string(data)})
+				outbound.Send(map[string]interface{}{"type": "file_content", "path": msg.Path, "content": string(data)})
 			}
 		case "write":
 			err := sftpClient.WriteFile(msg.Path, []byte(msg.Content))
 			if err != nil {
-				websocket.JSON.Send(conn, map[string]interface{}{"type": "error", "error": err.Error()})
+				outbound.Send(map[string]interface{}{"type": "error", "error": err.Error()})
 			} else {
-				websocket.JSON.Send(conn, map[string]interface{}{"type": "write_done", "path": msg.Path})
+				outbound.Send(map[string]interface{}{"type": "write_done", "path": msg.Path})
 			}
 		case "delete":
 			err := sftpClient.Delete(msg.Path)
 			if err != nil {
-				websocket.JSON.Send(conn, map[string]interface{}{"type": "error", "error": err.Error()})
+				outbound.Send(map[string]interface{}{"type": "error", "error": err.Error()})
 			} else {
-				websocket.JSON.Send(conn, map[string]interface{}{"type": "delete_done", "path": msg.Path})
+				outbound.Send(map[string]interface{}{"type": "delete_done", "path": msg.Path})
 			}
 		case "rename":
 			err := sftpClient.Rename(msg.Path, msg.NewPath)
 			if err != nil {
-				websocket.JSON.Send(conn, map[string]interface{}{"type": "error", "error": err.Error()})
+				outbound.Send(map[string]interface{}{"type": "error", "error": err.Error()})
 			} else {
-				websocket.JSON.Send(conn, map[string]interface{}{"type": "rename_done", "path": msg.Path, "new_path": msg.NewPath})
+				outbound.Send(map[string]interface{}{"type": "rename_done", "path": msg.Path, "new_path": msg.NewPath})
 			}
 		case "mkdir":
 			err := sftpClient.Mkdir(msg.Path)
 			if err != nil {
-				websocket.JSON.Send(conn, map[string]interface{}{"type": "error", "error": err.Error()})
+				outbound.Send(map[string]interface{}{"type": "error", "error": err.Error()})
 			} else {
-				websocket.JSON.Send(conn, map[string]interface{}{"type": "mkdir_done", "path": msg.Path})
+				outbound.Send(map[string]interface{}{"type": "mkdir_done", "path": msg.Path})
 			}
 		case "chmod":
 			mode, perr := strconv.ParseUint(msg.Mode, 8, 32)
 			if perr != nil {
-				websocket.JSON.Send(conn, map[string]interface{}{"type": "error", "error": "invalid mode: " + msg.Mode})
+				outbound.Send(map[string]interface{}{"type": "error", "error": "invalid mode: " + msg.Mode})
 				continue
 			}
 			err := sftpClient.Chmod(msg.Path, fs.FileMode(mode))
 			if err != nil {
-				websocket.JSON.Send(conn, map[string]interface{}{"type": "error", "error": err.Error()})
+				outbound.Send(map[string]interface{}{"type": "error", "error": err.Error()})
 			} else {
-				websocket.JSON.Send(conn, map[string]interface{}{"type": "chmod_done", "path": msg.Path})
+				outbound.Send(map[string]interface{}{"type": "chmod_done", "path": msg.Path})
 			}
 		case "getwd":
 			wd, err := sftpClient.Getwd()
 			if err != nil {
-				websocket.JSON.Send(conn, map[string]interface{}{"type": "error", "error": err.Error()})
+				outbound.Send(map[string]interface{}{"type": "error", "error": err.Error()})
 			} else {
-				websocket.JSON.Send(conn, map[string]interface{}{"type": "pwd", "path": wd})
+				outbound.Send(map[string]interface{}{"type": "pwd", "path": wd})
 			}
 		default:
-			websocket.JSON.Send(conn, map[string]interface{}{"type": "error", "error": "unknown action: " + msg.Action})
+			outbound.Send(map[string]interface{}{"type": "error", "error": "unknown action: " + msg.Action})
 		}
 	}
 }
 
 func sendErr(conn *websocket.Conn, msg string) {
-	websocket.JSON.Send(conn, map[string]interface{}{"type": "error", "error": msg})
+	_ = websocket.JSON.Send(conn, map[string]interface{}{"type": "error", "error": msg})
+	time.Sleep(500 * time.Millisecond)
+}
+
+func sendOutboundErr(outbound *wsOutbound, msg string) {
+	_ = outbound.Send(map[string]interface{}{"type": "error", "error": msg})
 	time.Sleep(500 * time.Millisecond)
 }

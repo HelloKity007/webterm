@@ -11,7 +11,8 @@ import { useAuthStore } from '../../store/auth';
 import { apiGet, apiPost, apiPut } from '../../api/client';
 import { colors, font } from '../../theme/tokens';
 import { emptyPersistedLayout, localActiveTabID, normalizePersistedLayout, sharedLayoutSnapshot, type Direction, type LayoutNode, type PersistedLayout } from './layoutPersistence';
-import { layoutEventRevision, layoutSocketURL } from './layoutSync';
+import { layoutEventRevision } from './layoutSync';
+import { websocketTicketURL, webSocketClientID } from '../../api/wsTicket';
 import { shouldPersistLayout } from './layoutSave';
 import { useWebSocket } from '../../hooks/useWebSocket';
 import { replaceLeafWithEightPaneGrid } from './layoutPresets';
@@ -640,7 +641,7 @@ function LeafPane({ nodeId, onActiveSshChange, isInSplit, workspaceIndex }: {
           <div key={tab.id} style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
             {tab.type === 'ssh' && tab.connId && (
               <Suspense fallback={<div style={{ padding: 12, fontSize: font.md, color: colors.textMuted }}>Loading…</div>}>
-                <TerminalTab connId={tab.connId} myTabId={tab.id} paneTabs={tabs} workspaceIndex={workspaceIndex} panelNumber={tab.labelNumber ?? tabs.findIndex((candidate) => candidate.id === tab.id) + 1} extraMenuItems={[
+                <TerminalTab connId={tab.connId} myTabId={tab.id} workspaceIndex={workspaceIndex} panelNumber={tab.labelNumber ?? tabs.findIndex((candidate) => candidate.id === tab.id) + 1} extraMenuItems={[
                   { label: t('term_split_h'), action: () => handleSplit('horizontal') },
                   { label: t('term_split_v'), action: () => handleSplit('vertical') },
                   { label: t('term_split_quad'), action: handleQuadSplit },
@@ -910,7 +911,13 @@ function SessionWelcome() {
 (window as unknown as { __paneTabsCache: Map<string, Tab[]> }).__paneTabsCache = paneTabsCache;
 
 function LayoutSync({ token, onMessage }: { token: string; onMessage: (raw: string) => void }) {
-  useWebSocket({ url: layoutSocketURL(token), onMessage });
+  const clientID = webSocketClientID();
+  const createUrl = useCallback(() => {
+    if (!token) return Promise.reject(new Error('missing authentication token'));
+    return websocketTicketURL('/ws/layout',
+      { endpoint: 'layout', clientId: clientID }, { client_id: clientID });
+  }, [clientID, token]);
+  useWebSocket({ createUrl, onMessage });
   return null;
 }
 
