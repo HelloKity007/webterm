@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { calculateTerminalScale, constrainTerminalHeight, defaultSharedTerminalGrid, mobileSharedTerminalGrid, parseSharedTerminalGridTitle, sharedGridForViewport } from './terminalScaling';
+import { calculateTerminalScale, constrainTerminalHeight, defaultSharedTerminalGrid, letterSpacingToFillTerminal, mobileSharedTerminalGrid, parseSharedTerminalGridTitle, sharedGridForViewport } from './terminalScaling';
 
 describe('parseSharedTerminalGridTitle', () => {
   it('converts the tmux content height to the complete client height', () => {
@@ -52,5 +52,11 @@ describe('calculateTerminalScale', () => {
     expect(constrainTerminalHeight(16, 1.4, 306, 301.33)).toEqual({ fontSize: 16, lineHeight: 1.3717 });
     expect(constrainTerminalHeight(12.4, 1, 306, 301.33)).toEqual({ fontSize: 12.1497, lineHeight: 1 });
     expect(constrainTerminalHeight(16, 1.4, 300, 301.33)).toEqual({ fontSize: 16, lineHeight: 1.4 });
+  });
+
+  it('distributes only positive rendered-width slack across terminal columns', () => {
+    expect(letterSpacingToFillTerminal(2.8, 884, 918, 76)).toBe(3.247);
+    expect(letterSpacingToFillTerminal(0, 608, 608, 76)).toBe(0);
+    expect(letterSpacingToFillTerminal(0, 621, 608, 76)).toBe(0);
   });
 });

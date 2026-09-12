@@ -49,7 +49,7 @@ import {
   routeTerminalMouseUp,
   shouldAutoFocusTerminal,
 } from './terminalInteractions';
-import { calculateTerminalScale, constrainTerminalHeight, defaultSharedTerminalGrid, mobileSharedTerminalGrid, parseSharedTerminalGridTitle, sharedGridForViewport, smallViewportWidth, type TerminalGrid } from './terminalScaling';
+import { calculateTerminalScale, constrainTerminalHeight, defaultSharedTerminalGrid, letterSpacingToFillTerminal, mobileSharedTerminalGrid, parseSharedTerminalGridTitle, sharedGridForViewport, smallViewportWidth, type TerminalGrid } from './terminalScaling';
 import { getSharedTerminalGrid, setSharedTerminalGrid } from './terminalGridCache';
 import { isMobileBrowserEnvironment } from '../layout/mobileLayout';
 
@@ -647,6 +647,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
     let resizingForSharedGrid = false;
     let sharedGrid: TerminalGrid | null = mobileBrowser ? null : (myTabId ? getSharedTerminalGrid(myTabId) : null);
     let pendingFitFrame: number | null = null;
+    let pendingWidthFillFrame: number | null = null;
 
     term.onResize(({ cols, rows }) => {
       if (cols < 2 || rows < 1) return; // ignore zero-size (hidden terminal)
@@ -758,6 +759,25 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
         onResizeDimRef.current?.(targetGrid.cols, targetGrid.rows);
         inputViewportFollowedRef.current = false;
 
+        // Font metrics settle on the next paint. If integer glyph rounding
+        // leaves positive slack, distribute it once across the columns. Do
+        // not shrink or iterate: those operations can jump an entire device
+        // pixel per column and create a larger gap.
+        if (useCappedViewportGrid) {
+          if (pendingWidthFillFrame !== null) cancelAnimationFrame(pendingWidthFillFrame);
+          pendingWidthFillFrame = requestAnimationFrame(() => {
+            pendingWidthFillFrame = null;
+            const renderedWidth = term.element?.querySelector<HTMLElement>('.xterm-screen')?.getBoundingClientRect().width || 0;
+            const terminalWidth = term.element?.getBoundingClientRect().width || 0;
+            const availableWidth = Math.max(1, terminalWidth - (mobileBrowser ? 0 : 5));
+            const currentSpacing = term.options.letterSpacing || 0;
+            const filledSpacing = letterSpacingToFillTerminal(currentSpacing, renderedWidth, availableWidth, targetGrid.cols);
+            if (filledSpacing === currentSpacing) return;
+            term.options.letterSpacing = filledSpacing;
+            term.resize(targetGrid.cols, targetGrid.rows);
+          });
+        }
+
       } finally {
         resizingForSharedGrid = false;
       }
@@ -765,6 +785,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
 
     const scheduleFit = () => {
       if (pendingFitFrame !== null) cancelAnimationFrame(pendingFitFrame);
+      if (pendingWidthFillFrame !== null) cancelAnimationFrame(pendingWidthFillFrame);
       pendingFitFrame = requestAnimationFrame(() => {
         pendingFitFrame = null;
         fitWhenVisible();
@@ -845,6 +866,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
 
     return () => {
       if (pendingFitFrame !== null) cancelAnimationFrame(pendingFitFrame);
+      if (pendingWidthFillFrame !== null) cancelAnimationFrame(pendingWidthFillFrame);
       if (outputFrameRef.current !== null) cancelAnimationFrame(outputFrameRef.current);
       outputFrameRef.current = null;
       outputQueueRef.current = [];

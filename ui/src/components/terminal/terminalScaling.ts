@@ -68,6 +68,12 @@ export function constrainTerminalHeight(fontSize: number, lineHeight: number, re
   return { fontSize: round(fontSize * correction, 4), lineHeight: 1 };
 }
 
+export function letterSpacingToFillTerminal(current: number, renderedWidth: number, availableWidth: number, cols: number): number {
+  if (!Number.isFinite(current) || !Number.isFinite(renderedWidth) || !Number.isFinite(availableWidth) ||
+      !Number.isInteger(cols) || renderedWidth <= 0 || availableWidth <= renderedWidth || cols < 1) return current;
+  return round(current + (availableWidth - renderedWidth) / cols);
+}
+
 export function calculateTerminalScale(
   nativeGrid: TerminalGrid,
   sharedGrid: TerminalGrid,
