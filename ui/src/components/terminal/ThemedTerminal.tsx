@@ -470,7 +470,8 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       fastScrollSensitivity: 3,
       overviewRuler: { width: 5 },
       theme: {
-        overviewRulerBorder: 'transparent',
+        // xterm rejects the named transparent color and falls back to white.
+        overviewRulerBorder: '#00000000',
         scrollbarSliderBackground: '#8fbd9180',
         scrollbarSliderHoverBackground: '#8fbd9199',
         scrollbarSliderActiveBackground: '#8fbd91b3',
