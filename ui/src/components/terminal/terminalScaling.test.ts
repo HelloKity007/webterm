@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { calculateTerminalScale, constrainTerminalHeight, defaultSharedTerminalGrid, parseSharedTerminalGridTitle, sharedGridForViewport } from './terminalScaling';
+import { calculateTerminalScale, constrainTerminalHeight, defaultSharedTerminalGrid, fillTerminalWidth, parseSharedTerminalGridTitle, sharedGridForViewport } from './terminalScaling';
 
 describe('parseSharedTerminalGridTitle', () => {
   it('converts the tmux content height to the complete client height', () => {
@@ -50,5 +50,11 @@ describe('calculateTerminalScale', () => {
     expect(constrainTerminalHeight(16, 1.4, 306, 301.33)).toEqual({ fontSize: 16, lineHeight: 1.3717 });
     expect(constrainTerminalHeight(12.4, 1, 306, 301.33)).toEqual({ fontSize: 12.1497, lineHeight: 1 });
     expect(constrainTerminalHeight(16, 1.4, 300, 301.33)).toEqual({ fontSize: 16, lineHeight: 1.4 });
+  });
+
+  it('fills the width before the scrollbar without clipping the final column', () => {
+    expect(fillTerminalWidth(16, 0.4, 621, 608, 69)).toEqual({ fontSize: 16, letterSpacing: 0.212 });
+    expect(fillTerminalWidth(15.5, 0, 621, 608, 69)).toEqual({ fontSize: 15.176, letterSpacing: 0 });
+    expect(fillTerminalWidth(15.5, 0, 590, 608, 69)).toEqual({ fontSize: 15.5, letterSpacing: 0.261 });
   });
 });

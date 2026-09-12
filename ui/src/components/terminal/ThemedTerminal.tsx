@@ -49,7 +49,7 @@ import {
   routeTerminalMouseUp,
   shouldAutoFocusTerminal,
 } from './terminalInteractions';
-import { calculateTerminalScale, constrainTerminalHeight, defaultSharedTerminalGrid, parseSharedTerminalGridTitle, sharedGridForViewport, smallViewportWidth, type TerminalGrid } from './terminalScaling';
+import { calculateTerminalScale, constrainTerminalHeight, defaultSharedTerminalGrid, fillTerminalWidth, parseSharedTerminalGridTitle, sharedGridForViewport, smallViewportWidth, type TerminalGrid } from './terminalScaling';
 import { getSharedTerminalGrid, setSharedTerminalGrid } from './terminalGridCache';
 import { isMobileBrowserEnvironment } from '../layout/mobileLayout';
 
@@ -716,6 +716,20 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
 
         term.resize(targetGrid.cols, targetGrid.rows);
         if (useCappedViewportGrid) {
+          // xterm rounds glyph metrics to device pixels, so a mathematically
+          // fitted grid can still leave a strip of unused width or clip its
+          // final column. Match the rendered grid to the area immediately
+          // before the five-pixel terminal scrollbar.
+          const renderedWidth = screen?.getBoundingClientRect().width || 0;
+          const terminalWidth = term.element?.getBoundingClientRect().width || 0;
+          const availableWidth = Math.max(1, terminalWidth - 5);
+          const widthFilled = fillTerminalWidth(term.options.fontSize, term.options.letterSpacing, renderedWidth, availableWidth, targetGrid.cols);
+          if (widthFilled.fontSize !== term.options.fontSize || widthFilled.letterSpacing !== term.options.letterSpacing) {
+            const pixelCorrection = widthFilled.fontSize / term.options.fontSize;
+            scaleOptions = { ...scaleOptions, fontSize: widthFilled.fontSize, letterSpacing: widthFilled.letterSpacing, scale: scaleOptions.scale * pixelCorrection };
+            term.options.fontSize = widthFilled.fontSize;
+            term.options.letterSpacing = widthFilled.letterSpacing;
+          }
           // Width fitting above may reduce the font after lineHeight was
           // calculated. Re-measure the final native cell height; otherwise a
           // tall, narrow pane keeps only half its vertical character area.
