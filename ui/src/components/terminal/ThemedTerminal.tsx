@@ -711,7 +711,12 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
           ref.current.dataset.gridAuthority = 'server';
           if (myTabId) setSharedTerminalGrid(myTabId, exactGrid);
           if (widthFitFrame !== null) cancelAnimationFrame(widthFitFrame);
+          // Search rendered font sizes, not a one-way proportional shrink:
+          // xterm rounds glyphs to physical pixels, and the old correction
+          // could stop well below the largest size that actually fits.
           let attempts = 0;
+          let fittingFont = 4;
+          let overflowingFont = 64;
           const fitExactGrid = () => {
             widthFitFrame = requestAnimationFrame(() => {
               widthFitFrame = null;
@@ -719,9 +724,16 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
               const bar = term.element?.querySelector('.scrollbar.vertical')?.getBoundingClientRect();
               const surface = ref.current?.getBoundingClientRect();
               if (!rect || !bar || !surface || rect.top >= innerHeight || rect.bottom <= 0 || !rect.width) return;
-              const ratio = Math.min((bar.left - rect.left - 2) / rect.width, surface.height / rect.height);
-              if (ratio >= 1 || ++attempts > 8) return;
-              term.options.fontSize = Math.max(4, (term.options.fontSize || responsiveFontSize) * ratio * 0.99);
+              const currentFont = term.options.fontSize || responsiveFontSize;
+              const fits = rect.right <= bar.left - 2 && rect.bottom <= surface.bottom - 1;
+              if (fits) fittingFont = currentFont;
+              else overflowingFont = currentFont;
+              if (++attempts >= 12 || overflowingFont - fittingFont < 0.025) {
+                term.options.fontSize = fittingFont;
+                if (ref.current) ref.current.dataset.fittedFontSize = String(fittingFont);
+                return;
+              }
+              term.options.fontSize = (fittingFont + overflowingFont) / 2;
               widthFitFrame = requestAnimationFrame(fitExactGrid);
             });
           };
