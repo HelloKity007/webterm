@@ -18,11 +18,11 @@ try {
     await page.goto('https://192.168.11.87:9444/', { waitUntil: 'networkidle' });
     const panel = page.locator('.terminal-surface:visible').nth(5);
     await panel.waitFor();
-    await page.waitForTimeout(1500);
+    await page.waitForTimeout(5000);
     const measure = () => panel.evaluate(e => {
       const screen = e.querySelector('.xterm-screen').getBoundingClientRect();
       const bar = e.querySelector('.scrollbar.vertical').getBoundingClientRect();
-      return { authority: e.dataset.gridAuthority, cols: Number(e.dataset.sharedCols), rows: Number(e.dataset.sharedRows), rightGap: bar.left - screen.right, bottomGap: e.getBoundingClientRect().bottom - screen.bottom };
+      return { authority: e.dataset.gridAuthority, font: e.dataset.fittedFontSize, cols: Number(e.dataset.sharedCols), rows: Number(e.dataset.sharedRows), rightGap: bar.left - screen.right, bottomGap: e.getBoundingClientRect().bottom - screen.bottom };
     });
     const before = await measure();
     await panel.screenshot({ path: `${output}/${width}-before.png` });
@@ -31,11 +31,12 @@ try {
     await page.waitForTimeout(200);
     await panel.screenshot({ path: `${output}/${width}-history.png` });
     for (let i = 0; i < 12; i++) { await page.mouse.wheel(0, 100); await page.waitForTimeout(80); }
-    await page.waitForTimeout(400);
+    await page.waitForTimeout(5000);
     const after = await measure();
     await panel.screenshot({ path: `${output}/${width}-returned.png` });
     results.push({ width, height, health, before, after, errors });
     assert.equal(before.authority, 'server');
+    assert(before.bottomGap >= 0 && before.rightGap >= 0);
     assert.equal(after.rows, before.rows);
     assert.equal(after.cols, before.cols);
     assert(after.bottomGap >= 0 && after.rightGap >= 0);
