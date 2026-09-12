@@ -647,6 +647,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
     let resizingForSharedGrid = false;
     let sharedGrid: TerminalGrid | null = mobileBrowser ? null : (myTabId ? getSharedTerminalGrid(myTabId) : null);
     let pendingFitFrame: number | null = null;
+    let pendingWidthFillFrame: number | null = null;
 
     term.onResize(({ cols, rows }) => {
       if (cols < 2 || rows < 1) return; // ignore zero-size (hidden terminal)
@@ -716,20 +717,6 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
 
         term.resize(targetGrid.cols, targetGrid.rows);
         if (useCappedViewportGrid) {
-          // xterm rounds glyph metrics to device pixels, so a mathematically
-          // fitted grid can still leave a strip of unused width or clip its
-          // final column. Match the rendered grid to the area immediately
-          // before the five-pixel terminal scrollbar.
-          const renderedWidth = screen?.getBoundingClientRect().width || 0;
-          const terminalWidth = term.element?.getBoundingClientRect().width || 0;
-          const availableWidth = Math.max(1, terminalWidth - 5);
-          const widthFilled = fillTerminalWidth(term.options.fontSize, term.options.letterSpacing, renderedWidth, availableWidth, targetGrid.cols);
-          if (widthFilled.fontSize !== term.options.fontSize || widthFilled.letterSpacing !== term.options.letterSpacing) {
-            const pixelCorrection = widthFilled.fontSize / term.options.fontSize;
-            scaleOptions = { ...scaleOptions, fontSize: widthFilled.fontSize, letterSpacing: widthFilled.letterSpacing, scale: scaleOptions.scale * pixelCorrection };
-            term.options.fontSize = widthFilled.fontSize;
-            term.options.letterSpacing = widthFilled.letterSpacing;
-          }
           // Width fitting above may reduce the font after lineHeight was
           // calculated. Re-measure the final native cell height; otherwise a
           // tall, narrow pane keeps only half its vertical character area.
@@ -769,6 +756,38 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
         sendRef.current(JSON.stringify({ cols: targetGrid.cols, rows: targetGrid.rows }));
         onResizeDimRef.current?.(targetGrid.cols, targetGrid.rows);
         inputViewportFollowedRef.current = false;
+
+        // Option changes are painted by xterm after this call stack. Measure
+        // and correct on subsequent animation frames; a same-frame rectangle
+        // still describes the previous glyph atlas and cannot close the gap.
+        if (useCappedViewportGrid) {
+          if (pendingWidthFillFrame !== null) cancelAnimationFrame(pendingWidthFillFrame);
+          let remainingPasses = 3;
+          const fillRenderedWidth = () => {
+            pendingWidthFillFrame = null;
+            const renderedScreen = term.element?.querySelector<HTMLElement>('.xterm-screen');
+            const renderedWidth = renderedScreen?.getBoundingClientRect().width || 0;
+            const terminalWidth = term.element?.getBoundingClientRect().width || 0;
+            const scrollbarWidth = mobileBrowser ? 0 : 5;
+            const availableWidth = Math.max(1, terminalWidth - scrollbarWidth);
+            const widthError = availableWidth - renderedWidth;
+            if (Math.abs(widthError) <= 0.75 || remainingPasses-- <= 0) return;
+            const oldFontSize = term.options.fontSize || responsiveFontSize;
+            const oldLineHeight = term.options.lineHeight || 1;
+            const widthFilled = fillTerminalWidth(oldFontSize, term.options.letterSpacing || 0, renderedWidth, availableWidth, targetGrid.cols);
+            if (widthFilled.fontSize !== oldFontSize) {
+              // Preserve the already fitted cell height while changing glyph
+              // width so the lower terminal rows do not gain empty space.
+              term.options.lineHeight = Math.max(1, oldLineHeight * oldFontSize / widthFilled.fontSize);
+            }
+            term.options.fontSize = widthFilled.fontSize;
+            term.options.letterSpacing = widthFilled.letterSpacing;
+            term.resize(targetGrid.cols, targetGrid.rows);
+            ref.current?.style.setProperty('--terminal-width-error', `${widthError.toFixed(2)}px`);
+            pendingWidthFillFrame = requestAnimationFrame(fillRenderedWidth);
+          };
+          pendingWidthFillFrame = requestAnimationFrame(fillRenderedWidth);
+        }
       } finally {
         resizingForSharedGrid = false;
       }
@@ -776,6 +795,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
 
     const scheduleFit = () => {
       if (pendingFitFrame !== null) cancelAnimationFrame(pendingFitFrame);
+      if (pendingWidthFillFrame !== null) cancelAnimationFrame(pendingWidthFillFrame);
       pendingFitFrame = requestAnimationFrame(() => {
         pendingFitFrame = null;
         fitWhenVisible();
@@ -856,6 +876,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
 
     return () => {
       if (pendingFitFrame !== null) cancelAnimationFrame(pendingFitFrame);
+      if (pendingWidthFillFrame !== null) cancelAnimationFrame(pendingWidthFillFrame);
       if (outputFrameRef.current !== null) cancelAnimationFrame(outputFrameRef.current);
       outputFrameRef.current = null;
       outputQueueRef.current = [];
