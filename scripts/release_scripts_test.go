@@ -98,6 +98,7 @@ func TestReleaseRuntimePreservesSharedTmuxSessions(t *testing.T) {
 	for _, expected := range []string{
 		"-listen-addr 127.0.0.1:8889",
 		"-environment release-test",
+		"-test-auto-login",
 		"-preserve-terminal-sessions",
 	} {
 		if !strings.Contains(contents, expected) {
