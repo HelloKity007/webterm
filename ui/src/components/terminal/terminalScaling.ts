@@ -13,6 +13,7 @@ export interface TerminalScaleOptions {
 // Give a small-only client a deterministic shared grid. A larger client can
 // still grow this target through the authoritative tmux title announcement.
 export const defaultSharedTerminalGrid: TerminalGrid = { cols: 76, rows: 19 };
+export const wideCompactSharedTerminalGrid: TerminalGrid = { cols: 79, rows: 19 };
 export const mobileSharedTerminalGrid: TerminalGrid = { cols: 69, rows: 21 };
 // The operator's compact displays report up to 2808 CSS pixels, while the
 // roomy four-column display reports 3440. Keep those two observed classes on
@@ -26,12 +27,18 @@ export const smallViewportWidth = 3000;
 // Older output remains reachable through
 // the terminal scrollback buffer.
 export const smallViewportGridLimit: TerminalGrid = { cols: 76, rows: 19 };
+export const wideCompactViewportWidth = 2400;
+
+export function compactDesktopGridForViewport(viewportWidth: number): TerminalGrid {
+  return viewportWidth >= wideCompactViewportWidth ? wideCompactSharedTerminalGrid : smallViewportGridLimit;
+}
 
 export function sharedGridForViewport(announced: TerminalGrid, viewportWidth: number): TerminalGrid {
   if (viewportWidth >= smallViewportWidth) return announced;
+  const limit = compactDesktopGridForViewport(viewportWidth);
   return {
-    cols: Math.min(smallViewportGridLimit.cols, Math.max(announced.cols, defaultSharedTerminalGrid.cols)),
-    rows: Math.min(smallViewportGridLimit.rows, Math.max(announced.rows, defaultSharedTerminalGrid.rows)),
+    cols: Math.min(limit.cols, Math.max(announced.cols, limit.cols)),
+    rows: Math.min(limit.rows, Math.max(announced.rows, limit.rows)),
   };
 }
 
@@ -66,12 +73,6 @@ export function constrainTerminalHeight(fontSize: number, lineHeight: number, re
     return { fontSize, lineHeight: round(correctedLineHeight, 4) };
   }
   return { fontSize: round(fontSize * correction, 4), lineHeight: 1 };
-}
-
-export function letterSpacingToFillTerminal(current: number, renderedWidth: number, availableWidth: number, cols: number): number {
-  if (!Number.isFinite(current) || !Number.isFinite(renderedWidth) || !Number.isFinite(availableWidth) ||
-      !Number.isInteger(cols) || renderedWidth <= 0 || availableWidth <= renderedWidth || cols < 1) return current;
-  return round(current + (availableWidth - renderedWidth) / cols);
 }
 
 export function calculateTerminalScale(
