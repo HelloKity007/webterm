@@ -50,6 +50,7 @@ import {
   shouldAutoFocusTerminal,
 } from './terminalInteractions';
 import { calculateTerminalScale, constrainTerminalHeight, defaultSharedTerminalGrid, mobileSharedTerminalGrid, parseSharedTerminalGridTitle, sharedGridForViewport, smallViewportWidth, type TerminalGrid } from './terminalScaling';
+import { fitTerminalColumns } from './terminalWidth';
 import { getSharedTerminalGrid, setSharedTerminalGrid } from './terminalGridCache';
 import { isMobileBrowserEnvironment } from '../layout/mobileLayout';
 
@@ -647,6 +648,8 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
     let resizingForSharedGrid = false;
     let sharedGrid: TerminalGrid | null = mobileBrowser ? null : (myTabId ? getSharedTerminalGrid(myTabId) : null);
     let pendingFitFrame: number | null = null;
+    let widthFitFrame: number | null = null;
+    let localWidthSettled = false;
 
     term.onResize(({ cols, rows }) => {
       if (cols < 2 || rows < 1) return; // ignore zero-size (hidden terminal)
@@ -758,6 +761,33 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
         onResizeDimRef.current?.(targetGrid.cols, targetGrid.rows);
         inputViewportFollowedRef.current = false;
 
+        if (!mobileBrowser) {
+          if (widthFitFrame !== null) cancelAnimationFrame(widthFitFrame);
+          // Wait for xterm's render frame before measuring the final glyphs.
+          widthFitFrame = requestAnimationFrame(() => {
+            widthFitFrame = requestAnimationFrame(() => {
+              widthFitFrame = null;
+              const screenRect = screen?.getBoundingClientRect();
+              const scrollbar = term.element?.querySelector<HTMLElement>('.scrollbar.vertical')?.getBoundingClientRect();
+              if (!screenRect || !scrollbar || !screenRect.width || !scrollbar.width) return;
+              const available = scrollbar.left - screenRect.left;
+              const fit = fitTerminalColumns(available, screenRect.width, term.cols, term.options.letterSpacing || 0, window.devicePixelRatio);
+              if (!fit) return;
+              resizingForSharedGrid = true;
+              try {
+                term.options.letterSpacing = fit.letterSpacing;
+                term.resize(fit.cols, targetGrid.rows);
+                sharedGrid = { cols: fit.cols, rows: targetGrid.rows };
+                localWidthSettled = true;
+                if (myTabId) setSharedTerminalGrid(myTabId, sharedGrid);
+                if (ref.current) ref.current.dataset.sharedCols = String(fit.cols);
+                sendRef.current(JSON.stringify(sharedGrid));
+                onResizeDimRef.current?.(fit.cols, targetGrid.rows);
+              } finally { resizingForSharedGrid = false; }
+            });
+          });
+        }
+
       } finally {
         resizingForSharedGrid = false;
       }
@@ -765,6 +795,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
 
     const scheduleFit = () => {
       if (pendingFitFrame !== null) cancelAnimationFrame(pendingFitFrame);
+      if (widthFitFrame !== null) cancelAnimationFrame(widthFitFrame);
       pendingFitFrame = requestAnimationFrame(() => {
         pendingFitFrame = null;
         fitWhenVisible();
@@ -774,6 +805,9 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
     const titleDisposable = term.onTitleChange((title) => {
       const announcedGrid = parseSharedTerminalGridTitle(title);
       if (!announcedGrid) return;
+      // This control client publishes its measured local grid. A title from
+      // another display must not undo it and restart a resize feedback loop.
+      if (!mobileBrowser && localWidthSettled) return;
       // The title is authoritative on roomy screens. A dense desktop layout
       // must retain its readable local cap when tmux echoes a grid announced
       // earlier by a larger client; fitWhenVisible sends the capped complete
@@ -845,6 +879,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
 
     return () => {
       if (pendingFitFrame !== null) cancelAnimationFrame(pendingFitFrame);
+      if (widthFitFrame !== null) cancelAnimationFrame(widthFitFrame);
       if (outputFrameRef.current !== null) cancelAnimationFrame(outputFrameRef.current);
       outputFrameRef.current = null;
       outputQueueRef.current = [];
