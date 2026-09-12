@@ -4,7 +4,7 @@ export interface ResponsivePanelGrid {
   templateAreas: string;
 }
 
-export const compactDesktopMaxPanelColumns = 3;
+export const compactDesktopMaxPanelColumns = 2;
 export const compactDesktopVisiblePanelRows = 2;
 
 export function shouldUseCompactDesktopGrid(mobile: boolean, viewportWidth: number, breakpoint: number): boolean {

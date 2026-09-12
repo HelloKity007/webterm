@@ -18,6 +18,20 @@ try {
     await page.goto('https://192.168.11.87:9444/', { waitUntil: 'networkidle' });
     const panel = page.locator('.terminal-surface:visible').nth(5);
     await panel.waitFor();
+    const layout = await page.locator('.terminal-grid').evaluate(e => {
+      const bounds = e.getBoundingClientRect();
+      return { columns: Number(e.dataset.panelColumns), rows: Number(e.dataset.panelRows),
+        scrollHeight: e.scrollHeight, clientHeight: e.clientHeight,
+        firstScreenPanels: Array.from(e.querySelectorAll('.terminal-surface')).filter(p => {
+          const r = p.getBoundingClientRect();
+          return r.width > 0 && r.top >= bounds.top && r.bottom <= bounds.bottom + 1;
+        }).length };
+    });
+    assert.equal(layout.columns, width < 3000 ? 2 : 4);
+    assert.equal(layout.firstScreenPanels, width < 3000 ? 4 : 8);
+    if (width < 3000) assert(layout.scrollHeight > layout.clientHeight);
+    await page.screenshot({ path: `${output}/${width}-layout.png` });
+    await panel.scrollIntoViewIfNeeded();
     await page.waitForTimeout(5000);
     const measure = () => panel.evaluate(e => {
       const screen = e.querySelector('.xterm-screen').getBoundingClientRect();
@@ -34,7 +48,7 @@ try {
     await page.waitForTimeout(5000);
     const after = await measure();
     await panel.screenshot({ path: `${output}/${width}-returned.png` });
-    results.push({ width, height, health, before, after, errors });
+    results.push({ width, height, health, layout, before, after, errors });
     assert.equal(before.authority, 'server');
     assert(before.bottomGap >= 0 && before.rightGap >= 0);
     assert.equal(after.rows, before.rows);
