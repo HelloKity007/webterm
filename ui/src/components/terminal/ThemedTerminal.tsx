@@ -502,6 +502,12 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
         terminalModeRef.current = terminalModeAfterPrivateControl(terminalModeRef.current, params, final === 'h');
         if (params.some(value => typeof value === 'number' && [47, 1047, 1049].includes(value))) {
           alternateScreenRef.current = final === 'h';
+          if (final === 'h' && !mobileBrowser && announcedGrid) {
+            resizingForSharedGrid = true;
+            term.resize(announcedGrid.cols, announcedGrid.rows);
+            resizingForSharedGrid = false;
+            scheduleFit();
+          }
         }
         return false; // Continue xterm's own buffer switch.
       }),
@@ -650,6 +656,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
     let pendingFitFrame: number | null = null;
     let widthFitFrame: number | null = null;
     let localWidthSettled = false;
+    let announcedGrid: TerminalGrid | null = null;
 
     term.onResize(({ cols, rows }) => {
       if (cols < 2 || rows < 1) return; // ignore zero-size (hidden terminal)
@@ -689,6 +696,38 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
         // bottom rows (including the CLI composer). Only measure here.
         const nativeGrid = fitAddon.proposeDimensions();
         if (!nativeGrid) return;
+        const fullscreenCLI = !mobileBrowser && (term.buffer.active.type === 'alternate' || terminalModeRef.current === 'cli');
+        if (fullscreenCLI && announcedGrid) {
+          // Raw ANSI addresses the server grid, including the footer rows.
+          // Reducing local rows clamps every footer cursor movement to the
+          // last local row, destroying the composer after a history redraw.
+          const exactGrid = announcedGrid;
+          term.options.letterSpacing = 0;
+          term.options.lineHeight = 1;
+          term.resize(exactGrid.cols, exactGrid.rows);
+          sharedGrid = exactGrid;
+          ref.current.dataset.sharedCols = String(exactGrid.cols);
+          ref.current.dataset.sharedRows = String(exactGrid.rows);
+          ref.current.dataset.gridAuthority = 'server';
+          if (myTabId) setSharedTerminalGrid(myTabId, exactGrid);
+          if (widthFitFrame !== null) cancelAnimationFrame(widthFitFrame);
+          let attempts = 0;
+          const fitExactGrid = () => {
+            widthFitFrame = requestAnimationFrame(() => {
+              widthFitFrame = null;
+              const rect = term.element?.querySelector('.xterm-screen')?.getBoundingClientRect();
+              const bar = term.element?.querySelector('.scrollbar.vertical')?.getBoundingClientRect();
+              const surface = ref.current?.getBoundingClientRect();
+              if (!rect || !bar || !surface || rect.top >= innerHeight || rect.bottom <= 0 || !rect.width) return;
+              const ratio = Math.min((bar.left - rect.left - 2) / rect.width, surface.height / rect.height);
+              if (ratio >= 1 || ++attempts > 8) return;
+              term.options.fontSize = Math.max(4, (term.options.fontSize || responsiveFontSize) * ratio * 0.99);
+              widthFitFrame = requestAnimationFrame(fitExactGrid);
+            });
+          };
+          widthFitFrame = requestAnimationFrame(fitExactGrid);
+          return;
+        }
         // Raw pane ANSI coordinates must use the server's exact grid, even
         // on a large display with many small split panels.
         const targetGrid = useCappedViewportGrid
@@ -812,8 +851,17 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
     };
 
     const titleDisposable = term.onTitleChange((title) => {
-      const announcedGrid = parseSharedTerminalGridTitle(title);
-      if (!announcedGrid) return;
+      const receivedGrid = parseSharedTerminalGridTitle(title);
+      if (!receivedGrid) return;
+      announcedGrid = receivedGrid;
+      if (!mobileBrowser && (term.buffer.active.type === 'alternate' || terminalModeRef.current === 'cli')) {
+        resizingForSharedGrid = true;
+        term.resize(receivedGrid.cols, receivedGrid.rows);
+        resizingForSharedGrid = false;
+        sharedGrid = receivedGrid;
+        scheduleFit();
+        return;
+      }
       // This control client publishes its measured local grid. A title from
       // another display must not undo it and restart a resize feedback loop.
       if (!mobileBrowser && localWidthSettled) return;
@@ -823,7 +871,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       // grid back to this control client instead of silently restoring tiny
       // glyphs. Mobile uses the same grid for its native input canvas while
       // retaining the separately sized 12px wrapped reader.
-      const nextGrid = mobileBrowser ? mobileSharedTerminalGrid : sharedGridForViewport(announcedGrid, window.innerWidth);
+      const nextGrid = mobileBrowser ? mobileSharedTerminalGrid : sharedGridForViewport(receivedGrid, window.innerWidth);
       if (sharedGrid?.cols === nextGrid.cols && sharedGrid.rows === nextGrid.rows) return;
       sharedGrid = nextGrid;
       // Resize during the OSC callback, before parsing the following snapshot.
