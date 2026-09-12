@@ -15,10 +15,10 @@ describe('parseSharedTerminalGridTitle', () => {
 
 describe('calculateTerminalScale', () => {
   it('provides a deterministic small-viewport baseline', () => {
-    expect(defaultSharedTerminalGrid).toEqual({ cols: 80, rows: 24 });
-    expect(sharedGridForViewport({ cols: 40, rows: 14 }, 1193)).toEqual({ cols: 80, rows: 24 });
-    expect(sharedGridForViewport({ cols: 350, rows: 62 }, 1193)).toEqual({ cols: 80, rows: 30 });
-    expect(sharedGridForViewport({ cols: 40, rows: 14 }, 1920)).toEqual({ cols: 80, rows: 24 });
+    expect(defaultSharedTerminalGrid).toEqual({ cols: 54, rows: 24 });
+    expect(sharedGridForViewport({ cols: 40, rows: 14 }, 1193)).toEqual({ cols: 54, rows: 24 });
+    expect(sharedGridForViewport({ cols: 350, rows: 62 }, 1193)).toEqual({ cols: 54, rows: 24 });
+    expect(sharedGridForViewport({ cols: 40, rows: 14 }, 1920)).toEqual({ cols: 54, rows: 24 });
     expect(sharedGridForViewport({ cols: 100, rows: 30 }, 2560)).toEqual({ cols: 100, rows: 30 });
   });
   it('keeps the configured font for a native-size shared grid', () => {

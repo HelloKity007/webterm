@@ -20,7 +20,16 @@ export default function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab, onR
   const [dragOverAdd, setDragOverAdd] = useState(false);
   const [editingTabID, setEditingTabID] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState('');
+  const [coarsePointer, setCoarsePointer] = useState(() => window.matchMedia?.('(pointer: coarse)').matches ?? false);
   const barRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const query = window.matchMedia?.('(pointer: coarse)');
+    if (!query) return;
+    const update = () => setCoarsePointer(query.matches);
+    update();
+    query.addEventListener?.('change', update);
+    return () => query.removeEventListener?.('change', update);
+  }, []);
   useEffect(() => {
     if (window.matchMedia?.('(max-width: 700px)').matches) {
       barRef.current?.querySelector<HTMLElement>('[data-active="true"]')?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
@@ -38,7 +47,7 @@ export default function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab, onR
   };
 
   return (
-    <div ref={barRef} className="terminal-tabbar" style={{ display: 'flex', background: colors.bg, height: 36, alignItems: 'center', padding: '0 6px', gap: 2, flexShrink: 0, overflow: 'visible', borderBottom: '1px solid var(--c-border)' }}>
+    <div ref={barRef} className="terminal-tabbar" style={{ display: 'flex', background: colors.bg, height: 36, alignItems: 'center', padding: '0 6px', gap: 2, flexShrink: 0, overflowX: 'auto', overflowY: 'hidden', touchAction: 'pan-x', scrollbarWidth: 'none', borderBottom: '1px solid var(--c-border)' }}>
       {filtered.map((tab, idx) => (
         <React.Fragment key={tab.id}>
           {idx > 0 && (
@@ -48,8 +57,9 @@ export default function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab, onR
             }} />
           )}
           <div
+            data-terminal-tab="true"
             data-active={activeTabId === tab.id}
-            draggable={editingTabID !== tab.id}
+            draggable={!coarsePointer && editingTabID !== tab.id}
             onDragStart={(e) => {
               e.dataTransfer.setData('text/plain', JSON.stringify({ id: tab.id, title: tab.title, type: tab.type, connId: tab.connId }));
               e.dataTransfer.effectAllowed = 'move';
@@ -92,6 +102,7 @@ export default function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab, onR
       ))}
       {/* Flex spacer & drop zone for receiving tabs from other panes */}
       <div
+        className="terminal-tabbar-spacer"
         onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDragOverAdd(true); }}
         onDragLeave={() => setDragOverAdd(false)}
         onDrop={(e) => {

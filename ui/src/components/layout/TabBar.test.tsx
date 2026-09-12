@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import TabBar from './TabBar';
 
 describe('TabBar', () => {
-  afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+  afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
   it('renders a pane new-tab button when requested', () => {
     const onAddTab = vi.fn();
     render(<TabBar
@@ -47,5 +47,18 @@ describe('TabBar', () => {
     fireEvent.click(close);
     fireEvent.click(close);
     expect(onCloseTab).toHaveBeenCalledTimes(1);
+  });
+
+  it('disables native tab dragging on touch devices so the bar can pan horizontally', () => {
+    vi.stubGlobal('matchMedia', vi.fn().mockReturnValue({
+      matches: true,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }));
+    render(<TabBar tabs={[{ id: 'ssh-1', type: 'ssh', title: '本机', connId: 1 }]} activeTabId="ssh-1" onSelectTab={() => {}} onCloseTab={() => {}} />);
+
+    const tab = screen.getByText('1: 本机');
+    expect(tab.getAttribute('draggable')).toBe('false');
+    expect(tab.getAttribute('data-terminal-tab')).toBe('true');
   });
 });

@@ -62,8 +62,11 @@ try {
   await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
   await page.waitForTimeout(250);
   assert(await bar.evaluate(e => e.scrollLeft > 0));
-  await bar.locator('[draggable]').filter({ hasText: /^12:/ }).tap();
-  assert.match(await bar.locator('[data-active="true"]').innerText(), /^12:/);
+  const terminalTabs = bar.locator('[data-terminal-tab]');
+  const finalTab = terminalTabs.last();
+  const finalLabel = await finalTab.innerText();
+  await finalTab.tap();
+  assert.equal(await bar.locator('[data-active="true"]').innerText(), finalLabel);
   check('MOB-01: native touch swipe and offscreen tab selection', true);
   await page.screenshot({ path: resolve(output, 'mobile-tabs.png') });
   await page.getByRole('button', { name: '终端输入', exact: true }).click();

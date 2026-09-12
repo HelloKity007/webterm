@@ -99,8 +99,9 @@ select:focus, input:focus, textarea:focus, button:focus-visible, [role="button"]
 .sidebar-search .header-search-shell { width: 100% !important; }
 .main-area-shell { background: #1f211f; }
 .workspace-tabs, .terminal-tabbar { background: #b9dcb9 !important; border-bottom-color: #80ad82 !important; }
-.workspace-tabs [role="tab"], .terminal-tabbar > div[draggable="true"] { transition: background-color .18s ease, color .18s ease; }
-.workspace-tabs [role="tab"][aria-selected="true"], .terminal-tabbar > div[draggable="true"]:has(+ span) { box-shadow: inset 0 -2px var(--c-accent); }
+.terminal-tabbar::-webkit-scrollbar { display: none; }
+.workspace-tabs [role="tab"], .terminal-tabbar > [data-terminal-tab] { transition: background-color .18s ease, color .18s ease; }
+.workspace-tabs [role="tab"][aria-selected="true"], .terminal-tabbar > [data-terminal-tab]:has(+ span) { box-shadow: inset 0 -2px var(--c-accent); }
 .workspace-tabs button, .terminal-tabbar button { min-width: 28px; min-height: 28px; }
 .terminal-pane-shell { background: #1f211f; border: 1px solid #80ad82; border-radius: 0; overflow: hidden; }
 .terminal-grid { gap: 2px !important; background: #80ad82 !important; }
@@ -120,8 +121,8 @@ select:focus, input:focus, textarea:focus, button:focus-visible, [role="button"]
 .app-shell[data-mobile-viewport="true"] { position: fixed; left: 0; right: 0; top: var(--mobile-viewport-top, 0px); height: var(--mobile-viewport-height, 100dvh) !important; overflow: hidden; }
 .app-shell[data-mobile-viewport="true"] > .app-body { min-height: 0; }
 .app-shell[data-mobile-viewport="true"] { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
-.terminal-tabbar > div[draggable="true"] { color: #3d5b42 !important; }
-.terminal-tabbar > div[draggable="true"]:hover { background: #a9d2aa !important; color: #203523 !important; }
+.terminal-tabbar > [data-terminal-tab] { color: #3d5b42 !important; }
+.terminal-tabbar > [data-terminal-tab]:hover { background: #a9d2aa !important; color: #203523 !important; }
 .workspace-tabs [role="tab"]:hover { background: #a9d2aa !important; color: #203523 !important; }
 .workspace-tabs button, .terminal-tabbar button { background: #d9edd9 !important; border-color: #80ad82 !important; color: #3d5b42 !important; }
 .workspace-tabs button:hover, .terminal-tabbar button:hover { background: #8fbd91 !important; color: #203523 !important; }
@@ -133,8 +134,8 @@ select:focus, input:focus, textarea:focus, button:focus-visible, [role="button"]
 
 @media (max-width: 700px) {
   .terminal-tabbar { min-width: 0; max-width: 100%; overflow-x: auto !important; overflow-y: hidden !important; touch-action: pan-x; overscroll-behavior-x: contain; scrollbar-width: none; }
-  .terminal-tabbar::-webkit-scrollbar { display: none; }
-  .terminal-tabbar > div[draggable] { flex-shrink: 0; }
+  .terminal-tabbar > [data-terminal-tab] { flex-shrink: 0; -webkit-user-drag: none; }
+  .terminal-tabbar > .terminal-tabbar-spacer { flex: 0 0 4px !important; }
   .mobile-panel-switcher { display: flex; flex: 0 0 38px; align-items: center; gap: 6px; padding: 4px 8px; overflow-x: auto; background: #b9dcb9; border-bottom: 1px solid #80ad82; }
   .mobile-panel-switcher button { flex: 0 0 32px; height: 30px; padding: 0; border: 1px solid #80ad82; border-radius: 5px; background: #d9edd9; color: #3d5b42; font: 600 13px/1 sans-serif; }
   .mobile-panel-switcher button[aria-current="page"] { background: #4f8f55; color: #fff; border-color: #3d7542; }
