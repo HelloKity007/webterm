@@ -12,16 +12,17 @@ export interface TerminalScaleOptions {
 
 // Give a small-only client a deterministic shared grid. A larger client can
 // still grow this target through the authoritative tmux title announcement.
-export const defaultSharedTerminalGrid: TerminalGrid = { cols: 69, rows: 29 };
+export const defaultSharedTerminalGrid: TerminalGrid = { cols: 69, rows: 23 };
 // A 1920-wide desktop is the small side when paired with a 3440px authority.
 // Narrower screens use the deterministic shared-grid baseline and adaptive
 // glyph sizing.
 export const smallViewportWidth = 2400;
 // The measured eight-pane 1920x1080 layout previously squeezed a 104-column
 // authority into each pane. 69 columns makes the glyphs about 104/69 = 1.51
-// times larger while preserving all 29 rows and fitting the canvas inside the
-// panel instead of hiding it beyond the right edge.
-export const smallViewportGridLimit: TerminalGrid = { cols: 69, rows: 29 };
+// times larger. With two panel rows per viewport, 23 terminal rows balance the
+// available width and height so content reaches the right side without hiding
+// the final row beyond the panel edge.
+export const smallViewportGridLimit: TerminalGrid = { cols: 69, rows: 23 };
 
 export function sharedGridForViewport(announced: TerminalGrid, viewportWidth: number): TerminalGrid {
   if (viewportWidth >= smallViewportWidth) return announced;
