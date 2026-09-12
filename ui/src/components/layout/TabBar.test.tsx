@@ -2,6 +2,7 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import TabBar from './TabBar';
+import { horizontalTabScrollTarget } from './tabBarScroll';
 
 describe('TabBar', () => {
   afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
@@ -60,5 +61,13 @@ describe('TabBar', () => {
     const tab = screen.getByText('1: 本机');
     expect(tab.getAttribute('draggable')).toBe('false');
     expect(tab.getAttribute('data-terminal-tab')).toBe('true');
+  });
+
+  it('maps a mouse wheel over overflowing panel names to horizontal movement', () => {
+    expect(horizontalTabScrollTarget(0, 300, 900, 0, 100, 0)).toBe(100);
+    expect(horizontalTabScrollTarget(590, 300, 900, 0, 100, 0)).toBe(600);
+    expect(horizontalTabScrollTarget(600, 300, 900, 0, 100, 0)).toBeNull();
+    expect(horizontalTabScrollTarget(0, 300, 900, 0, -100, 0)).toBeNull();
+    expect(horizontalTabScrollTarget(200, 300, 900, 2, 0, 1)).toBe(248);
   });
 });

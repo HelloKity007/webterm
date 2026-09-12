@@ -13,7 +13,6 @@ export interface TerminalScaleOptions {
 // Give a small-only client a deterministic shared grid. A larger client can
 // still grow this target through the authoritative tmux title announcement.
 export const defaultSharedTerminalGrid: TerminalGrid = { cols: 69, rows: 29 };
-export const compactThreeRowSharedTerminalGrid: TerminalGrid = { cols: 69, rows: 18 };
 // A 1920-wide desktop is the small side when paired with a 3440px authority.
 // Narrower screens use the deterministic shared-grid baseline and adaptive
 // glyph sizing.
@@ -24,16 +23,11 @@ export const smallViewportWidth = 2400;
 // panel instead of hiding it beyond the right edge.
 export const smallViewportGridLimit: TerminalGrid = { cols: 69, rows: 29 };
 
-export function sharedTerminalGridForPanelCount(panelCount: number): TerminalGrid {
-  return panelCount > 6 ? compactThreeRowSharedTerminalGrid : defaultSharedTerminalGrid;
-}
-
-export function sharedGridForViewport(announced: TerminalGrid, viewportWidth: number, panelCount = 1): TerminalGrid {
+export function sharedGridForViewport(announced: TerminalGrid, viewportWidth: number): TerminalGrid {
   if (viewportWidth >= smallViewportWidth) return announced;
-  const baseline = sharedTerminalGridForPanelCount(panelCount);
   return {
-    cols: Math.min(baseline.cols, Math.max(announced.cols, baseline.cols)),
-    rows: Math.min(baseline.rows, Math.max(announced.rows, baseline.rows)),
+    cols: Math.min(smallViewportGridLimit.cols, Math.max(announced.cols, defaultSharedTerminalGrid.cols)),
+    rows: Math.min(smallViewportGridLimit.rows, Math.max(announced.rows, defaultSharedTerminalGrid.rows)),
   };
 }
 

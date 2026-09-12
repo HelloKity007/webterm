@@ -31,7 +31,7 @@ import {
 } from './workspaceLayout';
 import { isMobileBrowserEnvironment } from './mobileLayout';
 import { smallViewportWidth } from '../terminal/terminalScaling';
-import { buildCompactPanelGrid, shouldUseCompactDesktopGrid } from './responsivePanelGrid';
+import { buildCompactPanelGrid, compactPanelRowTemplate, shouldUseCompactDesktopGrid } from './responsivePanelGrid';
 
 // Grid cell — computed from the tree
 interface GridCell {
@@ -454,8 +454,8 @@ function doEightPaneSplit(targetID: string, activeTab: Tab): boolean {
 }
 
 // Leaf pane component — always mounted, just hidden when not in layout
-function LeafPane({ nodeId, onActiveSshChange, isInSplit, workspaceIndex, panelCount }: {
-  nodeId: string; onActiveSshChange?: (connId: number | null, tabId: string | null) => void; isInSplit: boolean; workspaceIndex: number; panelCount: number;
+function LeafPane({ nodeId, onActiveSshChange, isInSplit, workspaceIndex }: {
+  nodeId: string; onActiveSshChange?: (connId: number | null, tabId: string | null) => void; isInSplit: boolean; workspaceIndex: number;
 }) {
   const [tabs, setTabs] = useState<Tab[]>(() => {
     return paneTabsCache.get(nodeId) || [];
@@ -643,7 +643,7 @@ function LeafPane({ nodeId, onActiveSshChange, isInSplit, workspaceIndex, panelC
           <div key={tab.id} style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
             {tab.type === 'ssh' && tab.connId && (
               <Suspense fallback={<div style={{ padding: 12, fontSize: font.md, color: colors.textMuted }}>Loading…</div>}>
-                <TerminalTab connId={tab.connId} myTabId={tab.id} workspaceIndex={workspaceIndex} panelNumber={tab.labelNumber ?? tabs.findIndex((candidate) => candidate.id === tab.id) + 1} panelCount={panelCount} extraMenuItems={[
+                <TerminalTab connId={tab.connId} myTabId={tab.id} workspaceIndex={workspaceIndex} panelNumber={tab.labelNumber ?? tabs.findIndex((candidate) => candidate.id === tab.id) + 1} extraMenuItems={[
                   { label: t('term_split_h'), action: () => handleSplit('horizontal') },
                   { label: t('term_split_v'), action: () => handleSplit('vertical') },
                   { label: t('term_split_quad'), action: handleQuadSplit },
@@ -703,6 +703,7 @@ function GridContainer({ onActiveSshChange, workspaceIndex }: { onActiveSshChang
   const gridTemplateAreas = compactGrid?.templateAreas || grid.map((row) => `"${row.join(' ')}"`).join(' ');
   const displayColumns = compactGrid?.columns || cols;
   const displayRows = compactGrid?.rows || rows;
+  const compactScrollable = !!compactGrid && displayRows > 2;
 
   return (
     <div className={mobile ? 'terminal-mobile-shell' : undefined} style={{ flex: 1, minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
@@ -714,12 +715,13 @@ function GridContainer({ onActiveSshChange, workspaceIndex }: { onActiveSshChang
           ))}
         </nav>
       )}
-      <div className={mobile ? 'terminal-grid mobile-single-panel-grid' : 'terminal-grid'} style={{
+      <div className={mobile ? 'terminal-grid mobile-single-panel-grid' : 'terminal-grid'} data-panel-columns={displayColumns} data-panel-rows={displayRows} style={{
       display: 'grid',
       gridTemplateColumns: mobile ? '1fr' : `repeat(${displayColumns}, 1fr)`,
-      gridTemplateRows: mobile ? '1fr' : `repeat(${displayRows}, 1fr)`,
+      gridTemplateRows: mobile ? '1fr' : compactGrid ? compactPanelRowTemplate(displayRows) : `repeat(${displayRows}, 1fr)`,
       gridTemplateAreas: mobile ? `"${effectiveMobilePaneId}"` : gridTemplateAreas,
-      flex: 1, overflow: 'hidden', minWidth: 0, minHeight: 0,
+      flex: 1, overflowX: 'hidden', overflowY: compactScrollable ? 'auto' : 'hidden', minWidth: 0, minHeight: 0,
+      alignContent: 'start', overscrollBehaviorY: 'contain', scrollbarWidth: 'thin', scrollbarColor: 'rgba(143, 189, 145, .5) transparent',
       gap: 1, background: colors.border,
     }}>
       {paneIds.map((id) => {
@@ -730,7 +732,7 @@ function GridContainer({ onActiveSshChange, workspaceIndex }: { onActiveSshChang
             display: cell && (!mobile || id === effectiveMobilePaneId) ? 'flex' : 'none',
             overflow: 'hidden',
           }}>
-            <LeafPane key={`${id}-${layoutRestoreVersion}`} nodeId={id} onActiveSshChange={onActiveSshChange} isInSplit={isInSplit && cellMap.has(id)} workspaceIndex={workspaceIndex} panelCount={visiblePaneIds.length} />
+            <LeafPane key={`${id}-${layoutRestoreVersion}`} nodeId={id} onActiveSshChange={onActiveSshChange} isInSplit={isInSplit && cellMap.has(id)} workspaceIndex={workspaceIndex} />
           </div>
         );
       })}

@@ -3,6 +3,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import type { Tab } from '../../store/layout';
 import Icon from '../common/Icon';
 import { colors, font } from '../../theme/tokens';
+import { horizontalTabScrollTarget } from './tabBarScroll';
 
 interface Props {
   tabs: Tab[];
@@ -29,6 +30,18 @@ export default function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab, onR
     update();
     query.addEventListener?.('change', update);
     return () => query.removeEventListener?.('change', update);
+  }, []);
+  useEffect(() => {
+    const bar = barRef.current;
+    if (!bar) return;
+    const handleWheel = (event: WheelEvent) => {
+      const target = horizontalTabScrollTarget(bar.scrollLeft, bar.clientWidth, bar.scrollWidth, event.deltaX, event.deltaY, event.deltaMode);
+      if (target === null) return;
+      event.preventDefault();
+      bar.scrollLeft = target;
+    };
+    bar.addEventListener('wheel', handleWheel, { passive: false });
+    return () => bar.removeEventListener('wheel', handleWheel);
   }, []);
   useEffect(() => {
     if (window.matchMedia?.('(max-width: 700px)').matches) {

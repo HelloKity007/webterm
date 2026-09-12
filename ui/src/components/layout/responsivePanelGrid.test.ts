@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildCompactPanelGrid, shouldUseCompactDesktopGrid } from './responsivePanelGrid';
+import { buildCompactPanelGrid, compactPanelRowTemplate, shouldUseCompactDesktopGrid } from './responsivePanelGrid';
 
 describe('responsivePanelGrid', () => {
   it('reflows eight panes into at most three columns on a compact desktop', () => {
@@ -15,5 +15,10 @@ describe('responsivePanelGrid', () => {
     expect(shouldUseCompactDesktopGrid(false, 1920, 2400)).toBe(true);
     expect(shouldUseCompactDesktopGrid(false, 2400, 2400)).toBe(false);
     expect(shouldUseCompactDesktopGrid(true, 390, 2400)).toBe(false);
+  });
+
+  it('shows at most two panel rows and lets further rows overflow vertically', () => {
+    expect(compactPanelRowTemplate(2)).toBe('repeat(2, minmax(0, 1fr))');
+    expect(compactPanelRowTemplate(3)).toBe('repeat(3, calc(50% - 1px))');
   });
 });

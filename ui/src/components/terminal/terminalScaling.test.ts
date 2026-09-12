@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { calculateTerminalScale, compactThreeRowSharedTerminalGrid, constrainTerminalHeight, defaultSharedTerminalGrid, parseSharedTerminalGridTitle, sharedGridForViewport, sharedTerminalGridForPanelCount } from './terminalScaling';
+import { calculateTerminalScale, constrainTerminalHeight, defaultSharedTerminalGrid, parseSharedTerminalGridTitle, sharedGridForViewport } from './terminalScaling';
 
 describe('parseSharedTerminalGridTitle', () => {
   it('converts the tmux content height to the complete client height', () => {
@@ -19,9 +19,7 @@ describe('calculateTerminalScale', () => {
     expect(sharedGridForViewport({ cols: 40, rows: 14 }, 1193)).toEqual({ cols: 69, rows: 29 });
     expect(sharedGridForViewport({ cols: 350, rows: 62 }, 1193)).toEqual({ cols: 69, rows: 29 });
     expect(sharedGridForViewport({ cols: 40, rows: 14 }, 1920)).toEqual({ cols: 69, rows: 29 });
-    expect(compactThreeRowSharedTerminalGrid).toEqual({ cols: 69, rows: 18 });
-    expect(sharedTerminalGridForPanelCount(8)).toEqual({ cols: 69, rows: 18 });
-    expect(sharedGridForViewport({ cols: 104, rows: 29 }, 1920, 8)).toEqual({ cols: 69, rows: 18 });
+    expect(sharedGridForViewport({ cols: 104, rows: 29 }, 1920)).toEqual({ cols: 69, rows: 29 });
     expect(sharedGridForViewport({ cols: 100, rows: 30 }, 2560)).toEqual({ cols: 100, rows: 30 });
   });
   it('keeps the configured font for a native-size shared grid', () => {

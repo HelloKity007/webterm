@@ -5,6 +5,7 @@ export interface ResponsivePanelGrid {
 }
 
 export const compactDesktopMaxPanelColumns = 3;
+export const compactDesktopVisiblePanelRows = 2;
 
 export function shouldUseCompactDesktopGrid(mobile: boolean, viewportWidth: number, breakpoint: number): boolean {
   return !mobile && viewportWidth < breakpoint;
@@ -22,4 +23,10 @@ export function buildCompactPanelGrid(paneIDs: string[], maxColumns = compactDes
     rows,
     templateAreas: areas.map((row) => `"${row.join(' ')}"`).join(' '),
   };
+}
+
+export function compactPanelRowTemplate(rowCount: number, rowGap = 2): string {
+  if (rowCount <= compactDesktopVisiblePanelRows) return `repeat(${Math.max(1, rowCount)}, minmax(0, 1fr))`;
+  const gapShare = rowGap * (compactDesktopVisiblePanelRows - 1) / compactDesktopVisiblePanelRows;
+  return `repeat(${rowCount}, calc(${100 / compactDesktopVisiblePanelRows}% - ${gapShare}px))`;
 }
