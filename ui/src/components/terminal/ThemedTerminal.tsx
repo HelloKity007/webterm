@@ -1098,7 +1098,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
 
   return (
     <div className="terminal-root" style={{ position: 'relative', flex: 1, display: 'flex', minWidth: 0, minHeight: 0, overflow: 'hidden', background: getTheme(themeName || 'XTerminal Green').background }}>
-      <div ref={ref} className="terminal-surface" style={{ flex: 1, minWidth: 0, minHeight: 0, overflow: 'hidden', padding: '0 6px', background: getTheme(themeName || 'XTerminal Green').background }}
+      <div ref={ref} className="terminal-surface" style={{ flex: 1, minWidth: 0, minHeight: 0, overflow: 'hidden', padding: '0 0 0 6px', background: getTheme(themeName || 'XTerminal Green').background }}
         onMouseDownCapture={handleSurfaceMouseDown}
         onMouseMoveCapture={handleSurfaceMouseMove}
         onMouseUpCapture={handleSurfaceMouseUp}

@@ -35,9 +35,14 @@ export default function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab, onR
     const bar = barRef.current;
     if (!bar) return;
     const handleWheel = (event: WheelEvent) => {
+      // An overflowing name bar owns wheel gestures while the pointer is over
+      // it. Consume the event even at either horizontal boundary so it cannot
+      // scroll the compact panel page at the same time.
+      if (bar.scrollWidth <= bar.clientWidth) return;
+      event.preventDefault();
+      event.stopPropagation();
       const target = horizontalTabScrollTarget(bar.scrollLeft, bar.clientWidth, bar.scrollWidth, event.deltaX, event.deltaY, event.deltaMode);
       if (target === null) return;
-      event.preventDefault();
       bar.scrollLeft = target;
     };
     bar.addEventListener('wheel', handleWheel, { passive: false });

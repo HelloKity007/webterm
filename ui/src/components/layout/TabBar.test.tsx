@@ -70,4 +70,25 @@ describe('TabBar', () => {
     expect(horizontalTabScrollTarget(0, 300, 900, 0, -100, 0)).toBeNull();
     expect(horizontalTabScrollTarget(200, 300, 900, 2, 0, 1)).toBe(248);
   });
+
+  it('keeps an overflowing name-bar wheel gesture out of the panel page', () => {
+    const onPageWheel = vi.fn();
+    const { container } = render(
+      <div onWheel={onPageWheel}>
+        <TabBar tabs={[{ id: 'ssh-1', type: 'ssh', title: '本机', connId: 1 }]} activeTabId="ssh-1" onSelectTab={() => {}} onCloseTab={() => {}} />
+      </div>,
+    );
+    const bar = container.querySelector<HTMLElement>('.terminal-tabbar')!;
+    Object.defineProperties(bar, {
+      clientWidth: { configurable: true, value: 300 },
+      scrollWidth: { configurable: true, value: 900 },
+      scrollLeft: { configurable: true, writable: true, value: 0 },
+    });
+    const wheel = new WheelEvent('wheel', { bubbles: true, cancelable: true, deltaY: 100 });
+    bar.dispatchEvent(wheel);
+
+    expect(bar.scrollLeft).toBe(100);
+    expect(wheel.defaultPrevented).toBe(true);
+    expect(onPageWheel).not.toHaveBeenCalled();
+  });
 });

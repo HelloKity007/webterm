@@ -82,7 +82,7 @@ try {
   assert(inputBounds.screen.width <= inputBounds.panel.width + 1, 'mobile terminal input is clipped horizontally');
   assert(inputBounds.screen.height <= inputBounds.panel.height + 1, 'mobile terminal input is clipped vertically');
   assert.equal(inputBounds.cols, 69);
-  assert.equal(inputBounds.rows, 23);
+  assert.equal(inputBounds.rows, 21);
   await page.getByRole('button', { name: '换行阅读', exact: true }).click();
   assert.equal(await page.locator('.xterm-helper-textarea:focus').count(), 0);
   check('MOB-04/07: reading blurs terminal; native input fits and has no white ruler', inputBounds);
