@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { calculateTerminalScale, compactThreeRowSharedTerminalGrid, constrainTerminalLineHeight, defaultSharedTerminalGrid, parseSharedTerminalGridTitle, sharedGridForViewport, sharedTerminalGridForPanelCount } from './terminalScaling';
+import { calculateTerminalScale, compactThreeRowSharedTerminalGrid, constrainTerminalHeight, defaultSharedTerminalGrid, parseSharedTerminalGridTitle, sharedGridForViewport, sharedTerminalGridForPanelCount } from './terminalScaling';
 
 describe('parseSharedTerminalGridTitle', () => {
   it('converts the tmux content height to the complete client height', () => {
@@ -49,7 +49,8 @@ describe('calculateTerminalScale', () => {
   });
 
   it('removes sub-row pixel overflow from the final rendered screen', () => {
-    expect(constrainTerminalLineHeight(1.4, 306, 301.33)).toBeCloseTo(1.3717, 4);
-    expect(constrainTerminalLineHeight(1.4, 300, 301.33)).toBe(1.4);
+    expect(constrainTerminalHeight(16, 1.4, 306, 301.33)).toEqual({ fontSize: 16, lineHeight: 1.3717 });
+    expect(constrainTerminalHeight(12.4, 1, 306, 301.33)).toEqual({ fontSize: 12.1497, lineHeight: 1 });
+    expect(constrainTerminalHeight(16, 1.4, 300, 301.33)).toEqual({ fontSize: 16, lineHeight: 1.4 });
   });
 });

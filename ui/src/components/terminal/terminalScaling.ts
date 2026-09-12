@@ -57,12 +57,17 @@ function round(value: number, precision = 3): number {
   return Math.round(value * factor) / factor;
 }
 
-export function constrainTerminalLineHeight(lineHeight: number, renderedHeight: number, availableHeight: number): number {
-  if (!Number.isFinite(lineHeight) || !Number.isFinite(renderedHeight) || !Number.isFinite(availableHeight) ||
-      lineHeight <= 0 || renderedHeight <= 0 || availableHeight <= 0 || renderedHeight <= availableHeight) {
-    return lineHeight;
+export function constrainTerminalHeight(fontSize: number, lineHeight: number, renderedHeight: number, availableHeight: number): { fontSize: number; lineHeight: number } {
+  if (!Number.isFinite(fontSize) || !Number.isFinite(lineHeight) || !Number.isFinite(renderedHeight) || !Number.isFinite(availableHeight) ||
+      fontSize <= 0 || lineHeight < 1 || renderedHeight <= 0 || availableHeight <= 0 || renderedHeight <= availableHeight) {
+    return { fontSize, lineHeight };
   }
-  return round(lineHeight * (availableHeight / renderedHeight) * 0.995, 4);
+  const correction = (availableHeight / renderedHeight) * 0.995;
+  const correctedLineHeight = lineHeight * correction;
+  if (correctedLineHeight >= 1) {
+    return { fontSize, lineHeight: round(correctedLineHeight, 4) };
+  }
+  return { fontSize: round(fontSize * correction, 4), lineHeight: 1 };
 }
 
 export function calculateTerminalScale(

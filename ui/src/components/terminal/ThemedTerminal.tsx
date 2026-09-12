@@ -49,7 +49,7 @@ import {
   routeTerminalMouseUp,
   shouldAutoFocusTerminal,
 } from './terminalInteractions';
-import { calculateTerminalScale, constrainTerminalLineHeight, parseSharedTerminalGridTitle, sharedGridForViewport, sharedTerminalGridForPanelCount, smallViewportWidth, type TerminalGrid } from './terminalScaling';
+import { calculateTerminalScale, constrainTerminalHeight, parseSharedTerminalGridTitle, sharedGridForViewport, sharedTerminalGridForPanelCount, smallViewportWidth, type TerminalGrid } from './terminalScaling';
 import { getSharedTerminalGrid, setSharedTerminalGrid } from './terminalGridCache';
 import { isMobileBrowserEnvironment } from '../layout/mobileLayout';
 
@@ -735,9 +735,12 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
           // above the panel boundary.
           const renderedHeight = screen?.getBoundingClientRect().height || 0;
           const availableHeight = ref.current.getBoundingClientRect().height;
-          const constrainedLineHeight = constrainTerminalLineHeight(term.options.lineHeight, renderedHeight, availableHeight);
-          if (constrainedLineHeight !== term.options.lineHeight) {
-            term.options.lineHeight = constrainedLineHeight;
+          const constrained = constrainTerminalHeight(term.options.fontSize, term.options.lineHeight, renderedHeight, availableHeight);
+          if (constrained.fontSize !== term.options.fontSize || constrained.lineHeight !== term.options.lineHeight) {
+            const pixelCorrection = constrained.fontSize / term.options.fontSize;
+            scaleOptions = { ...scaleOptions, fontSize: constrained.fontSize, lineHeight: constrained.lineHeight, scale: scaleOptions.scale * pixelCorrection };
+            term.options.fontSize = constrained.fontSize;
+            term.options.lineHeight = constrained.lineHeight;
           }
         }
         ref.current.dataset.nativeCols = String(nativeGrid.cols);
