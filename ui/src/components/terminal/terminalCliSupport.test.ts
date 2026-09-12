@@ -10,14 +10,16 @@ describe('terminal CLI history support', () => {
       const send = vi.fn();
       const wheel = createLatestTerminalWheelSender(send);
       for (let i = 0; i < 100; i++) wheel.notch('down');
+      expect(send).toHaveBeenCalledTimes(100);
       send.mockClear();
       wheel.notch('up');
       expect(send.mock.calls).toEqual([['up']]);
       vi.runAllTimers();
-      expect(send.mock.calls).toEqual([['up'], ['up'], ['up']]);
+      expect(send.mock.calls).toEqual([['up']]);
       wheel.notch('down');
       wheel.dispose();
       send.mockClear();
+      wheel.notch('up');
       vi.runAllTimers();
       expect(send).not.toHaveBeenCalled();
     } finally { vi.useRealTimers(); }

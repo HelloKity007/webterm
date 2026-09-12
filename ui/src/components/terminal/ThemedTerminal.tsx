@@ -512,15 +512,14 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
             term.scrollLines(lines);
             return;
           }
-          // Claude advances one line per SGR report. Route panel-wide wheels
-          // to its history region, including wheels over the composer/footer.
+          // Each report is a native mouse notch, not one text line. Repeating
+          // it multiplies Claude's own scroll step and triggers acceleration.
+          // Route footer wheels to the history region too.
           const bounds = term.element?.querySelector('.xterm-screen')?.getBoundingClientRect();
           if (!bounds) return;
           const { col, row } = getTerminalGridPosition(
             { x: event.clientX, y: bounds.top + bounds.height / 2 }, bounds, term.cols, term.rows,
           );
-          // Separate reports so CLI render batching cannot collapse steps.
-          // Supersede unfinished steps instead of building a stale backlog.
           wheelSender.notch(`\x1b[<${lines < 0 ? 64 : 65};${col};${row}M`);
         },
       });
