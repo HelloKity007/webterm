@@ -12,9 +12,10 @@ describe('responsivePanelGrid', () => {
   });
 
   it('keeps the responsive rule off mobile and large desktops', () => {
-    expect(shouldUseCompactDesktopGrid(false, 1920, 2400)).toBe(true);
-    expect(shouldUseCompactDesktopGrid(false, 2400, 2400)).toBe(false);
-    expect(shouldUseCompactDesktopGrid(true, 390, 2400)).toBe(false);
+    expect(shouldUseCompactDesktopGrid(false, 1920, 3000)).toBe(true);
+    expect(shouldUseCompactDesktopGrid(false, 2808, 3000)).toBe(true);
+    expect(shouldUseCompactDesktopGrid(false, 3440, 3000)).toBe(false);
+    expect(shouldUseCompactDesktopGrid(true, 390, 3000)).toBe(false);
   });
 
   it('shows at most two panel rows and lets further rows overflow vertically', () => {
