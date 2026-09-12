@@ -468,7 +468,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       // several rows instead of appearing to crawl through long scrollback.
       scrollSensitivity: 3,
       fastScrollSensitivity: 3,
-      overviewRuler: { width: 5 },
+      overviewRuler: { width: isMobileBrowserEnvironment() ? 0 : 5 },
       theme: {
         // xterm rejects the named transparent color and falls back to white.
         overviewRulerBorder: '#00000000',
@@ -1137,7 +1137,13 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
         })}
       />
       <MobileTerminalReader terminalRef={termRef} revision={termKey}
-        onHistory={(direction) => sendRef.current(JSON.stringify({ data: direction === 'up' ? '\x1b[5~' : '\x1b[6~' }))} />
+        onHistory={(direction) => {
+          const terminal = termRef.current;
+          if (!terminal || terminal.buffer.active.type !== 'alternate') return;
+          // Same native mouse protocol as desktop; never inject shell keys.
+          const row = Math.max(1, Math.floor(terminal.rows / 2));
+          sendRef.current(JSON.stringify({ data: `\x1b[<${direction === 'up' ? 64 : 65};1;${row}M` }));
+        }} />
       <button type="button" aria-label={t('term_history_title')} title={t('term_history_title')}
         onClick={() => setHistoryHelpOpen((open) => !open)} style={{
           position: 'absolute', top: 5, right: 11, zIndex: 12,
