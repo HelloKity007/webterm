@@ -1,6 +1,6 @@
 # WebTerm 深化开发分阶段实施计划（Spec v1.2）
 
-> Status: 🟡 dev-1.0.4 — 移动端基线归并；剩余 P0 分阶段执行，未整体验收
+> Status: 🟡 dev-1.0.4 — M3 已完成，M4 实现及断链门禁已完成；剩余 P0 分阶段执行，未整体验收
 > Created: 2026-09-04；Last synced: 2026-09-11
 > Source spec: `docs/superpowers/specs/2026-09-04-WebTerm-Dev-Spec-v1.2.md`
 > Target branch: `dev-1.0.4`（主仓库开发，不使用 worktree）
@@ -9,7 +9,7 @@
 
 ## 1. 目标
 
-在不回退布局、tmux 会话、桌面交互与已验收移动端能力的前提下，归并 P0-MOB、建立可重复的移动端回归入口，并审计 M0/M3–M8 的剩余工作。工作区 Tab 已实现，不再列为下一新增功能。安全握手、断线恢复、布局增强、presence 和完整性能验收仍按依赖执行，不因移动端已发布而整体打勾；跨 Panel 广播已按 2026-09-11 产品决策取消。
+在不回退布局、tmux 会话、桌面交互与已验收移动端能力的前提下，归并 P0-MOB、建立可重复的移动端回归入口，并分阶段完成 M3–M8。工作区 Tab 已实现，不再列为下一新增功能；M3 安全握手和 M4 断线恢复已在 `9284830` 落地，布局增强、presence 和完整性能验收仍按依赖执行。跨 Panel 广播已按 2026-09-11 产品决策取消。
 
 本计划只授权 P0 的设计与实现。P1/P2 先保留 backlog，不在 P0 顺手实现。
 
@@ -32,8 +32,8 @@
 | 旧版目标分支和“工作区 Tab 下一优先级”过时 | `2df868a`，M2 既有证据 | 更新分支/基线，M2 仅回归 |
 | 手机依赖缩小完整 grid 的描述不实 | `MobileTerminalReader.tsx`、`useMobileViewport.ts` | 新增 M-MOB；阅读与原生输入分离、字号统一、触摸边缘历史、键盘恢复 |
 | Control Mode 的传输完成被误读为 transcript/replay 完成 | `tmux_control.go` 与 reader 使用 SGR 历史导航 | 不宣称独立 Claude transcript 服务；主计划与补充计划注明边界 |
-| WS 安全目标尚未落地 | `main.go` 仍注册 websocket.Handler；无 ws_ticket 模块 | M3 保留未完成，不由本次文档同步假装实现 |
-| 自动重连仍有3次上限 | `useWebSocket.ts: MAX_RETRIES = 3` | M4 保留未完成，增加故障门禁后实施 |
+| WS 安全目标 | `handler/ws_ticket.go`、`handler/ws_outbound.go`；`9284830` | M3 已实现并通过 upgrade 前授权、Origin、single-use/race 门禁 |
+| 自动重连与保活 | `useWebSocket.ts`、`handler/ssh_pool.go`；`9284830` | M4 已改为 full-jitter 无限重试、offline/online 感知及两层 keepalive |
 | WebGL 已有实现 | `ThemedTerminal.tsx` WebglAddon / onContextLoss | M7 不重复安装；仍补性能与生命周期证据 |
 | 双环境会话隔离已实现基础，不能重复开发或冒充新实测 | `main.go`注入`TmuxSocket`，`ws.go:scopeTmuxCommand`及`terminal_session_test.go` | 保留namespace实现；补跨环境不变量实测，preserve-terminal-sessions本身不等于隔离 |
 | 临时QA脚本仅在 /tmp/runtime，无法从仓库复跑 | 1.0.3移动QA记录 | 将安全、参数化回归入口纳入版本控制；截图/日志写运行目录 |
@@ -49,7 +49,7 @@
 - [x] dev-1.0.4 `f52b6ec`部署9444并执行浏览器回归，6组smoke断言通过；详情见`docs/qa/2026-09-11-mobile-1.0.4.md`。后续仅证据文档提交仍需重新部署并复跑smoke。
 - [x] 真机 IME/横竖屏/长历史压力等未跑项目已单列；此项完成指完成记录，不是测试通过。
 
-M3–M8 是否全部纳入本次1.0.4完成范围，需要用户确认本轮交付分母；先完成上述无争议切片，不擅自删减主计划剩余需求或宣称整个P0完成。
+本轮已继续完成 M3/M4；M5–M8 仍按阶段出口独立实施和验收，不擅自删减主计划剩余需求或宣称整个 P0 完成。
 
 ### 工作树保护
 
@@ -72,8 +72,8 @@ M3–M8 是否全部纳入本次1.0.4完成范围，需要用户确认本轮交�
 | M0 | 基线冻结、测量夹具与双环境 tmux 隔离 | 无 | 🟡 CLI/容量夹具已完成；先关闭 test→production tmux 污染 |
 | M1 | Codex/Claude CLI 历史、复制与跨尺寸显示 | M0 | ✅ 已提交并按当前口径验收；转回归门禁 |
 | M2 | 工作区 Tab | 已验收 8 pane 基线 | ✅ 上层多 Tab、固定编号、重命名、v1→v2、真实浏览器多端验收通过 |
-| M3 | **WS 安全与单写者（下一优先级）** | M2 | upgrade 前授权、Origin、ticket、无 race |
-| M4 | tmux/SSH 保活与自动重连 | M3 | 断网/服务重启恢复、明确生命周期 |
+| M3 | WS 安全与单写者 | M2 | ✅ upgrade 前授权、Origin、ticket、无 race；`9284830` |
+| M4 | tmux/SSH 保活与自动重连 | M3 | ✅ 实现、30 秒/5 分钟断链和服务重启恢复；30 分钟 idle 作为持续回归 |
 | M5 | 布局增强、divider 与冲突 UX | M2、M4 | 保持已验收 8 pane，补 1×1/4×2、拖动同步、CAS 收敛 |
 | M6 | presence 与多端会话状态 | M5 | distinct client presence、同 terminalID 默认共享输入且不同会话不串扰 |
 | M7 | WebGL fallback 与性能稳定 | M4、M5 | 受控负载达到门槛、context loss 可恢复 |
@@ -212,6 +212,8 @@ M6 和 M7 在 M5 契约稳定后可并行开发，但合并前分别在最新共
 
 ## 7. M3 — WS 安全、ticket 与单写者
 
+实施状态（2026-09-11）：已在 `9284830` 完成并部署 9444。30 秒单次票据绑定 user/endpoint/resource，所有 WS 路由在 upgrade 前校验用户、资源和同源 HTTPS；单写者、有限队列、写 deadline、1 MiB 输入上限与 typed error 已覆盖。`go test -race`、非法握手 curl 和真实 Caddy 浏览器升级均通过。证据见 `docs/qa/2026-09-11-m3-m4.md`。
+
 ### 后端任务
 
 1. 新建短期 ticket service：随机 token、TTL、single-use、route/resource binding、过期清理。
@@ -251,6 +253,8 @@ M6 和 M7 在 M5 契约稳定后可并行开发，但合并前分别在最新共
 - 生产配置不接受 legacy JWT query；无凭据泄漏 evidence。
 
 ## 8. M4 — tmux 预检、SSH keepalive 与自动重连
+
+实施状态（2026-09-11）：已在 `9284830` 完成实现及主要故障门禁。tmux 版本预检/缓存、测试 namespace、SSH 20 秒 keepalive/三次失败淘汰、浏览器 20 秒 heartbeat、45 秒 activity deadline、full-jitter 无限重连、offline/online 和 graceful shutdown 已落地。真实浏览器无刷新通过服务重启、30 秒及 5 分钟断链，并保持同一 tmux session 指纹；30 分钟 idle soak 继续作为发布前持续门禁。
 
 ### 后端任务
 
@@ -431,6 +435,7 @@ git diff --check
 
 - [2026-09-11] `2df868a`生产版本用户确认；创建dev-1.0.4。主Spec追加MOB-01–08，归并横滑标签、换行、触摸历史、去白线、统一字号和键盘视口恢复；同步主/补充计划，不将剩余P0自动视为验收。
 - [2026-09-11] 用户取消跨 Panel 广播入口；删除按钮、前端广播 store 和转发逻辑，同一 terminalID 的多设备 tmux attach 输入默认共享保持不变。
+- [2026-09-11] `9284830` 完成 M3/M4 实现并发布 9444：Go race/shuffle/vet、UI 94 tests、lint/build 通过；opencli 与 browser-use 均在真实浏览器执行终端输入，30 秒/5 分钟断链及服务重启均无刷新恢复，同一 tmux 指纹不变；第二浏览器确认默认同 terminalID 输入共享且不同 Panel 不串扰。生产 9443 保持 `2df868a`。
 
 - [2026-09-04] 计划创建。完成代码事实核对、现有 evidence 核对、官方 xterm/tmux/Go websocket 资料核对。
 - [2026-09-04] 基线通过：Go 全测；UI 14 files / 39 tests；lint；production build。

@@ -67,7 +67,7 @@ v1.1 的产品方向成立：WebTerm 的近期核心仍是“同一账号、多�
 
 ## 3. 当前代码基线
 
-下表为 2026-09-05 阶段快照，不是所有行的最新实现状态。2026-09-11 增量：`2df868a` 已生产发布且用户确认；Control Mode、WebGL load/context-loss fallback、移动端阅读层均已有实现。完整的 WS ticket/握手前授权、无限重连、presence 与性能门禁不能据此标为完成。后续按主计划的增量审计记录执行，不能把“已实现基础”改写为“全部验收”。
+下表为持续更新的实现快照。2026-09-11 增量：`2df868a` 已生产发布且用户确认；`9284830` 已在 `dev-1.0.4` 的 9444 发布测试环境实现并验证 WS ticket/握手前授权、单写者、tmux/SSH 保活和无限重连。presence、布局增强与性能门禁仍未因此自动完成。后续按主计划的增量审计记录执行，不能把单个阶段通过改写为整个 P0 验收。
 
 | 能力 | 事实状态 | 代码依据 | P0 动作 |
 |---|---|---|---|
@@ -83,11 +83,11 @@ v1.1 的产品方向成立：WebTerm 的近期核心仍是“同一账号、多�
 | 工作区 Tab | 已完成并通过发布测试验收 | `workspaceLayout.ts`、`WorkspaceTabBar.tsx`、schema v2 handler；`f812186`、`e8f2eef` | 转为回归门禁；M3 WS 安全成为下一阶段 |
 | 跨 Panel 广播 | 产品取消 | 2026-09-11 用户确认多端同会话输入默认共享，不保留广播按钮 | 删除按钮、状态和跨 Panel 转发；不同 Panel 保持独立 |
 | SFTP 跟随 cd | 已完成基础 | OSC 7 → `sftpCdPaths` | 移出新增功能，保留回归 |
-| 自动重连 | 部分完成 | 最多 3 次指数退避 | 改为有界退避、无限生命周期、online 感知 |
-| 心跳 | 无闭环 | 服务端发 JSON ping，客户端不 pong | 建立 ping/pong 与超时状态机 |
+| 自动重连 | M4 已实现，候选已验证 | full-jitter 1–30 秒、无限生命周期、offline/online 感知；`9284830` | 保留 30 秒/5 分钟断链和服务重启回归 |
+| 心跳 | M4 已实现，候选已验证 | 浏览器 20 秒 ping、服务端 45 秒 activity deadline、SSH keepalive；`9284830` | 保留 idle/中间设备断链回归 |
 | presence | 未完成 | 无 registry | 新增短生命周期 registry |
 | WebGL | 未完成 | xterm 6 默认 renderer，无 addon | 加 WebGL + context-loss 回退 |
-| WS 安全 | 部分完成 | handler 内 JWT/资源授权 | 移到升级前，严格 Origin，短期 ticket |
+| WS 安全 | M3 已实现，候选已验证 | 30 秒单次 ticket、upgrade 前授权、严格 Origin、单写者；`9284830` | 保留非法握手、race 和凭据泄漏回归 |
 | Codex/Claude CLI 历史与复制 | 已完成并验收 | `955d265`–`e14aacf`；CLI evidence | 转为回归门禁 |
 | 跨尺寸共享终端 | 已完成并验收 | `d1ef4ab`；`terminalScaling.ts`、受控 grid title | 保持“大屏铺满、小屏完整缩放”回归 |
 | 双环境发布 | 已完成并验收 | `321bd86`、`8049d9a`、`1cb938f` | 保持候选部署、批准、提升、回滚和 secret 加载回归 |
@@ -475,6 +475,7 @@ JWT signing secret 必须来自稳定的生产配置/环境变量，使服务重
 ## 13. 变更记录
 
 - v1.2（2026-09-11 / dev-1.0.4）：生产基线推进至 `2df868a`；归并 MOB-01–08，修正旧完整 grid 缩放承诺和移动端 P2 分类；取消容易误解且有误操作风险的跨 Panel 广播按钮，同一 terminalID 多端输入继续默认共享。
+- v1.2（2026-09-11 / M3–M4）：`9284830` 在 9444 候选环境完成短期单次 WS ticket、严格 Origin、单写者/背压、稳定 JWT key、tmux 预检、SSH/application keepalive、无限重连与优雅停机；30 秒、5 分钟断链、服务重启及默认多端同会话输入均有浏览器证据。生产 9443 未改动。
 
 - v1.2（2026-09-05 同步）：基线推进到 `1cb938f`；将 pengguanzhen 已提交的功能改动登记为验收通过；明确一屏 8 pane 已完成；把承载 pane 布局的工作区 Tab 设为下一优先级 P0，并补充“可重命名、前置固定数字索引”及迁移/持久化/验收要求。
 - v1.2（2026-09-05 M2 验收）：工作区 Tab schema v2、v1 迁移、固定编号、重命名、空白/复制与多端本地 active workspace 已通过真实 Chrome 8-pane 自动化；下一阶段切换为 M3 WS 安全与单写者。
