@@ -12,7 +12,7 @@ export interface TerminalScaleOptions {
 
 // Give a small-only client a deterministic shared grid. A larger client can
 // still grow this target through the authoritative tmux title announcement.
-export const defaultSharedTerminalGrid: TerminalGrid = { cols: 76, rows: 21 };
+export const defaultSharedTerminalGrid: TerminalGrid = { cols: 76, rows: 19 };
 export const mobileSharedTerminalGrid: TerminalGrid = { cols: 69, rows: 21 };
 // The operator's compact displays report up to 2808 CSS pixels, while the
 // roomy four-column display reports 3440. Keep those two observed classes on
@@ -21,10 +21,11 @@ export const smallViewportWidth = 3000;
 // The measured eight-pane 1920x1080 layout previously squeezed a 104-column
 // authority into each pane. At the measured 619px panel width, 76 columns map
 // to 76 eight-pixel cells: exactly the 608px before the five-pixel scrollbar
-// after the left inset. With two panel rows per viewport, 21 terminal rows
-// avoid height-driven glyph shrinkage. Older output remains reachable through
+// after the left inset. With two panel rows per viewport, 19 terminal rows
+// also avoid height-driven glyph shrinkage on the observed 2860x988 display.
+// Older output remains reachable through
 // the terminal scrollback buffer.
-export const smallViewportGridLimit: TerminalGrid = { cols: 76, rows: 21 };
+export const smallViewportGridLimit: TerminalGrid = { cols: 76, rows: 19 };
 
 export function sharedGridForViewport(announced: TerminalGrid, viewportWidth: number): TerminalGrid {
   if (viewportWidth >= smallViewportWidth) return announced;

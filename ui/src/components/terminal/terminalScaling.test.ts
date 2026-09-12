@@ -15,13 +15,13 @@ describe('parseSharedTerminalGridTitle', () => {
 
 describe('calculateTerminalScale', () => {
   it('provides a deterministic small-viewport baseline', () => {
-    expect(defaultSharedTerminalGrid).toEqual({ cols: 76, rows: 21 });
+    expect(defaultSharedTerminalGrid).toEqual({ cols: 76, rows: 19 });
     expect(mobileSharedTerminalGrid).toEqual({ cols: 69, rows: 21 });
-    expect(sharedGridForViewport({ cols: 40, rows: 14 }, 1193)).toEqual({ cols: 76, rows: 21 });
-    expect(sharedGridForViewport({ cols: 350, rows: 62 }, 1193)).toEqual({ cols: 76, rows: 21 });
-    expect(sharedGridForViewport({ cols: 40, rows: 14 }, 1920)).toEqual({ cols: 76, rows: 21 });
-    expect(sharedGridForViewport({ cols: 104, rows: 29 }, 1920)).toEqual({ cols: 76, rows: 21 });
-    expect(sharedGridForViewport({ cols: 104, rows: 31 }, 2808)).toEqual({ cols: 76, rows: 21 });
+    expect(sharedGridForViewport({ cols: 40, rows: 14 }, 1193)).toEqual({ cols: 76, rows: 19 });
+    expect(sharedGridForViewport({ cols: 350, rows: 62 }, 1193)).toEqual({ cols: 76, rows: 19 });
+    expect(sharedGridForViewport({ cols: 40, rows: 14 }, 1920)).toEqual({ cols: 76, rows: 19 });
+    expect(sharedGridForViewport({ cols: 104, rows: 29 }, 1920)).toEqual({ cols: 76, rows: 19 });
+    expect(sharedGridForViewport({ cols: 104, rows: 31 }, 2808)).toEqual({ cols: 76, rows: 19 });
     expect(sharedGridForViewport({ cols: 100, rows: 30 }, 3440)).toEqual({ cols: 100, rows: 30 });
   });
   it('keeps the configured font for a native-size shared grid', () => {
