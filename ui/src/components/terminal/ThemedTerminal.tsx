@@ -461,7 +461,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
   useEffect(() => {
     const themeConfig = getTheme(themeName || 'XTerminal Green');
     const term = new Terminal({
-      cursorBlink: true, fontSize: fontSize, fontFamily: '"JetBrains Mono", "JetBrains Maple Mono", Consolas, monospace',
+      cursorBlink: true, fontSize: isMobileBrowserEnvironment() ? Math.max(11, fontSize - 4) : fontSize, fontFamily: '"JetBrains Mono", "JetBrains Maple Mono", Consolas, monospace',
       scrollback: terminalScrollbackLines,
       scrollOnUserInput: true,
       // Match native terminal applications: one wheel notch should advance
@@ -1136,7 +1136,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
           setContextMenu(position);
         })}
       />
-      <MobileTerminalReader terminalRef={termRef} revision={termKey}
+      <MobileTerminalReader terminalRef={termRef} revision={termKey} fontSize={Math.max(11, fontSize - 4)}
         onHistory={(direction) => {
           const terminal = termRef.current;
           if (!terminal || terminal.buffer.active.type !== 'alternate') return;

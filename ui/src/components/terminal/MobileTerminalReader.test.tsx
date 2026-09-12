@@ -62,4 +62,16 @@ describe('mobile wrapped terminal reader', () => {
       expect(screen.queryByLabelText('终端换行阅读')).toBeNull();
     } finally { terminal.dispose(); }
   });
+
+  it('uses the shared mobile font even when a hidden terminal snapshot has an older size', async () => {
+    vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue('Android Mobile');
+    vi.spyOn(window, 'innerWidth', 'get').mockReturnValue(390);
+    const terminal = new Terminal({ fontSize: 20 });
+    try {
+      const { rerender } = render(<MobileTerminalReader terminalRef={{ current: terminal }} revision={1} fontSize={12} onHistory={() => {}} />);
+      await waitFor(() => expect(screen.getByLabelText('终端换行阅读').style.fontSize).toBe('12px'));
+      rerender(<MobileTerminalReader terminalRef={{ current: terminal }} revision={1} fontSize={14} onHistory={() => {}} />);
+      expect(screen.getByLabelText('终端换行阅读').style.fontSize).toBe('14px');
+    } finally { terminal.dispose(); }
+  });
 });

@@ -119,6 +119,7 @@ select:focus, input:focus, textarea:focus, button:focus-visible, [role="button"]
 .mobile-panel-switcher { display: none; }
 .app-shell[data-mobile-viewport="true"] { position: fixed; left: 0; right: 0; top: var(--mobile-viewport-top, 0px); height: var(--mobile-viewport-height, 100dvh) !important; overflow: hidden; }
 .app-shell[data-mobile-viewport="true"] > .app-body { min-height: 0; }
+.app-shell[data-mobile-viewport="true"] { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 .terminal-tabbar > div[draggable="true"] { color: #3d5b42 !important; }
 .terminal-tabbar > div[draggable="true"]:hover { background: #a9d2aa !important; color: #203523 !important; }
 .workspace-tabs [role="tab"]:hover { background: #a9d2aa !important; color: #203523 !important; }

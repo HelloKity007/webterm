@@ -48,8 +48,8 @@ function readTerminalRows(terminal: Terminal): Run[][] {
   });
 }
 
-export default function MobileTerminalReader({ terminalRef, revision, onHistory }: {
-  terminalRef: RefObject<Terminal | null>; revision: number; onHistory: (direction: 'up' | 'down') => void;
+export default function MobileTerminalReader({ terminalRef, revision, fontSize, onHistory }: {
+  terminalRef: RefObject<Terminal | null>; revision: number; fontSize?: number; onHistory: (direction: 'up' | 'down') => void;
 }) {
   const [snapshot, setSnapshot] = useState<{ rows: Run[][]; style: CSSProperties } | null>(null);
   const [reading, setReading] = useState(true);
@@ -83,7 +83,7 @@ export default function MobileTerminalReader({ terminalRef, revision, onHistory 
     terminalRef.current?.blur();
     setReading(true);
   }}>换行阅读</button>;
-  return <section className="mobile-terminal-reader" aria-label="终端换行阅读" style={snapshot.style}>
+  return <section className="mobile-terminal-reader" aria-label="终端换行阅读" style={{ ...snapshot.style, fontSize: fontSize ?? snapshot.style.fontSize }}>
     <div className="mobile-reader-toolbar">
       <button onClick={() => { setReading(false); terminalRef.current?.focus(); }}>终端输入</button>
     </div>
