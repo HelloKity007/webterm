@@ -7,8 +7,10 @@ import Icon from '../common/Icon';
 import { useLayoutStore } from '../../store/layout';
 import { t } from '../../i18n';
 import { colors, font } from '../../theme/tokens';
+import { useMobileViewport } from './useMobileViewport';
 
 export default function Workspace() {
+  const viewportRef = useMobileViewport();
   const [showSettings, setShowSettings] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
   const statusConn = useLayoutStore((s) => s.statusConn);
@@ -28,7 +30,7 @@ export default function Workspace() {
   }, [sidebarWidth]);
 
   return (
-    <div className="app-shell" style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
+    <div ref={viewportRef} className="app-shell" style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
       <div className="app-body" style={{ flex: 1, display: 'flex', overflow: 'hidden', position: 'relative' }}>
         <ActivityBar onOpenSettings={() => setShowSettings(true)} sidebarCollapsed={sidebarCollapsed} onToggleSidebar={() => setSidebarCollapsed(!sidebarCollapsed)} />
         <Sidebar collapsed={sidebarCollapsed} width={sidebarWidth} />

@@ -79,7 +79,10 @@ export default function MobileTerminalReader({ terminalRef, revision, onHistory 
     return () => { if (frame !== undefined) cancelAnimationFrame(frame); subscriptions.forEach(s => s.dispose()); window.removeEventListener('resize', schedule); };
   }, [terminalRef, revision]);
   if (!snapshot) return null;
-  if (!reading) return <button className="mobile-reader-open" onClick={() => setReading(true)}>换行阅读</button>;
+  if (!reading) return <button className="mobile-reader-open" onClick={() => {
+    terminalRef.current?.blur();
+    setReading(true);
+  }}>换行阅读</button>;
   return <section className="mobile-terminal-reader" aria-label="终端换行阅读" style={snapshot.style}>
     <div className="mobile-reader-toolbar">
       <button onClick={() => { setReading(false); terminalRef.current?.focus(); }}>终端输入</button>

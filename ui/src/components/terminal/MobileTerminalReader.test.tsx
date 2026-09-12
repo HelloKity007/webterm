@@ -28,7 +28,9 @@ describe('mobile wrapped terminal reader', () => {
       fireEvent.touchEnd(reader);
       fireEvent.click(screen.getByText('终端输入'));
       expect(screen.queryByLabelText('自动换行的终端输出')).toBeNull();
+      const blur = vi.spyOn(terminal, 'blur');
       fireEvent.click(screen.getByText('换行阅读'));
+      expect(blur).toHaveBeenCalledOnce();
       expect(screen.getByLabelText('自动换行的终端输出').textContent).toContain('Title完整结尾');
     } finally { terminal.dispose(); }
   });
