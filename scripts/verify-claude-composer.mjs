@@ -18,6 +18,8 @@ try {
     await page.goto('https://192.168.11.87:9444/', { waitUntil: 'networkidle' });
     const panel = page.locator('.terminal-surface:visible').nth(5);
     await panel.waitFor();
+    assert.equal(await page.locator('.app-statusbar').count(), 0);
+    assert.equal(await page.locator('.workspace-tabs').evaluate(e => e.getBoundingClientRect().height), 30);
     const layout = await page.locator('.terminal-grid').evaluate(e => {
       const bounds = e.getBoundingClientRect();
       return { columns: Number(e.dataset.panelColumns), rows: Number(e.dataset.panelRows),

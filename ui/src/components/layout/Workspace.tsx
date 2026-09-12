@@ -4,16 +4,13 @@ import Sidebar from './Sidebar';
 import MainArea from './MainArea';
 import SettingsPanel from '../config/SettingsPanel';
 import Icon from '../common/Icon';
-import { useLayoutStore } from '../../store/layout';
-import { t } from '../../i18n';
-import { colors, font } from '../../theme/tokens';
+import { colors } from '../../theme/tokens';
 import { useMobileViewport } from './useMobileViewport';
 
 export default function Workspace() {
   const viewportRef = useMobileViewport();
   const [showSettings, setShowSettings] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
-  const statusConn = useLayoutStore((s) => s.statusConn);
   const [sidebarWidth, setSidebarWidth] = useState(210);
   const dragRef = useRef({ startX: 0, startW: 0, dragging: false });
 
@@ -61,26 +58,6 @@ export default function Workspace() {
       {showSettings && (
         <SettingsPanel onClose={() => setShowSettings(false)} />
       )}
-      {/* Global status bar */}
-      <div className="app-statusbar" style={{
-        height: 22, flexShrink: 0, background: colors.bg, borderTop: '1px solid var(--c-border)',
-        display: 'flex', alignItems: 'center', padding: '0 10px',
-        fontSize: font.sm, color: colors.accent, gap: 10, lineHeight: '26px',
-      }}>
-        <span style={{ opacity: 0.7, flexShrink: 0 }}>webterm</span>
-        <span style={{ flex: 1 }} />
-        {statusConn ? (
-          <>
-            <span style={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
-              background: statusConn.connected ? colors.success : colors.danger,
-            }} />
-            <span style={{ minWidth: 64, textAlign: 'center', flexShrink: 0, whiteSpace: 'nowrap' }}>{statusConn.connected ? t('status_connected') : t('status_disconnected')}</span>
-            <span style={{ flexShrink: 0, whiteSpace: 'nowrap' }}>{statusConn.name}{statusConn.host ? ` (${statusConn.host})` : ''}</span>
-          </>
-        ) : (
-          <span style={{ color: colors.textDim, flexShrink: 0 }}>{t('status_disconnected')}</span>
-        )}
-      </div>
     </div>
   );
 }
