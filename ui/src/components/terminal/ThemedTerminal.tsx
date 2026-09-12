@@ -49,7 +49,7 @@ import {
   routeTerminalMouseUp,
   shouldAutoFocusTerminal,
 } from './terminalInteractions';
-import { calculateTerminalScale, defaultSharedTerminalGrid, parseSharedTerminalGridTitle, smallViewportWidth, type TerminalGrid } from './terminalScaling';
+import { calculateTerminalScale, defaultSharedTerminalGrid, parseSharedTerminalGridTitle, sharedGridForViewport, smallViewportWidth, type TerminalGrid } from './terminalScaling';
 import { getSharedTerminalGrid, setSharedTerminalGrid } from './terminalGridCache';
 import { isMobileBrowserEnvironment } from '../layout/mobileLayout';
 
@@ -759,11 +759,12 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
     const titleDisposable = term.onTitleChange((title) => {
       const announcedGrid = parseSharedTerminalGridTitle(title);
       if (!announcedGrid) return;
-      // tmux's title is authoritative for a connected shared session, but a
-      // small-only client still needs the deterministic baseline. Otherwise
-      // tmux echoes the small client's native grid and immediately erases the
-      // scale that was applied during the first fit.
-      const nextGrid = announcedGrid;
+      // The title is authoritative on roomy screens. A dense desktop layout
+      // must retain its readable local cap when tmux echoes a grid announced
+      // earlier by a larger client; fitWhenVisible sends the capped complete
+      // grid back to this control client instead of silently restoring tiny
+      // glyphs. Mobile keeps its separately tested reader/input behavior.
+      const nextGrid = mobileBrowser ? announcedGrid : sharedGridForViewport(announcedGrid, window.innerWidth);
       if (sharedGrid?.cols === nextGrid.cols && sharedGrid.rows === nextGrid.rows) return;
       sharedGrid = nextGrid;
       // Resize during the OSC callback, before parsing the following snapshot.
