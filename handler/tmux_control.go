@@ -37,6 +37,22 @@ func pumpTmuxControlOutput(reader io.Reader, pane string, write func([]byte) err
 	return scanner.Err()
 }
 
+// terminalModeForPane uses process/state metadata, never printed terminal text.
+func terminalModeForPane(command string, alternate bool) string {
+	if alternate {
+		return "cli"
+	}
+	switch strings.ToLower(strings.TrimSpace(command)) {
+	case "claude", "claude-code", "claude.exe":
+		return "cli"
+	case "sh", "bash", "zsh", "dash", "ash", "ksh", "mksh", "fish", "nu", "xonsh", "elvish", "cmd.exe", "powershell.exe", "pwsh":
+		return "shell"
+	default:
+		// ssh/docker/tmux may contain either a shell or a fullscreen CLI.
+		return "unknown"
+	}
+}
+
 // tmuxControlEvent is the subset of tmux -CC events needed by a terminal
 // data-plane client. Control mode keeps protocol framing separate from the
 // pane's raw ANSI bytes, which is required for per-client viewport handling.

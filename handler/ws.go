@@ -432,9 +432,9 @@ func (h *WSHandler) HandleSSH(conn *websocket.Conn) {
 					parts := strings.Split(strings.TrimSpace(paneID.String()), "\t")
 					paneState = parts
 					controlTracker.setTarget(strings.TrimSpace(parts[0]))
-					mode := "shell"
-					if len(parts) >= 2 && (strings.EqualFold(strings.TrimSpace(parts[1]), "claude") || strings.EqualFold(strings.TrimSpace(parts[1]), "claude-code")) {
-						mode = "cli"
+					mode := "unknown"
+					if len(parts) >= 2 {
+						mode = terminalModeForPane(parts[1], len(parts) == 7 && parts[6] == "1")
 					}
 					_ = websocket.JSON.Send(conn, map[string]string{"type": "terminal_mode", "mode": mode})
 				}

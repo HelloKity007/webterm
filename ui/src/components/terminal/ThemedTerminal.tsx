@@ -17,6 +17,7 @@ import { colors } from '../../theme/tokens';
 import Zmodem from 'zmodem.js/src/zmodem_browser.js';
 import { deliverTerminalBytes } from './terminalOutput';
 import TerminalHistoryHelp from './TerminalHistoryHelp';
+import { terminalModeAfterPrivateControl } from './terminalMode';
 import {
   createTerminalWheelState,
   createLatestTerminalWheelSender,
@@ -498,6 +499,17 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
     const searchAddon = new SearchAddon();
     term.loadAddon(fitAddon);
     term.loadAddon(searchAddon);
+    // Protocol beats printed words: a Claude response may contain shell
+    // prompts, "bash", "context" or even an entire shell script.
+    const modeDisposables = (['h', 'l'] as const).map(final =>
+      term.parser.registerCsiHandler({ prefix: '?', final }, params => {
+        terminalModeRef.current = terminalModeAfterPrivateControl(terminalModeRef.current, params, final === 'h');
+        if (params.some(value => typeof value === 'number' && [47, 1047, 1049].includes(value))) {
+          alternateScreenRef.current = final === 'h';
+        }
+        return false; // Continue xterm's own buffer switch.
+      }),
+    );
     const mobileBrowser = isMobileBrowserEnvironment();
     const wheelSender = createLatestTerminalWheelSender((data) => sendRef.current(JSON.stringify({ data })));
     const handleTerminalWheel = (event: WheelEvent) => {
@@ -825,6 +837,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       outputFrameRef.current = null;
       outputQueueRef.current = [];
       titleDisposable.dispose();
+      modeDisposables.forEach(disposable => disposable.dispose());
       surfaceElement?.removeEventListener('touchstart', handleTouchStart, true);
       surfaceElement?.removeEventListener('touchmove', handleTouchMove, true);
       surfaceElement?.removeEventListener('touchend', handleTouchEnd, true);
@@ -858,9 +871,9 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       if (!term) return;
       try {
         const msg = JSON.parse(data);
-        if (msg.type === 'terminal_mode' && (msg.mode === 'shell' || msg.mode === 'cli')) {
+        if (msg.type === 'terminal_mode' && ['shell', 'cli', 'unknown'].includes(msg.mode)) {
           terminalModeRef.current = msg.mode;
-          if (msg.mode === 'cli') alternateScreenRef.current = true;
+          alternateScreenRef.current = msg.mode === 'cli';
         }
         if (msg.data) {
           let bytes: Uint8Array;
@@ -871,25 +884,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
           } else {
             bytes = new TextEncoder().encode(msg.data);
           }
-          const raw = new TextDecoder().decode(bytes);
-          // xterm may report an alternate buffer after a reconnect even when
-          // the captured pane is a shell. Raw mode transitions plus prompt/UI
-          // markers are more reliable for deciding whether wheel is CLI input.
-          // eslint-disable-next-line no-control-regex
-          if (/\x1b\[\?(?:47|1047|1049)h/.test(raw)) alternateScreenRef.current = true;
-          // eslint-disable-next-line no-control-regex
-          if (/\x1b\[\?(?:47|1047|1049)l/.test(raw)) alternateScreenRef.current = false;
-          // Strip terminal control sequences before identifying a shell
-          // prompt. This prevents a stale xterm alternate-buffer flag on a
-          // reattached bash pane from turning wheel input into PageUp.
-          // eslint-disable-next-line no-control-regex
-          const plain = raw.replace(/\x1b(?:\][^\x07]*(?:\x07|\x1b\\)|\[[0-?]*[ -/]*[@-~]|[@-_])/g, '').replace(/\r/g, '');
-          const shellPrompt = /(?:^|\n)[^\n]{0,200}(?:\$|#)\s*$/.test(plain) || /\b(?:bash|zsh|fish|dash)\b/.test(plain);
-          // A reattached shell can start with tmux's stale ?1049h redraw;
-          // an actual shell prompt is authoritative and must win over it.
-          if (shellPrompt) terminalModeRef.current = 'shell';
-          else if (/claude|context|bypass permissions|\[minimax/i.test(plain)) terminalModeRef.current = 'cli';
-            enqueueTerminalOutput(bytes);
+          enqueueTerminalOutput(bytes);
         }
         if (msg.error) term.write(`\r\n\x1b[31m${msg.error}\x1b[0m\r\n`);
       } catch {
