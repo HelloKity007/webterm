@@ -20,6 +20,22 @@ try {
     await panel.waitFor();
     assert.equal(await page.locator('.app-statusbar').count(), 0);
     assert.equal(await page.locator('.workspace-tabs').evaluate(e => e.getBoundingClientRect().height), 30);
+    const titlebars = await page.locator('.terminal-tabbar:visible').evaluateAll(bars => bars.map(bar => {
+      const bounds = bar.getBoundingClientRect();
+      const tabs = Array.from(bar.querySelectorAll('[data-terminal-tab]')).map(tab => {
+        const text = Array.from(tab.childNodes).find(n => n.nodeType === Node.TEXT_NODE);
+        const range = document.createRange();
+        if (text) range.selectNodeContents(text);
+        const rect = text ? range.getBoundingClientRect() : tab.getBoundingClientRect();
+        return { title: text?.textContent, font: getComputedStyle(tab).fontSize,
+          topGap: rect.top - bounds.top, bottomGap: bounds.bottom - rect.bottom };
+      });
+      return { height: bounds.height, tabs };
+    }));
+    for (const bar of titlebars) {
+      assert.equal(bar.height, 28);
+      for (const tab of bar.tabs) assert(tab.topGap >= 0 && tab.bottomGap >= 0, `clipped title: ${tab.title}`);
+    }
     const layout = await page.locator('.terminal-grid').evaluate(e => {
       const bounds = e.getBoundingClientRect();
       return { columns: Number(e.dataset.panelColumns), rows: Number(e.dataset.panelRows),
@@ -50,7 +66,7 @@ try {
     await page.waitForTimeout(5000);
     const after = await measure();
     await panel.screenshot({ path: `${output}/${width}-returned.png` });
-    results.push({ width, height, health, layout, before, after, errors });
+    results.push({ width, height, health, layout, titlebars, before, after, errors });
     assert.equal(before.authority, 'server');
     assert(before.bottomGap >= 0 && before.rightGap >= 0);
     assert.equal(after.rows, before.rows);

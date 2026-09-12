@@ -109,6 +109,12 @@ select:focus, input:focus, textarea:focus, button:focus-visible, [role="button"]
     height: 24px !important; min-height: 24px; line-height: 20px;
   }
   .workspace-tabs [role="dialog"] { top: 100% !important; }
+  .terminal-tabbar { height: 28px !important; }
+  .terminal-tabbar > [data-terminal-tab] {
+    height: 24px !important; padding-top: 2px !important; padding-bottom: 2px !important;
+    line-height: 20px;
+  }
+  .terminal-tabbar > button { min-height: 24px; height: 24px !important; }
 }
 .terminal-pane-shell { background: #1f211f; border: 1px solid #80ad82; border-radius: 0; overflow: hidden; }
 .terminal-grid { gap: 2px !important; background: #80ad82 !important; }
