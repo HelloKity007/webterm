@@ -49,7 +49,7 @@ import {
   routeTerminalMouseUp,
   shouldAutoFocusTerminal,
 } from './terminalInteractions';
-import { calculateTerminalScale, parseSharedTerminalGridTitle, sharedGridForViewport, sharedTerminalGridForPanelCount, smallViewportWidth, type TerminalGrid } from './terminalScaling';
+import { calculateTerminalScale, constrainTerminalLineHeight, parseSharedTerminalGridTitle, sharedGridForViewport, sharedTerminalGridForPanelCount, smallViewportWidth, type TerminalGrid } from './terminalScaling';
 import { getSharedTerminalGrid, setSharedTerminalGrid } from './terminalGridCache';
 import { isMobileBrowserEnvironment } from '../layout/mobileLayout';
 
@@ -728,6 +728,16 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
             if (checked && checked.rows < targetGrid.rows) {
               term.options.lineHeight *= checked.rows / targetGrid.rows;
             }
+          }
+          // proposeDimensions works in whole rows, while a compact three-row
+          // layout can overflow by only a few device pixels. Correct against
+          // the rendered screen rectangle so the last row/composer remains
+          // above the panel boundary.
+          const renderedHeight = screen?.getBoundingClientRect().height || 0;
+          const availableHeight = ref.current.getBoundingClientRect().height;
+          const constrainedLineHeight = constrainTerminalLineHeight(term.options.lineHeight, renderedHeight, availableHeight);
+          if (constrainedLineHeight !== term.options.lineHeight) {
+            term.options.lineHeight = constrainedLineHeight;
           }
         }
         ref.current.dataset.nativeCols = String(nativeGrid.cols);

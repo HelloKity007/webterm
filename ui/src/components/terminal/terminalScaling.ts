@@ -57,6 +57,14 @@ function round(value: number, precision = 3): number {
   return Math.round(value * factor) / factor;
 }
 
+export function constrainTerminalLineHeight(lineHeight: number, renderedHeight: number, availableHeight: number): number {
+  if (!Number.isFinite(lineHeight) || !Number.isFinite(renderedHeight) || !Number.isFinite(availableHeight) ||
+      lineHeight <= 0 || renderedHeight <= 0 || availableHeight <= 0 || renderedHeight <= availableHeight) {
+    return lineHeight;
+  }
+  return round(lineHeight * (availableHeight / renderedHeight) * 0.995, 4);
+}
+
 export function calculateTerminalScale(
   nativeGrid: TerminalGrid,
   sharedGrid: TerminalGrid,
