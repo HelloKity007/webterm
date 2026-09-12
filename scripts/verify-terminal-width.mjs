@@ -25,7 +25,7 @@ try {
     const panels = await page.locator('.terminal-surface:visible').evaluateAll(es => es.map(e => {
       const s = e.querySelector('.xterm-screen').getBoundingClientRect();
       const b = e.querySelector('.scrollbar.vertical').getBoundingClientRect();
-      return { cols: e.dataset.sharedCols, gap: b.left - s.right, edge: e.getBoundingClientRect().right - b.right, heightOverflow: s.height - e.clientHeight };
+      return { cols: e.dataset.sharedCols, cellWidth: s.width / Number(e.dataset.sharedCols), gap: b.left - s.right, edge: e.getBoundingClientRect().right - b.right, heightOverflow: s.height - e.clientHeight };
     }));
     results.push({ width, height, deviceScaleFactor, health, panels, errors });
     await page.screenshot({ path: `${output}/${width}-${deviceScaleFactor}.png` });
@@ -36,7 +36,10 @@ try {
   for (const result of results) {
     assert.equal(result.errors.length, 0);
     for (const panel of result.panels) {
-      assert(panel.gap >= -0.05 && panel.gap < 5, `scrollbar boundary gap ${panel.gap} at ${result.width}/${result.deviceScaleFactor}`);
+      // Natural glyph spacing: two pixels of protection plus less than one
+      // unused character cell (and subpixel canvas rounding), without padding
+      // between Chinese glyphs merely to consume this integral-cell remainder.
+      assert(panel.gap >= 1.95 && panel.gap < 3 + panel.cellWidth, `scrollbar boundary gap ${panel.gap} at ${result.width}/${result.deviceScaleFactor}`);
       assert(Math.abs(panel.edge) < 1);
       assert(panel.heightOverflow <= 1);
     }
