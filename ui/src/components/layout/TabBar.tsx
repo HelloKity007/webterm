@@ -1,5 +1,5 @@
 import { t } from '../../i18n';
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useLayoutStore } from '../../store/layout';
 import type { Tab, BroadcastScope } from '../../store/layout';
 import Icon from '../common/Icon';
@@ -29,6 +29,12 @@ export default function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab, onR
   const [dragOverAdd, setDragOverAdd] = useState(false);
   const [editingTabID, setEditingTabID] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState('');
+  const barRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (window.matchMedia?.('(max-width: 700px)').matches) {
+      barRef.current?.querySelector<HTMLElement>('[data-active="true"]')?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
+    }
+  }, [activeTabId]);
 
   const cycleScope = () => {
     const order: BroadcastScope[] = ['off', 'pane', 'all'];
@@ -47,7 +53,7 @@ export default function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab, onR
   };
 
   return (
-    <div className="terminal-tabbar" style={{ display: 'flex', background: colors.bg, height: 36, alignItems: 'center', padding: '0 6px', gap: 2, flexShrink: 0, overflow: 'visible', borderBottom: '1px solid var(--c-border)' }}>
+    <div ref={barRef} className="terminal-tabbar" style={{ display: 'flex', background: colors.bg, height: 36, alignItems: 'center', padding: '0 6px', gap: 2, flexShrink: 0, overflow: 'visible', borderBottom: '1px solid var(--c-border)' }}>
       {filtered.map((tab, idx) => (
         <React.Fragment key={tab.id}>
           {idx > 0 && (
@@ -57,6 +63,7 @@ export default function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab, onR
             }} />
           )}
           <div
+            data-active={activeTabId === tab.id}
             draggable={editingTabID !== tab.id}
             onDragStart={(e) => {
               e.dataTransfer.setData('text/plain', JSON.stringify({ id: tab.id, title: tab.title, type: tab.type, connId: tab.connId }));

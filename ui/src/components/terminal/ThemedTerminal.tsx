@@ -17,6 +17,7 @@ import { colors } from '../../theme/tokens';
 import Zmodem from 'zmodem.js/src/zmodem_browser.js';
 import { deliverTerminalBytes } from './terminalOutput';
 import TerminalHistoryHelp from './TerminalHistoryHelp';
+import MobileTerminalReader from './MobileTerminalReader';
 import { terminalModeAfterPrivateControl } from './terminalMode';
 import {
   createTerminalWheelState,
@@ -469,6 +470,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       fastScrollSensitivity: 3,
       overviewRuler: { width: 5 },
       theme: {
+        overviewRulerBorder: 'transparent',
         scrollbarSliderBackground: '#8fbd9180',
         scrollbarSliderHoverBackground: '#8fbd9199',
         scrollbarSliderActiveBackground: '#8fbd91b3',
@@ -1133,6 +1135,8 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
           setContextMenu(position);
         })}
       />
+      <MobileTerminalReader terminalRef={termRef} revision={termKey}
+        onHistory={(direction) => sendRef.current(JSON.stringify({ data: direction === 'up' ? '\x1b[5~' : '\x1b[6~' }))} />
       <button type="button" aria-label={t('term_history_title')} title={t('term_history_title')}
         onClick={() => setHistoryHelpOpen((open) => !open)} style={{
           position: 'absolute', top: 5, right: 11, zIndex: 12,
