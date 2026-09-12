@@ -1,15 +1,15 @@
 # WebTerm 深化开发分阶段实施计划（Spec v1.2）
 
-> Status: 🟡 In progress — M2 accepted, M3 is next
-> Created: 2026-09-04；Last synced: 2026-09-05
+> Status: 🟡 dev-1.0.4 — 移动端基线归并；剩余 P0 分阶段执行，未整体验收
+> Created: 2026-09-04；Last synced: 2026-09-11
 > Source spec: `docs/superpowers/specs/2026-09-04-WebTerm-Dev-Spec-v1.2.md`
-> Target branch: `dev-1.0.2` (verify with `git branch --show-current` before implementation)
-> Accepted implementation HEAD: `e8f2eef`
-> Production font corrective build: `9359c3c4` (2026-09-07), preserving production wheel behavior
+> Target branch: `dev-1.0.4`（主仓库开发，不使用 worktree）
+> Accepted production HEAD: `2df868a` / `rb-1.0.3`；用户确认“ok了”
+> 本轮发布目标：9444 release-test；不自动推进生产或 rb-1.0.4
 
 ## 1. 目标
 
-在不回退现有布局持久化、tmux 持久终端、容量分片、SFTP/DB/OneKey、CLI 历史/复制与一屏 8 pane 能力的前提下，下一步优先在 pane 网格之上实现工作区 Tab：每个 Tab 承载一套 pane 布局，固定数字索引且可重命名，并保持既有 pane、会话 Tab、terminalID 和 tmux 会话连续。其后再交付安全握手、断线恢复、布局增强、presence、广播组、WebGL fallback 和可重复的性能/多端验收。
+在不回退布局、tmux 会话、桌面交互与已验收移动端能力的前提下，归并 P0-MOB、建立可重复的移动端回归入口，并审计 M0/M3–M8 的剩余工作。工作区 Tab 已实现，不再列为下一新增功能。安全握手、断线恢复、布局增强、presence、广播组和完整性能验收仍按依赖执行，不因移动端已发布而整体打勾。
 
 本计划只授权 P0 的设计与实现。P1/P2 先保留 backlog，不在 P0 顺手实现。
 
@@ -22,6 +22,34 @@
 - 双环境候选部署、批准、提升、回滚、受管重启和生产 secret 加载已完成。
 - 已有 1,000 pane 容量 evidence；P0 日常门禁仍使用 24 shell，发布前可复跑大容量。
 - 每个后续阶段仍需在最后一次修改后执行 fresh test/lint/build；历史提交验收不能代替新改动的回归。
+
+2026-09-11 增量基线覆盖以上旧历史口径：`2df868a` 已同步 dev/rb-1.0.3 并部署9443，用户确认；88项 UI 测试及 lint/build/Go 通过。移动端已实现不等于完整 P0 或所有真机矩阵通过。详细需求以主 Spec 的 MOB-01–08 为准。
+
+### 本轮审计与调整
+
+| 问题 | 代码/证据 | 计划调整 |
+|---|---|---|
+| 旧版目标分支和“工作区 Tab 下一优先级”过时 | `2df868a`，M2 既有证据 | 更新分支/基线，M2 仅回归 |
+| 手机依赖缩小完整 grid 的描述不实 | `MobileTerminalReader.tsx`、`useMobileViewport.ts` | 新增 M-MOB；阅读与原生输入分离、字号统一、触摸边缘历史、键盘恢复 |
+| Control Mode 的传输完成被误读为 transcript/replay 完成 | `tmux_control.go` 与 reader 使用 SGR 历史导航 | 不宣称独立 Claude transcript 服务；主计划与补充计划注明边界 |
+| WS 安全目标尚未落地 | `main.go` 仍注册 websocket.Handler；无 ws_ticket 模块 | M3 保留未完成，不由本次文档同步假装实现 |
+| 自动重连仍有3次上限 | `useWebSocket.ts: MAX_RETRIES = 3` | M4 保留未完成，增加故障门禁后实施 |
+| WebGL 已有实现 | `ThemedTerminal.tsx` WebglAddon / onContextLoss | M7 不重复安装；仍补性能与生命周期证据 |
+| 双环境会话隔离已实现基础，不能重复开发或冒充新实测 | `main.go`注入`TmuxSocket`，`ws.go:scopeTmuxCommand`及`terminal_session_test.go` | 保留namespace实现；补跨环境不变量实测，preserve-terminal-sessions本身不等于隔离 |
+| 临时QA脚本仅在 /tmp/runtime，无法从仓库复跑 | 1.0.3移动QA记录 | 将安全、参数化回归入口纳入版本控制；截图/日志写运行目录 |
+| “100%”缺少分母 | 单测、模拟、真实浏览器、真机、容量是不同门禁 | 每项记 PASS/FAIL/NOT RUN；只报告实际执行结果，未跑不计PASS |
+
+### M-MOB — dev-1.0.4 移动端收敛切片
+
+- [x] 从 `2df868a` 创建主仓库 `dev-1.0.4`，保留生产 `rb-1.0.3`。
+- [x] 主 Spec 收录 MOB-01–08 和用户验收边界，修正旧手机缩放描述。
+- [x] 主计划与 Control Mode 补充计划同步实现事实、未完成事项与验收分母。
+- [x] 固化参数化移动浏览器回归脚本：`scripts/verify-mobile.mjs`；测试URL、字体一致、触摸标签、键盘几何开合、截图/结果；默认拒绝生产。
+- [ ] 在最后修改后跑 UI 全测/lint/build、Go race/shuffle/vet、diff check；任何失败修复后重跑。
+- [ ] dev-1.0.4 提交并部署9444，执行浏览器回归；记录版本、环境、结果和剩余未跑项。
+- [ ] 真机 IME/横竖屏/长历史压力等未跑项目单列，交付不等于声明其通过。
+
+M3–M8 是否全部纳入本次1.0.4完成范围，需要用户确认本轮交付分母；先完成上述无争议切片，不擅自删减主计划剩余需求或宣称整个P0完成。
 
 ### 工作树保护
 
@@ -57,7 +85,7 @@ M6 和 M7 在 M5 契约稳定后可并行开发，但合并前分别在最新共
 
 ### M0-0 双环境 tmux 隔离（新增 P0 门禁）
 
-9443 production 与 9444 release-test 必须使用不同的远端 tmux socket/namespace。当前 `-preserve-terminal-sessions` 只隔离了测试布局清理，不能阻止测试 attach 改写 production session 的 window size、hooks、mouse、history 或 CLI 状态；因此在继续 Control Mode 或滚动优化前，先完成 namespace 注入、session registry key 隔离、测试 namespace 清理和跨环境不变量测试。
+9443 production 与 9444 release-test 必须使用不同的远端 tmux socket/namespace。2026-09-11核对：`main.go`已经为release-test注入`webterm-release-test`，`WSHandler.TmuxSocket`与`scopeTmuxCommand`已经实现，相关单测存在。不重复实现这部分；仍需以跨环境不变量测试证明attach/resize/关闭全过程隔离。`-preserve-terminal-sessions`只隔离测试布局清理，不能单独作为namespace的证明。
 
 出口条件：在同一连接快照上，release-test 的 attach/resize/滚动/输入/关闭操作不会改变 production session 的 options、window size、history、pane PID 或输出；production 现有 session 不迁移、不 kill。
 
@@ -143,7 +171,7 @@ M6 和 M7 在 M5 契约稳定后可并行开发，但合并前分别在最新共
 - Codex/Claude 版本、tmux/浏览器版本和操作路径写入 evidence。
 - mouse、右键、选择、复制、IME、持久 attach 既有回归全绿。
 
-## 6. M2 — 工作区 Tab（当前最高优先级）
+## 6. M2 — 工作区 Tab（已完成，保留回归）
 
 实施状态（2026-09-05）：已完成并在发布测试环境通过。实现 schema v2、v1 无损迁移、固定编号、重命名、默认空白/显式复制、多端独立 active workspace；证据见 `2026-09-05-webterm-workspace-tabs-evidence.md`。
 
@@ -162,7 +190,7 @@ M6 和 M7 在 M5 契约稳定后可并行开发，但合并前分别在最新共
 2. 提供新增、切换和重命名入口。新增时可选“空白”或“复制当前布局”且默认选中“空白”；重命名只改 `name`，Enter 提交、Escape 取消、失焦提交，空白名称保持原值。
 3. 切换只改变当前可见 pane 网格；隐藏工作区 Tab 内的 tmux session 保持存活，不能触发终端关闭 API。
 4. 允许工作区 Tab 重名，以固定索引区分；长名称视觉截断但保留完整 tooltip/accessible name，HTML 特殊字符按文本显示。
-5. 第一切片不实现工作区 Tab 删除、排序、复制、搜索和跨浏览器窗口拖拽；这些操作需要单独定义会话与冲突语义。
+5. 第一切片不实现工作区 Tab 删除、排序、搜索和跨浏览器窗口拖拽；新增时“复制当前布局”已经实现，不得与后续单独的复制管理操作混淆。
 
 ### 必测场景
 
@@ -256,7 +284,7 @@ M6 和 M7 在 M5 契约稳定后可并行开发，但合并前分别在最新共
 
 ### 数据与协议任务
 
-1. 冻结现有 schema v1 共享/本地字段；若广播组需要 v2，先写迁移函数和 round-trip 测试。
+1. 冻结现有 schema v2 工作区共享/本地字段；广播组需要升级 schema 时，先定义新版本与 round-trip 迁移，不重复迁移至已经存在的v2。
 2. 统一 API 字段为现有 `schema_version/revision/layout`，删除实现文档中的 `baseRevision` 第二套叫法。
 3. 服务端错误返回稳定 code（如 `LAYOUT_CONFLICT`），前端不匹配中文 message。
 
@@ -318,7 +346,7 @@ M6 和 M7 在 M5 契约稳定后可并行开发，但合并前分别在最新共
 
 ### 实施任务
 
-1. 安装与 xterm 6 匹配的 `@xterm/addon-webgl`，记录 lockfile 变化和许可证。
+1. 核验已安装的 `@xterm/addon-webgl` 与现有 load/context-loss fallback；不重复实现已交付基础，补齐性能/资源释放门禁。
 2. 封装 renderer lifecycle：load、active renderer observation、context loss、dispose、DOM fallback。
 3. 可见 pane active tab 同时 mount；不可见 tab 才释放 WebGL，且 terminalID/tmux 不变。
 4. 合并 ResizeObserver 到 rAF；cols/rows 未变不发；drag 结束才 fit。
@@ -369,7 +397,7 @@ git diff --check
 - Spec E2E-1 至 E2E-9、E2E-TAB-1、PERF-1 全部有 fresh evidence。
 - 所有功能 requirement 能映射到自动测试或明确的人工/环境验收。
 - 无 token/密码/私钥进入 Git、日志、截图、trace。
-- 已知限制写入 README/部署文档：同账号限制、tmux ≥ 3.1、mobile 裁切、显式 close 语义。
+- 已知限制写入 README/部署文档：同账号限制、tmux ≥ 3.1、手机阅读/原生输入分离与历史保留边界、显式 close 语义；手机阅读裁切不再作为可接受限制。
 - 有升级步骤、回滚步骤和数据兼容证明。
 
 ## 13. P1/P2 Backlog（不属于本计划 Done）
@@ -398,6 +426,8 @@ git diff --check
 | 2026-09-05 | 复制布局生成新的 pane、会话 Tab 与 terminalID | 当前 `Tab.id` 即 terminalID；生成全新身份可避免关闭副本时误杀原 tmux 会话，仅复用连接、标题和显示编号 |
 
 ## 15. Progress Notes
+
+- [2026-09-11] `2df868a`生产版本用户确认；创建dev-1.0.4。主Spec追加MOB-01–08，归并横滑标签、换行、触摸历史、去白线、统一字号和键盘视口恢复；同步主/补充计划，不将剩余P0自动视为验收。
 
 - [2026-09-04] 计划创建。完成代码事实核对、现有 evidence 核对、官方 xterm/tmux/Go websocket 资料核对。
 - [2026-09-04] 基线通过：Go 全测；UI 14 files / 39 tests；lint；production build。
