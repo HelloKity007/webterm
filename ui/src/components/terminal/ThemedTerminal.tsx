@@ -49,7 +49,7 @@ import {
   routeTerminalMouseUp,
   shouldAutoFocusTerminal,
 } from './terminalInteractions';
-import { calculateTerminalScale, defaultSharedTerminalGrid, parseSharedTerminalGridTitle, sharedGridForViewport, smallViewportWidth, type TerminalGrid } from './terminalScaling';
+import { calculateTerminalScale, parseSharedTerminalGridTitle, sharedGridForViewport, sharedTerminalGridForPanelCount, smallViewportWidth, type TerminalGrid } from './terminalScaling';
 import { getSharedTerminalGrid, setSharedTerminalGrid } from './terminalGridCache';
 import { isMobileBrowserEnvironment } from '../layout/mobileLayout';
 
@@ -62,6 +62,7 @@ interface Props {
   myTabId?: string;
   workspaceIndex?: number;
   panelNumber?: number;
+  panelCount?: number;
 }
 
 type Octets = Uint8Array | ArrayBuffer;
@@ -99,7 +100,7 @@ function highlightText(text: string, rules: HighlightRule[]): string {
   return text;
 }
 
-export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMenuItems, myTabId, workspaceIndex, panelNumber }: Props) {
+export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMenuItems, myTabId, workspaceIndex, panelNumber, panelCount = 1 }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const [termKey, setTermKey] = useState(0);
@@ -688,7 +689,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
         if (!nativeGrid) return;
         // Raw pane ANSI coordinates must use the server's exact grid, even
         // on a large display with many small split panels.
-        const targetGrid = sharedGrid || (useCappedViewportGrid ? defaultSharedTerminalGrid : nativeGrid);
+        const targetGrid = sharedGrid || (useCappedViewportGrid ? sharedTerminalGridForPanelCount(panelCount) : nativeGrid);
         const screen = term.element?.querySelector<HTMLElement>('.xterm-screen');
         const nativeCellWidth = screen && term.cols > 0
           ? screen.getBoundingClientRect().width / term.cols
@@ -764,7 +765,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       // grid back to this control client instead of silently restoring tiny
       // glyphs. Mobile uses the same grid for its native input canvas while
       // retaining the separately sized 12px wrapped reader.
-      const nextGrid = sharedGridForViewport(announcedGrid, window.innerWidth);
+      const nextGrid = sharedGridForViewport(announcedGrid, window.innerWidth, panelCount);
       if (sharedGrid?.cols === nextGrid.cols && sharedGrid.rows === nextGrid.rows) return;
       sharedGrid = nextGrid;
       // Resize during the OSC callback, before parsing the following snapshot.
@@ -847,7 +848,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       resizeObserver.disconnect();
       window.removeEventListener('resize', handleResize);
     };
-  }, [copyCurrentSelection, fontSize, myTabId, pasteFromClipboard, setSftpCdPath, themeName]);
+  }, [copyCurrentSelection, fontSize, myTabId, panelCount, pasteFromClipboard, setSftpCdPath, themeName]);
 
   const terminalID = myTabId || '';
   // Control Mode remains an opt-in diagnostic until the remote tmux stream is
