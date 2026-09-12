@@ -764,7 +764,8 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
         if (!mobileBrowser) {
           if (widthFitFrame !== null) cancelAnimationFrame(widthFitFrame);
           // Wait for xterm's render frame before measuring the final glyphs.
-          widthFitFrame = requestAnimationFrame(() => {
+          let passes = 0;
+          const settleWidth = () => {
             widthFitFrame = requestAnimationFrame(() => {
               widthFitFrame = null;
               const screenRect = screen?.getBoundingClientRect();
@@ -773,6 +774,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
               const available = scrollbar.left - screenRect.left;
               const fit = fitTerminalColumns(available, screenRect.width, term.cols, term.options.letterSpacing || 0, window.devicePixelRatio);
               if (!fit) return;
+              if (fit.cols === term.cols && fit.letterSpacing === term.options.letterSpacing) return;
               resizingForSharedGrid = true;
               try {
                 term.options.letterSpacing = fit.letterSpacing;
@@ -784,8 +786,12 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
                 sendRef.current(JSON.stringify(sharedGrid));
                 onResizeDimRef.current?.(fit.cols, targetGrid.rows);
               } finally { resizingForSharedGrid = false; }
+              // Scrollbar geometry may change after resize (especially panes
+              // returning from below the fold). Recheck the painted boundary.
+              if (++passes < 4) widthFitFrame = requestAnimationFrame(settleWidth);
             });
-          });
+          };
+          widthFitFrame = requestAnimationFrame(settleWidth);
         }
 
       } finally {
