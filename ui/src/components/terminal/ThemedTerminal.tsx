@@ -771,6 +771,9 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
               const screenRect = screen?.getBoundingClientRect();
               const scrollbar = term.element?.querySelector<HTMLElement>('.scrollbar.vertical')?.getBoundingClientRect();
               if (!screenRect || !scrollbar || !screenRect.width || !scrollbar.width) return;
+              // xterm suspends painting offscreen panes. Their rectangle may
+              // describe an old grid even though term.cols already changed.
+              if (screenRect.top >= window.innerHeight || screenRect.bottom <= 0) return;
               const available = scrollbar.left - screenRect.left;
               const fit = fitTerminalColumns(available, screenRect.width, term.cols, term.options.letterSpacing || 0, window.devicePixelRatio);
               if (!fit) return;
@@ -880,6 +883,11 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
     });
     if (ref.current) resizeObserver.observe(ref.current);
 
+    const visibilityObserver = new IntersectionObserver(entries => {
+      if (entries.some(entry => entry.isIntersecting)) scheduleFit();
+    });
+    if (ref.current) visibilityObserver.observe(ref.current);
+
     const handleResize = () => scheduleFit();
     window.addEventListener('resize', handleResize);
 
@@ -902,6 +910,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       }
       term.dispose();
       resizeObserver.disconnect();
+      visibilityObserver.disconnect();
       window.removeEventListener('resize', handleResize);
     };
   }, [copyCurrentSelection, fontSize, myTabId, pasteFromClipboard, setSftpCdPath, themeName]);

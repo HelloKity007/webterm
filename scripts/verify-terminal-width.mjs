@@ -18,6 +18,10 @@ try {
     await page.goto('https://192.168.11.87:9444/', { waitUntil: 'networkidle' });
     await page.locator('.terminal-surface:visible').first().waitFor();
     await page.waitForTimeout(2000);
+    // xterm intentionally suspends offscreen renderers. Visit the extra row
+    // before measuring it so the check covers its first visible frame too.
+    await page.locator('.terminal-grid').evaluate(e => { e.scrollTop = e.scrollHeight; });
+    await page.waitForTimeout(1000);
     const panels = await page.locator('.terminal-surface:visible').evaluateAll(es => es.map(e => {
       const s = e.querySelector('.xterm-screen').getBoundingClientRect();
       const b = e.querySelector('.scrollbar.vertical').getBoundingClientRect();
