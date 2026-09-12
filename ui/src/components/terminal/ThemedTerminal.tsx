@@ -669,7 +669,8 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
 
         // Adapt to the browser viewport, not the largest attached monitor.
         const displayWidth = window.innerWidth;
-        const useSmallViewportBaseline = !mobileBrowser && displayWidth < smallViewportWidth;
+        const useCappedViewportGrid = displayWidth < smallViewportWidth;
+        const useSmallViewportBaseline = !mobileBrowser && useCappedViewportGrid;
         // Increase only the small client's base glyph size. Large displays
         // retain the production-native font metrics and scroll behavior.
         // Phones have a much shorter portrait width; keep a compact native
@@ -687,14 +688,12 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
         if (!nativeGrid) return;
         // Raw pane ANSI coordinates must use the server's exact grid, even
         // on a large display with many small split panels.
-        const targetGrid = sharedGrid || (useSmallViewportBaseline ? defaultSharedTerminalGrid : nativeGrid);
+        const targetGrid = sharedGrid || (useCappedViewportGrid ? defaultSharedTerminalGrid : nativeGrid);
         const screen = term.element?.querySelector<HTMLElement>('.xterm-screen');
         const nativeCellWidth = screen && term.cols > 0
           ? screen.getBoundingClientRect().width / term.cols
           : 1;
-        let scaleOptions = mobileBrowser
-          ? { fontSize: responsiveFontSize, letterSpacing: 0, lineHeight: 1, scale: 1 }
-          : calculateTerminalScale(nativeGrid, targetGrid, responsiveFontSize, nativeCellWidth);
+        let scaleOptions = calculateTerminalScale(nativeGrid, targetGrid, responsiveFontSize, nativeCellWidth);
 
         term.options.fontSize = scaleOptions.fontSize;
         term.options.letterSpacing = scaleOptions.letterSpacing;
@@ -703,7 +702,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
         // Font rasterisation can differ by a fraction of a pixel across DPRs.
         // Add a small correction only when xterm says the target would overflow.
         const proposed = fitAddon.proposeDimensions();
-        if (!mobileBrowser && proposed && (proposed.cols < targetGrid.cols || proposed.rows < targetGrid.rows)) {
+        if (proposed && (proposed.cols < targetGrid.cols || proposed.rows < targetGrid.rows)) {
           const correction = Math.min(proposed.cols / targetGrid.cols, proposed.rows / targetGrid.rows) * 0.995;
           scaleOptions = {
             ...scaleOptions,
@@ -716,7 +715,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
         }
 
         term.resize(targetGrid.cols, targetGrid.rows);
-        if (useSmallViewportBaseline) {
+        if (useCappedViewportGrid) {
           // Width fitting above may reduce the font after lineHeight was
           // calculated. Re-measure the final native cell height; otherwise a
           // tall, narrow pane keeps only half its vertical character area.
@@ -763,8 +762,9 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       // must retain its readable local cap when tmux echoes a grid announced
       // earlier by a larger client; fitWhenVisible sends the capped complete
       // grid back to this control client instead of silently restoring tiny
-      // glyphs. Mobile keeps its separately tested reader/input behavior.
-      const nextGrid = mobileBrowser ? announcedGrid : sharedGridForViewport(announcedGrid, window.innerWidth);
+      // glyphs. Mobile uses the same grid for its native input canvas while
+      // retaining the separately sized 12px wrapped reader.
+      const nextGrid = sharedGridForViewport(announcedGrid, window.innerWidth);
       if (sharedGrid?.cols === nextGrid.cols && sharedGrid.rows === nextGrid.rows) return;
       sharedGrid = nextGrid;
       // Resize during the OSC callback, before parsing the following snapshot.

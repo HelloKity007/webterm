@@ -71,9 +71,21 @@ try {
   await page.screenshot({ path: resolve(output, 'mobile-tabs.png') });
   await page.getByRole('button', { name: '终端输入', exact: true }).click();
   assert.equal(await page.locator('.xterm-decoration-overview-ruler:visible').count(), 0);
+  const inputBounds = await page.locator('.terminal-surface:visible').evaluate(surface => {
+    const panel = surface.getBoundingClientRect();
+    const screen = surface.querySelector('.xterm-screen')?.getBoundingClientRect();
+    return { panel: { width: panel.width, height: panel.height },
+      screen: screen && { width: screen.width, height: screen.height },
+      cols: Number(surface.dataset.sharedCols), rows: Number(surface.dataset.sharedRows) };
+  });
+  assert(inputBounds.screen, 'mobile terminal input canvas is missing');
+  assert(inputBounds.screen.width <= inputBounds.panel.width + 1, 'mobile terminal input is clipped horizontally');
+  assert(inputBounds.screen.height <= inputBounds.panel.height + 1, 'mobile terminal input is clipped vertically');
+  assert.equal(inputBounds.cols, 69);
+  assert.equal(inputBounds.rows, 29);
   await page.getByRole('button', { name: '换行阅读', exact: true }).click();
   assert.equal(await page.locator('.xterm-helper-textarea:focus').count(), 0);
-  check('MOB-04/07: reading blurs terminal; native mode has no white ruler', true);
+  check('MOB-04/07: reading blurs terminal; native input fits and has no white ruler', inputBounds);
 
   // Synthetic visualViewport transitions: these do NOT claim a real IME test.
   // Reload mounts listeners against the fixture viewport via an init script.
