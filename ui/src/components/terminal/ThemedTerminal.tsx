@@ -133,6 +133,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
   const sendRef = useRef<(data: string) => void>(() => {});
   const requestedGridRef = useRef<TerminalGrid | null>(null);
   const inputViewportFollowedRef = useRef(false);
+  const pendingCursorRevealRef = useRef(false);
   const onStatusRef = useRef(onStatus);
   const onResizeDimRef = useRef(onResizeDim);
   const themeName = usePreferencesStore((s) => s.themeName);
@@ -517,6 +518,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
     const mobileBrowser = isMobileBrowserEnvironment();
     const wheelSender = createLatestTerminalWheelSender((data) => sendRef.current(JSON.stringify({ data })));
     const handleTerminalWheel = (event: WheelEvent) => {
+      pendingCursorRevealRef.current = false;
       if (event.deltaY < 0) inputViewportFollowedRef.current = false;
       // A normal shell has a local xterm scrollback. Do not let tmux's mouse
       // protocol reach readline, where wheel reports become history-up/down.
@@ -1256,8 +1258,12 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
     if (!term) return;
     let frame: number | undefined;
     const listener = term.onCursorMove(() => {
-      if (document.activeElement !== term.textarea || frame !== undefined) return;
-      frame = requestAnimationFrame(() => { frame = undefined; revealInputCursor(); });
+      if (!pendingCursorRevealRef.current || document.activeElement !== term.textarea || frame !== undefined) return;
+      frame = requestAnimationFrame(() => {
+        frame = undefined;
+        if (pendingCursorRevealRef.current) revealInputCursor();
+        pendingCursorRevealRef.current = false;
+      });
     });
     return () => { listener.dispose(); if (frame !== undefined) cancelAnimationFrame(frame); };
   }, [termKey, revealInputCursor]);
@@ -1270,6 +1276,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
         onMouseUpCapture={handleSurfaceMouseUp}
         onKeyDownCapture={() => {
           mouseStateRef.current.tmuxMenuActive = false;
+          pendingCursorRevealRef.current = true;
           revealInputCursor();
         }}
         onContextMenuCapture={(e) => routeTerminalContextMenu(e, (position) => {
