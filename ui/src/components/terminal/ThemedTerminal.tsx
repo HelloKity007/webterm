@@ -20,7 +20,7 @@ import { deliverTerminalBytes } from './terminalOutput';
 import TerminalHistoryHelp from './TerminalHistoryHelp';
 import MobileTerminalReader from './MobileTerminalReader';
 import { terminalModeAfterPrivateControl } from './terminalMode';
-import { localViewportFont, localViewportScroll } from './localViewport';
+import { localViewportFont, localViewportScroll, localViewportRevealRow } from './localViewport';
 import {
   createTerminalWheelState,
   createLatestTerminalWheelSender,
@@ -1240,6 +1240,28 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
     return () => disposable.dispose();
   }, [send, sendTextAsBinary, termKey]);
 
+  const revealInputCursor = useCallback(() => {
+    const surface = ref.current;
+    const term = termRef.current;
+    if (!surface?.classList.contains('desktop-local-viewport') || !term) return;
+    term.scrollToBottom();
+    const screen = term.element?.querySelector<HTMLElement>('.xterm-screen');
+    if (!screen) return;
+    surface.scrollTop = localViewportRevealRow(surface.scrollTop, surface.clientHeight, surface.scrollHeight,
+      screen.getBoundingClientRect().height / term.rows, term.buffer.active.cursorY);
+  }, []);
+
+  useEffect(() => {
+    const term = termRef.current;
+    if (!term) return;
+    let frame: number | undefined;
+    const listener = term.onCursorMove(() => {
+      if (document.activeElement !== term.textarea || frame !== undefined) return;
+      frame = requestAnimationFrame(() => { frame = undefined; revealInputCursor(); });
+    });
+    return () => { listener.dispose(); if (frame !== undefined) cancelAnimationFrame(frame); };
+  }, [termKey, revealInputCursor]);
+
   return (
     <div className="terminal-root" style={{ position: 'relative', flex: 1, display: 'flex', minWidth: 0, minHeight: 0, overflow: 'hidden', background: getTheme(themeName || 'XTerminal Green').background }}>
       <div ref={ref} className="terminal-surface" style={{ flex: 1, minWidth: 0, minHeight: 0, overflow: 'hidden', padding: '0 0 0 6px', background: getTheme(themeName || 'XTerminal Green').background }}
@@ -1248,7 +1270,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
         onMouseUpCapture={handleSurfaceMouseUp}
         onKeyDownCapture={() => {
           mouseStateRef.current.tmuxMenuActive = false;
-          if (ref.current?.classList.contains('desktop-local-viewport')) ref.current.scrollTop = ref.current.scrollHeight;
+          revealInputCursor();
         }}
         onContextMenuCapture={(e) => routeTerminalContextMenu(e, (position) => {
           contextSelectionRef.current = termRef.current?.getSelection() || selectionSnapshotRef.current;
