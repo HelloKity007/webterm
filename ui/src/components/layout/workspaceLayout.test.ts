@@ -5,11 +5,22 @@ import {
   normalizePersistedWorkspace,
   preserveLocalWorkspaceSelection,
   renameWorkspaceTab,
+  removeWorkspaceTab,
   sharedWorkspaceSnapshot,
 } from './workspaceLayout';
 import { emptyPersistedLayout } from './layoutPersistence';
 
 describe('workspace layout schema v2', () => {
+  it('closes the last workspace into a fresh empty workspace without reusing session identities', () => {
+    const original = migrateLayoutV1(emptyPersistedLayout())!;
+    original.workspaceTabs[0].layout.panes.root.tabs = [{ id: 'old-ssh', type: 'ssh', title: 'old', connId: 2 }];
+    const result = removeWorkspaceTab(original, original.workspaceTabs[0].id);
+    expect(result.workspaceTabs).toHaveLength(1);
+    expect(result.workspaceTabs[0].id).not.toBe(original.workspaceTabs[0].id);
+    expect(result.workspaceTabs[0].index).toBe(2);
+    expect(Object.values(result.workspaceTabs[0].layout.panes).flatMap(pane => pane.tabs)).toEqual([]);
+    expect(original.workspaceTabs[0].layout.panes.root.tabs).toHaveLength(1);
+  });
   it('migrates a schema v1 layout without changing pane or terminal identity', () => {
     const legacy = emptyPersistedLayout();
     legacy.panes.root.tabs = [{ id: 'ssh-existing', type: 'ssh', title: 'production', connId: 7, labelNumber: 8 }];

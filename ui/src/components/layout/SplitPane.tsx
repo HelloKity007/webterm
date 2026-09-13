@@ -26,6 +26,7 @@ import {
   normalizePersistedWorkspace,
   preserveLocalWorkspaceSelection,
   renameWorkspaceTab,
+  removeWorkspaceTab,
   sharedWorkspaceSnapshot,
   type PersistedWorkspace,
   type WorkspaceCreateMode,
@@ -141,7 +142,6 @@ function renameWorkspace(workspaceID: string, name: string) {
 }
 
 async function closeWorkspace(workspaceID: string) {
-  if (workspaceState.workspaceTabs.length <= 1) return;
   syncActiveWorkspaceLayout();
   const workspace = workspaceState.workspaceTabs.find((candidate) => candidate.id === workspaceID);
   if (!workspace) return;
@@ -150,7 +150,8 @@ async function closeWorkspace(workspaceID: string) {
     .map((tab) => ({ connId: tab.connId!, tabId: tab.id, panelNumber: tab.labelNumber || 1 })));
   const cleanupResults = await Promise.all(terminalIDs.map(async ({ connId, tabId, panelNumber }) => {
     try {
-      await closeTerminalSession(connId, tabId, workspace.index, panelNumber);
+      const result = await closeTerminalSession(connId, tabId, workspace.index, panelNumber, true) as { status?: string };
+      if (result?.status !== 'ok') throw new Error('Remote session was not terminated');
       return true;
     } catch (error) {
       console.error('Failed to close workspace terminal session; keeping workspace open:', error);
@@ -158,12 +159,13 @@ async function closeWorkspace(workspaceID: string) {
     }
   }));
   // Keep the workspace reference when any tmux cleanup failed so the user can retry.
-  if (cleanupResults.some((success) => !success)) return;
-  const remaining = workspaceState.workspaceTabs.filter((candidate) => candidate.id !== workspaceID);
-  workspaceState = { workspaceTabs: remaining };
-  if (activeWorkspaceTabID === workspaceID) activeWorkspaceTabID = remaining[0].id;
-  const activeWorkspace = remaining.find((candidate) => candidate.id === activeWorkspaceTabID)!;
-  restoreLayout(activeWorkspace.layout);
+  if (cleanupResults.some((success) => !success)) throw new Error('部分终端关闭失败，工作区已保留；已关闭的程序无法恢复，请重试。');
+  workspaceState = removeWorkspaceTab(workspaceState, workspaceID, nextLayoutID);
+  const remaining = workspaceState.workspaceTabs;
+  if (activeWorkspaceTabID === workspaceID) {
+    activeWorkspaceTabID = remaining[0].id;
+    restoreLayout(remaining[0].layout);
+  }
   notify();
 }
 
@@ -968,6 +970,8 @@ export default function SplitPane({ onActiveSshChange }: { onActiveSshChange?: (
   const restoredAtRef = useRef(0);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [layoutMessage, setLayoutMessage] = useState('');
+  const [closingWorkspace, setClosingWorkspace] = useState(false);
+  const workspaceClosePending = useRef(false);
   const [, forceWorkspaceUpdate] = useState(0);
 
   useLayoutEffect(() => subscribe(() => forceWorkspaceUpdate((version) => version + 1)), []);
@@ -1046,16 +1050,27 @@ export default function SplitPane({ onActiveSshChange }: { onActiveSshChange?: (
       const revision = layoutEventRevision(raw, revisionRef.current);
       if (revision !== null) void loadLayout(revision).catch(() => setLayoutMessage('无法同步另一端更新的布局；请稍后重试。'));
     }} />}
+    <div inert={closingWorkspace} style={{ display: 'contents' }}>
     <WorkspaceTabBar
       collapsible
-      tabs={workspaceState.workspaceTabs}
+      tabs={workspaceState.workspaceTabs.map(workspace => workspace.id === activeWorkspaceTabID ? { ...workspace, layout: layoutSnapshot() } : workspace)}
       activeWorkspaceTabId={activeWorkspaceTabID}
       onSelect={switchWorkspace}
       onRename={renameWorkspace}
       onCreate={addWorkspace}
-      onClose={(workspaceID) => { void closeWorkspace(workspaceID); }}
+      closing={closingWorkspace}
+      onClose={(workspaceID) => {
+        if (workspaceClosePending.current) return;
+        workspaceClosePending.current = true;
+        setClosingWorkspace(true);
+        void closeWorkspace(workspaceID).catch((error: Error) => setLayoutMessage(error.message)).finally(() => {
+          workspaceClosePending.current = false;
+          setClosingWorkspace(false);
+        });
+      }}
     />
     <GridContainer onActiveSshChange={onActiveSshChange} workspaceIndex={workspaceState.workspaceTabs.find((workspace) => workspace.id === activeWorkspaceTabID)?.index || 1} />
+    </div>
     {layoutMessage && <div role="status" style={{ position: 'fixed', right: 16, bottom: 16, zIndex: 20, padding: '8px 12px', borderRadius: 4, background: colors.bgRaised, border: `1px solid ${colors.border}`, color: colors.text, fontSize: font.md }}>{layoutMessage}</div>}
   </>;
 }

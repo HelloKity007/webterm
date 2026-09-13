@@ -46,6 +46,7 @@ type WSHandler struct {
 	RunTmuxPreflight  func(*sshmgr.Client) (string, error)
 	Registry          *WSRegistry
 	terminalSessions  persistentSessionRegistry
+	terminalLifecycle terminalLifecycle
 	terminalHistoryMu sync.Mutex
 	terminalHistory   *terminalHistoryStore
 	tmuxPreflightMu   sync.Mutex
@@ -170,14 +171,18 @@ func (h *WSHandler) CloseTerminalSession(w http.ResponseWriter, r *http.Request)
 		http.Error(w, `{"error":"invalid terminal"}`, http.StatusBadRequest)
 		return
 	}
-	if h.PreserveTerminalSessions {
+	// Explicit cascade termination may override preservation only on the
+	// isolated test server, never on a copied layout using the default socket.
+	explicitTestClose := r.URL.Query().Get("terminate") == "1" && strings.HasPrefix(h.TmuxSocket, "webterm-release-test")
+	if h.PreserveTerminalSessions && !explicitTestClose {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"status":"preserved"}`))
 		return
 	}
 	command = applyPanelSessionName(command, user.UserID, connID, terminalID, r.URL.Query().Get("workspace_index"), r.URL.Query().Get("panel_number"))
 	command = scopeTmuxCommand(command, h.TmuxSocket, h.TmuxBinary)
-	if err := h.runTerminalCommand(connection, command); err != nil {
+	lifecycle := h.terminalLifecycle.entry(terminalKeyFor(user.UserID, connID, terminalID))
+	if err := lifecycle.close(func() error { return h.runTerminalCommand(connection, command) }); err != nil {
 		http.Error(w, `{"error":"failed to close terminal"}`, http.StatusBadGateway)
 		return
 	}
@@ -431,7 +436,7 @@ func (h *WSHandler) HandleSSH(conn *websocket.Conn) {
 	stdoutPipe, _ := session.StdoutPipe()
 	stderrPipe, _ := session.StderrPipe()
 
-	if err := session.Start(tmuxCommand); err != nil {
+	if err := h.terminalLifecycle.entry(terminalKey).start(func() error { return session.Start(tmuxCommand) }); err != nil {
 		sendOutboundErr(outbound, "无法启动持久终端（远端必须安装 tmux）: "+friendlyErr(err))
 		return
 	}

@@ -82,14 +82,18 @@ describe('WorkspaceTabBar', () => {
     expect(onCreate).toHaveBeenLastCalledWith('copy');
   });
 
-  it('confirms before closing a workspace and hides close for the last one', () => {
+  it('confirms destructive scope, supports cancellation and can close the last workspace', () => {
     const onClose = vi.fn();
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValue(true);
     const { rerender } = render(<WorkspaceTabBar tabs={tabs} activeWorkspaceTabId="workspace-1" onSelect={vi.fn()} onRename={vi.fn()} onCreate={vi.fn()} onClose={onClose} />);
     fireEvent.click(screen.getByRole('button', { name: /关闭工作区: 3:/ }));
-    expect(confirm).toHaveBeenCalledWith('关闭此工作区及其中的全部终端会话？');
+    expect(onClose).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: /关闭工作区: 3:/ }));
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining('Shell／Claude'));
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining('Panel: 0'));
     expect(onClose).toHaveBeenCalledWith('workspace-3');
     rerender(<WorkspaceTabBar tabs={[tabs[0]]} activeWorkspaceTabId="workspace-1" onSelect={vi.fn()} onRename={vi.fn()} onCreate={vi.fn()} onClose={onClose} />);
-    expect(screen.queryByRole('button', { name: /关闭工作区/ })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /关闭工作区/ }));
+    expect(onClose).toHaveBeenLastCalledWith('workspace-1');
   });
 });

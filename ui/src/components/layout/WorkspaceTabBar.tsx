@@ -3,6 +3,7 @@ import { t } from '../../i18n';
 import { colors, font } from '../../theme/tokens';
 import type { WorkspaceCreateMode, WorkspaceTab } from './workspaceLayout';
 import { useWorkspaceChromeStore } from '../../store/layout';
+import TabCloseButton from './TabCloseButton';
 
 interface Props {
   tabs: WorkspaceTab[];
@@ -12,9 +13,10 @@ interface Props {
   onCreate: (mode: WorkspaceCreateMode) => void;
   onClose?: (id: string) => void;
   collapsible?: boolean;
+  closing?: boolean;
 }
 
-export default function WorkspaceTabBar({ tabs, activeWorkspaceTabId, onSelect, onRename, onCreate, onClose, collapsible = false }: Props) {
+export default function WorkspaceTabBar({ tabs, activeWorkspaceTabId, onSelect, onRename, onCreate, onClose, collapsible = false, closing = false }: Props) {
   const expanded = useWorkspaceChromeStore(s => s.expanded);
   const [editingID, setEditingID] = useState<string | null>(null);
   const [editingName, setEditingName] = useState('');
@@ -81,9 +83,10 @@ export default function WorkspaceTabBar({ tabs, activeWorkspaceTabId, onSelect, 
               style={{ height: 30, maxWidth: 260, minWidth: 90, padding: '0 6px 0 12px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', border: `1px solid ${active ? colors.accent : 'transparent'}`, borderRadius: 5, cursor: 'pointer', color: active ? colors.bg : colors.textMuted2, background: active ? colors.accent : 'transparent', fontSize: font.md, display: 'flex', alignItems: 'center', gap: 6 }}
             >
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</span>
-              {onClose && tabs.length > 1 && <button type="button" aria-label={`${t('workspace_close')}: ${label}`} title={t('workspace_close')}
-                onClick={(event) => { event.stopPropagation(); if (window.confirm(t('workspace_close_confirm'))) onClose(workspace.id); }}
-                style={{ width: 18, height: 18, flexShrink: 0, padding: 0, border: 0, borderRadius: '50%', cursor: 'pointer', color: active ? colors.bg : colors.textMuted, background: 'transparent', fontSize: font.md, lineHeight: '16px' }}>×</button>}
+              {onClose && <TabCloseButton label={`${t('workspace_close')}: ${label}`} disabled={closing} onClick={() => {
+                const count = Object.values(workspace.layout.panes).reduce((total, pane) => total + pane.tabs.length, 0);
+                if (window.confirm(`${label}\n${t('workspace_close_confirm')}\nPanel: ${count}`)) onClose(workspace.id);
+              }} />}
             </div>
           );
         })}

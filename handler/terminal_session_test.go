@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/xufanchn/webterm/auth"
@@ -108,5 +109,24 @@ func TestReleaseEnvironmentClosePreservesSharedTmuxSession(t *testing.T) {
 	}
 	if runCalled {
 		t.Fatal("release-test close executed a remote tmux command")
+	}
+	for _, socket := range []string{"", "webterm-release-test-fixed"} {
+		h.TmuxSocket = socket
+		runCalled = false
+		h.RunTerminalCommand = func(_ *store.Connection, command string) error {
+			runCalled = true
+			if !strings.Contains(command, "tmux -L webterm-release-test-fixed ") {
+				t.Fatal("termination escaped test socket")
+			}
+			return nil
+		}
+		req := httptest.NewRequest(http.MethodDelete, "/api/terminal-sessions/1?terminal_id=shared-tab&terminate=1", nil)
+		req.SetPathValue("conn_id", "1")
+		req.Header.Set("Authorization", "Bearer "+testJWT(t, userID, "user"))
+		res := httptest.NewRecorder()
+		auth.Middleware(http.HandlerFunc(h.CloseTerminalSession)).ServeHTTP(res, req)
+		if res.Code != http.StatusOK || runCalled != (socket != "") {
+			t.Fatalf("explicit close scope %q: %d called=%v", socket, res.Code, runCalled)
+		}
 	}
 }

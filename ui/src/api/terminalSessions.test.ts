@@ -3,6 +3,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { closeTerminalSession } from './terminalSessions';
 
 describe('closeTerminalSession', () => {
+  it('explicitly requests cascading termination with exact panel coordinates', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response('{"status":"ok"}', { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+    await closeTerminalSession(2, 'owned-fixture', 3, 5, true);
+    expect(fetchMock).toHaveBeenCalledWith('/api/terminal-sessions/2?terminal_id=owned-fixture&workspace_index=3&panel_number=5&terminate=1', expect.objectContaining({ method: 'DELETE' }));
+  });
   beforeEach(() => {
     localStorage.clear();
     localStorage.setItem('token', 'close-token');

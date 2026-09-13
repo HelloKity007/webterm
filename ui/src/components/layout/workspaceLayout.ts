@@ -121,6 +121,12 @@ export function renameWorkspaceTab(value: PersistedWorkspace, workspaceID: strin
   };
 }
 
+export function removeWorkspaceTab(value: PersistedWorkspace, workspaceID: string, idFactory: WorkspaceIDFactory = defaultIDFactory): PersistedWorkspace {
+  if (!value.workspaceTabs.some(workspace => workspace.id === workspaceID)) return value;
+  const remaining = value.workspaceTabs.filter(workspace => workspace.id !== workspaceID);
+  return { workspaceTabs: remaining.length ? remaining : [createWorkspaceTab(value, workspaceID, 'blank', idFactory).workspace] };
+}
+
 function blankLayoutWithNewIdentity(idFactory: WorkspaceIDFactory): PersistedLayout {
   const paneID = idFactory('pane');
   return {

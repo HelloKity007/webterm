@@ -1,7 +1,7 @@
 import { t } from '../../i18n';
 import React, { useEffect, useRef, useState } from 'react';
 import type { Tab } from '../../store/layout';
-import Icon from '../common/Icon';
+import TabCloseButton from './TabCloseButton';
 import { colors, font } from '../../theme/tokens';
 import { horizontalTabScrollTarget } from './tabBarScroll';
 
@@ -140,10 +140,7 @@ export default function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab, onR
                 style={{ width: 112, border: 'none', borderRadius: 3, padding: '1px 4px', fontSize: font.md, color: colors.text, background: colors.bgInput, userSelect: 'text' }}
               />
             ) : `${tab.labelNumber ?? idx + 1}: ${tab.title}`}
-            <span aria-label={t('tab_close')} onClick={(e) => { e.stopPropagation(); if (window.confirm(t('tab_close_confirm'))) onCloseTab(tab.id); }}
-              style={{ color: colors.textMuted, cursor: 'pointer', borderRadius: '50%', width: 14, height: 14, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-              onMouseEnter={(e) => { e.currentTarget.style.background = colors.border; e.currentTarget.style.color = colors.bg; }}
-              onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = colors.textMuted; }}><Icon name="x" size={11} /></span>
+            <TabCloseButton label={t('tab_close')} onClick={() => { if (window.confirm(t('tab_close_confirm'))) onCloseTab(tab.id); }} />
           </div>
         </React.Fragment>
       ))}
