@@ -20,7 +20,7 @@ import { deliverTerminalBytes } from './terminalOutput';
 import TerminalHistoryHelp from './TerminalHistoryHelp';
 import MobileTerminalReader from './MobileTerminalReader';
 import { terminalModeAfterPrivateControl } from './terminalMode';
-import { localTerminalFont, localViewportScroll } from './localViewport';
+import { localViewportFont, localViewportScroll } from './localViewport';
 import {
   createTerminalWheelState,
   createLatestTerminalWheelSender,
@@ -670,6 +670,8 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
     let announcedGrid: TerminalGrid | null = null;
     let fittedGridKey = '';
     let requestedGeometryKey = '';
+    let viewportInitialized = false;
+    let viewportFollowFrame: number | null = null;
     const fontMeasure = document.createElement('canvas').getContext('2d');
 
     term.onResize(({ cols, rows }) => {
@@ -702,12 +704,13 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
             return { width: metric.width, height: metric.fontBoundingBoxAscent + metric.fontBoundingBoxDescent };
           };
           const geometryKey = [width, height, dpr, fontSize, term.options.fontFamily, !!webglAddon, window.innerWidth].join(':');
+          const fittedFont = localViewportFont(fontSize, width, dpr, measure, !!webglAddon);
           if (geometryKey !== requestedGeometryKey) {
-            const metric = measure(Math.max(fontSize, 16));
+            const metric = measure(fittedFont);
             const cellWidth = (webglAddon ? Math.floor(metric.width * dpr) : metric.width * dpr) / dpr;
             const cellHeight = Math.ceil(metric.height * dpr) / dpr;
             if (cellWidth > 0 && cellHeight > 0) {
-              requestedGridRef.current = desktopRequestedGrid({ cols: Math.max(2, Math.min(1000, Math.floor((width - 2) / cellWidth))), rows: Math.max(1, Math.min(499, Math.floor((height - 1) / cellHeight))) }, window.innerWidth);
+              requestedGridRef.current = desktopRequestedGrid({ cols: Math.max(2, Math.min(1000, Math.floor((width - 2) / cellWidth))), rows: Math.max(1, Math.min(499, Math.floor((height - 1) / cellHeight))) });
               requestedGeometryKey = geometryKey;
               sendRef.current(JSON.stringify(requestedGridRef.current));
             }
@@ -718,8 +721,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
           // Re-entering the viewport or receiving the same title is not a
           // geometry change. Keep the already painted metrics untouched.
           if (key === fittedGridKey) return;
-          const fittedFont = localTerminalFont(fontSize);
-          const following = ref.current.scrollHeight - ref.current.clientHeight - ref.current.scrollTop < 2;
+          const following = !viewportInitialized || ref.current.scrollHeight - ref.current.clientHeight - ref.current.scrollTop < 2;
           term.resize(exactGrid.cols, exactGrid.rows);
           term.options.fontSize = fittedFont;
           term.options.letterSpacing = 0;
@@ -733,7 +735,15 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
             term.element.style.height = `${Math.max(height, contentHeight)}px`;
             term.element.style.width = `${Math.max(width, contentWidth + 5)}px`;
           }
-          if (following) ref.current.scrollTop = ref.current.scrollHeight;
+          viewportInitialized = true;
+          if (following) {
+            ref.current.scrollTop = ref.current.scrollHeight;
+            if (viewportFollowFrame !== null) cancelAnimationFrame(viewportFollowFrame);
+            viewportFollowFrame = requestAnimationFrame(() => {
+              viewportFollowFrame = null;
+              if (ref.current) ref.current.scrollTop = ref.current.scrollHeight;
+            });
+          }
           sharedGrid = exactGrid;
           if (myTabId) setSharedTerminalGrid(myTabId, sharedGrid);
           Object.assign(ref.current.dataset, { sharedCols: String(sharedGrid.cols), sharedRows: String(sharedGrid.rows), gridAuthority: 'server', fittedFontSize: String(fittedFont), fittedLineHeight: String(term.options.lineHeight) });
@@ -889,11 +899,13 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       if (!receivedGrid) return;
       announcedGrid = receivedGrid;
       if (!mobileBrowser) {
-        resizingForSharedGrid = true;
-        term.resize(receivedGrid.cols, receivedGrid.rows);
-        resizingForSharedGrid = false;
         sharedGrid = receivedGrid;
-        fitWhenVisible();
+        if (ref.current && ref.current.offsetWidth > 0 && ref.current.offsetHeight > 0) fitWhenVisible();
+        else {
+          resizingForSharedGrid = true;
+          term.resize(receivedGrid.cols, receivedGrid.rows);
+          resizingForSharedGrid = false;
+        }
         return;
       }
       // This control client publishes its measured local grid. A title from
@@ -975,6 +987,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
 
     return () => {
       if (pendingFitFrame !== null) cancelAnimationFrame(pendingFitFrame);
+      if (viewportFollowFrame !== null) cancelAnimationFrame(viewportFollowFrame);
       if (widthFitFrame !== null) cancelAnimationFrame(widthFitFrame);
       if (outputFrameRef.current !== null) cancelAnimationFrame(outputFrameRef.current);
       outputFrameRef.current = null;
