@@ -1,5 +1,23 @@
 # e499268 delivery status — NOT ACCEPTED
 
+## Follow-up: authorized Claude fixture
+
+User authorized a dedicated acceptance conversation. Test Panel 6 now runs
+`WebTerm-visual-QA`, Claude session `efa6ee62-e7ba-4087-b223-a9bb97867999`,
+in `runtime/claude-visual-fixture`. This is NOT recovery of the lost conversation.
+Built-in tools were disabled at launch; no QA prompt has been submitted.
+Existing user startup hooks report a JSON-format warning; user-level settings
+were not modified to conceal it.
+
+Fresh peer-font check passed (small font 14.9991455078125 unchanged as shared
+rows change 31→36); server/session/pane identity stayed
+`1814767:1789303500:1819403:claude`. Continuous input of 160 keys at 1920 and
+3440 passed, with draft restored and no Enter submitted. Evidence:
+`runtime/e499268-claude-approved/{peer,repeat}/`.
+Remaining Claude history/drag/refresh/visual matrix and browser-use connection
+are still pending. This supersedes the unapproved-fixture status below, not
+the full acceptance verdict.
+
 Test deployment: `e499268a1d561764c7c755aaf17054b8025a0e37`, 9444.
 Production remains `2df868a6df91c99365116b47a683df240b617b6e`, 9443.
 Main repository / dev-1.0.4 only. No worktree, production change or push.
