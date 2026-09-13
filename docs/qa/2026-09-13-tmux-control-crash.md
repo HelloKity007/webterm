@@ -1,5 +1,8 @@
 # Test control-server crash: delivery remains blocked
 
+Latest deployment and partial matrix results:
+[e499268 delivery status](2026-09-13-e499268-delivery-status.md).
+
 ## Evidence
 
 Kernel journal records tmux server SIGSEGV at address 0x20 on 2026-09-13

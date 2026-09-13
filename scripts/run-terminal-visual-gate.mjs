@@ -6,7 +6,7 @@ const candidate = health(); assert.equal(candidate.environment, 'release-test');
 const root = process.env.WEBTERM_QA_OUTPUT || `runtime/visual-gate-${candidate.version.slice(0, 7)}`;
 await mkdir(root, { recursive: true });
 const report = { candidate, cases: [], status: 'RUNNING' };
-const cases = ['verify-peer-font-stability', 'verify-terminal-switch-stability', 'verify-cross-pane-move', 'verify-terminal-two-display', 'verify-shell-repeat', 'verify-claude-repeat', 'verify-claude-composer', 'verify-mobile'];
+const cases = ['verify-idle-shell-visibility', 'verify-peer-font-stability', 'verify-terminal-switch-stability', 'verify-cross-pane-move', 'verify-terminal-two-display', 'verify-shell-repeat', 'verify-claude-repeat', 'verify-claude-composer', 'verify-mobile'];
 for (const phase of ['fresh', 'normal', 'hard']) {
   for (const name of cases) {
     assert.equal(health().version, candidate.version, 'Candidate changed mid-acceptance');

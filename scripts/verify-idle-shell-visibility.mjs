@@ -13,6 +13,7 @@ const info = () => execFileSync(binary, ['-L', socket, 'display-message', '-pt',
   '#{pane_current_command}:#{cursor_y}:#{pane_height}:#{pid}:#{pane_pid}'], { encoding: 'utf8' }).trim().split(':');
 const browser = await chromium.launch({ executablePath: '/usr/bin/google-chrome', headless: false, args: ['--no-sandbox'] });
 const results = [];
+const fonts = new Map();
 try {
   const original = info(); assert.equal(original[0], 'bash');
   const pages = [];
@@ -35,6 +36,8 @@ try {
       }, Number(actual[1]));
       await pane.screenshot({ path: `${output}/${width}-peer-${index}.png` });
       results.push({ width, peer: index, ...metrics });
+      if (fonts.has(index)) assert(Math.abs(Number(metrics.font) - fonts.get(index)) < 0.05, 'Peer changed local idle-shell font');
+      else fonts.set(index, Number(metrics.font));
       assert(metrics.cursorTop >= metrics.scrollTop - 1, 'Idle prompt hidden above local viewport');
       assert(metrics.cursorBottom <= metrics.scrollTop + metrics.height + 1, 'Idle prompt hidden below local viewport');
     }

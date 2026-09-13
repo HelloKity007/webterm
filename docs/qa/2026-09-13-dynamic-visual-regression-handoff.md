@@ -3,7 +3,8 @@
 > Superseded incident diagnosis: kernel journal confirms tmux 3.5a server
 > segmentation faults at both recreation times. See
 > [isolated dependency mitigation](2026-09-13-tmux-control-crash.md).
-> Current deployed implementation is `570df98`; the historical results below
+> Current deployed implementation is `e499268`; see
+> [latest status](2026-09-13-e499268-delivery-status.md). The historical results below
 > are not current-candidate PASS evidence. Claude recovery remains pending.
 
 Current test candidate: `500892360d517e8ae3a1e9fdfd2bf62029a0b6b5` on 9444. Production read-only health remains `2df868a6df91c99365116b47a683df240b617b6e`. No production deployment.

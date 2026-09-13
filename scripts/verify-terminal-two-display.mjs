@@ -113,7 +113,8 @@ try {
     const fontChanges = [];
     for (const frame of frames) {
       if (!frame.font) continue; // first attachment is not a retained-view revisit
-      const key = [frame.id, frame.cols, frame.rows, frame.width, frame.height].join(':');
+      // Peer-driven grid changes must not exempt local font changes.
+      const key = [frame.id, frame.width, frame.height].join(':');
       const previous = metrics.get(key);
       if (previous && previous !== frame.font) fontChanges.push({ key, previous, next: frame.font });
       metrics.set(key, frame.font);
@@ -122,4 +123,8 @@ try {
   }
   await writeFile(`${output}/results.json`, JSON.stringify(results, null, 2));
   await browser.close();
+}
+for (const result of results.filter(item => 'sampledFrames' in item)) {
+  assert(result.sampledFrames > 0, 'Dynamic recording captured no frames');
+  assert.equal(result.sameGeometryFontChanges.length, 0, 'Font changed with unchanged local geometry');
 }
