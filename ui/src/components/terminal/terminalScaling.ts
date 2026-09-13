@@ -33,6 +33,15 @@ export function compactDesktopGridForViewport(viewportWidth: number): TerminalGr
   return viewportWidth >= wideCompactViewportWidth ? wideCompactSharedTerminalGrid : smallViewportGridLimit;
 }
 
+// A two-column compact panel can be wider than a four-column large-display
+// panel. Do not let that client inflate the shared PTY beyond the roomy
+// display's native grid; rendering still obeys the server's exact reply.
+export function desktopRequestedGrid(measured: TerminalGrid, viewportWidth: number): TerminalGrid {
+  if (viewportWidth >= smallViewportWidth) return measured;
+  const limit = compactDesktopGridForViewport(viewportWidth);
+  return { cols: Math.min(measured.cols, limit.cols), rows: Math.min(measured.rows, limit.rows) };
+}
+
 export function sharedGridForViewport(announced: TerminalGrid, viewportWidth: number): TerminalGrid {
   if (viewportWidth >= smallViewportWidth) return announced;
   const limit = compactDesktopGridForViewport(viewportWidth);

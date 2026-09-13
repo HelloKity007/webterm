@@ -51,7 +51,7 @@ import {
   routeTerminalMouseUp,
   shouldAutoFocusTerminal,
 } from './terminalInteractions';
-import { calculateTerminalScale, constrainTerminalHeight, defaultSharedTerminalGrid, mobileSharedTerminalGrid, parseSharedTerminalGridTitle, sharedGridForViewport, smallViewportWidth, type TerminalGrid } from './terminalScaling';
+import { calculateTerminalScale, constrainTerminalHeight, defaultSharedTerminalGrid, desktopRequestedGrid, mobileSharedTerminalGrid, parseSharedTerminalGridTitle, sharedGridForViewport, smallViewportWidth, type TerminalGrid } from './terminalScaling';
 import { fitTerminalColumns } from './terminalWidth';
 import { getSharedTerminalGrid, setSharedTerminalGrid } from './terminalGridCache';
 import { isMobileBrowserEnvironment } from '../layout/mobileLayout';
@@ -693,13 +693,13 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
             const metric = fontMeasure.measureText('W');
             return { width: metric.width, height: metric.fontBoundingBoxAscent + metric.fontBoundingBoxDescent };
           };
-          const geometryKey = [width, height, dpr, fontSize, term.options.fontFamily, !!webglAddon].join(':');
+          const geometryKey = [width, height, dpr, fontSize, term.options.fontFamily, !!webglAddon, window.innerWidth].join(':');
           if (geometryKey !== requestedGeometryKey) {
             const metric = measure(Math.max(fontSize, 16));
             const cellWidth = (webglAddon ? Math.floor(metric.width * dpr) : metric.width * dpr) / dpr;
             const cellHeight = Math.ceil(metric.height * dpr) / dpr;
             if (cellWidth > 0 && cellHeight > 0) {
-              requestedGridRef.current = { cols: Math.max(2, Math.min(1000, Math.floor((width - 2) / cellWidth))), rows: Math.max(1, Math.min(499, Math.floor((height - 1) / cellHeight))) };
+              requestedGridRef.current = desktopRequestedGrid({ cols: Math.max(2, Math.min(1000, Math.floor((width - 2) / cellWidth))), rows: Math.max(1, Math.min(499, Math.floor((height - 1) / cellHeight))) }, window.innerWidth);
               requestedGeometryKey = geometryKey;
               sendRef.current(JSON.stringify(requestedGridRef.current));
             }
