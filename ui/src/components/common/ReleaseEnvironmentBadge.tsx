@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { t } from '../../i18n';
 import { colors, font } from '../../theme/tokens';
 import { releaseBadgeDetails } from './releaseEnvironment';
+import { useWorkspaceChromeStore } from '../../store/layout';
+import { useAuthStore } from '../../store/auth';
 
 interface HealthInfo {
   environment?: string;
@@ -10,6 +12,9 @@ interface HealthInfo {
 
 export default function ReleaseEnvironmentBadge() {
   const [health, setHealth] = useState<HealthInfo | null>(null);
+  const expanded = useWorkspaceChromeStore(s => s.expanded);
+  const token = useAuthStore(s => s.token);
+  const compact = !!token && !expanded;
 
   useEffect(() => {
     const controller = new AbortController();
@@ -24,14 +29,16 @@ export default function ReleaseEnvironmentBadge() {
   if (!badge.visible) return null;
 
   return (
-    <div role="status" aria-label={t('release_test_badge')} style={{
+    <div role="status" aria-label={t('release_test_badge')} title={`${t('release_test_badge')} · ${badge.version || ''}`} style={{
       position: 'fixed', top: 5, left: '50%', transform: 'translateX(-50%)', zIndex: 3000,
       padding: '3px 10px', borderRadius: 999, pointerEvents: 'none',
       border: `1px solid ${colors.warning}`, background: colors.bgRaised,
       color: colors.warning, fontSize: font.sm, fontWeight: 700,
       boxShadow: '0 3px 14px rgba(0,0,0,0.35)', whiteSpace: 'nowrap',
+      ...(compact ? { top: 'auto', bottom: 48, left: 3, transform: 'none', width: 32,
+        padding: '3px 0', borderRadius: 4, textAlign: 'center', fontSize: 10, pointerEvents: 'auto' } as const : {}),
     }}>
-      {t('release_test_badge')}{badge.version ? ` · ${badge.version}` : ''}
+      {compact ? t('release_test_short') : `${t('release_test_badge')}${badge.version ? ` · ${badge.version}` : ''}`}
     </div>
   );
 }

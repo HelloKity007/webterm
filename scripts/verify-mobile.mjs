@@ -34,6 +34,14 @@ try {
   await page.goto(target.origin);
   const digits = page.locator('.mobile-panel-switcher button');
   await digits.first().waitFor();
+  assert.equal(await page.locator('.workspace-tabs').count(), 0);
+  const workspaceToggle = page.locator('.workspace-tabs-toggle');
+  await workspaceToggle.click();
+  assert.equal(await workspaceToggle.getAttribute('aria-expanded'), 'true');
+  assert.equal(await page.locator('.workspace-tabs').evaluate(e => e.getBoundingClientRect().height), 38);
+  await workspaceToggle.click();
+  assert.equal(await page.locator('.workspace-tabs').count(), 0);
+  check('Workspace bar defaults closed and is reachable through mobile rail', true);
   const fonts = [];
   for (let n = 1; n <= 8; n++) {
     await digits.filter({ hasText: new RegExp(`^${n}$`) }).click();
