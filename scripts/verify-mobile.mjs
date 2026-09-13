@@ -42,6 +42,16 @@ try {
   await workspaceToggle.click();
   assert.equal(await page.locator('.workspace-tabs').count(), 0);
   check('Workspace bar defaults closed and is reachable through mobile rail', true);
+  const filesToggle = page.locator('.ssh-files-toggle');
+  const files = page.locator('.ssh-files-sidebar');
+  assert.equal(await files.evaluate(e => e.getBoundingClientRect().width), 0);
+  await filesToggle.click();
+  const fileBounds = await files.boundingBox();
+  const railBounds = await page.locator('.activity-rail').boundingBox();
+  assert(fileBounds.width > 0 && Math.abs(fileBounds.x - railBounds.x - railBounds.width) < 1);
+  await filesToggle.click();
+  assert.equal(await files.evaluate(e => e.getBoundingClientRect().width), 0);
+  check('SSH files open beside rail and collapse without consuming terminal width', true);
   const fonts = [];
   for (let n = 1; n <= 8; n++) {
     await digits.filter({ hasText: new RegExp(`^${n}$`) }).click();

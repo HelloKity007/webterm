@@ -721,7 +721,7 @@ function GridContainer({ onActiveSshChange, workspaceIndex }: { onActiveSshChang
       gridTemplateRows: mobile ? '1fr' : compactGrid ? compactPanelRowTemplate(displayRows) : `repeat(${displayRows}, 1fr)`,
       gridTemplateAreas: mobile ? `"${effectiveMobilePaneId}"` : gridTemplateAreas,
       flex: 1, overflowX: 'hidden', overflowY: compactScrollable ? 'auto' : 'hidden', minWidth: 0, minHeight: 0,
-      alignContent: 'start', overscrollBehaviorY: 'contain', scrollbarWidth: 'thin', scrollbarColor: 'rgba(143, 189, 145, .5) transparent',
+      alignContent: 'start', overscrollBehaviorY: 'contain', scrollbarWidth: 'thin',
       gap: 1, background: colors.border,
     }}>
       {paneIds.map((id) => {
