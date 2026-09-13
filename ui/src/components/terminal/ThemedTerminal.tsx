@@ -20,6 +20,7 @@ import { deliverTerminalBytes } from './terminalOutput';
 import TerminalHistoryHelp from './TerminalHistoryHelp';
 import MobileTerminalReader from './MobileTerminalReader';
 import { terminalModeAfterPrivateControl } from './terminalMode';
+import { fitGridRemainder } from './terminalGridRemainder';
 import {
   createTerminalWheelState,
   createLatestTerminalWheelSender,
@@ -731,6 +732,29 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
               if (++attempts >= 12 || overflowingFont - fittingFont < 0.025) {
                 term.options.fontSize = fittingFont;
                 if (ref.current) ref.current.dataset.fittedFontSize = String(fittingFont);
+                // Only compact desktops: retain the accepted large/mobile
+                // metrics. Wait for the final font before measuring rounding
+                // remainder; never stretch the screen or alter ANSI rows.
+                if (useSmallViewportBaseline) {
+                  widthFitFrame = requestAnimationFrame(() => {
+                    widthFitFrame = requestAnimationFrame(() => {
+                      widthFitFrame = null;
+                      const screen = term.element?.querySelector('.xterm-screen')?.getBoundingClientRect();
+                      const panel = ref.current?.getBoundingClientRect();
+                      if (!screen || !panel || screen.top >= innerHeight || screen.bottom <= 0) return;
+                      term.options.lineHeight = fitGridRemainder(screen.height, panel.bottom - screen.top, exactGrid.rows, window.devicePixelRatio || 1);
+                      widthFitFrame = requestAnimationFrame(() => {
+                        widthFitFrame = requestAnimationFrame(() => {
+                          widthFitFrame = null;
+                          const rendered = term.element?.querySelector('.xterm-screen')?.getBoundingClientRect();
+                          const available = ref.current?.getBoundingClientRect();
+                          if (rendered && available && rendered.bottom > available.bottom - 1) term.options.lineHeight = 1;
+                          if (ref.current) ref.current.dataset.fittedLineHeight = String(term.options.lineHeight);
+                        });
+                      });
+                    });
+                  });
+                }
                 return;
               }
               term.options.fontSize = (fittingFont + overflowingFont) / 2;

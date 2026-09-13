@@ -87,7 +87,7 @@ try {
     const measure = () => panel.evaluate(e => {
       const screen = e.querySelector('.xterm-screen').getBoundingClientRect();
       const bar = e.querySelector('.scrollbar.vertical').getBoundingClientRect();
-      return { authority: e.dataset.gridAuthority, font: e.dataset.fittedFontSize, cols: Number(e.dataset.sharedCols), rows: Number(e.dataset.sharedRows), rightGap: bar.left - screen.right, bottomGap: e.getBoundingClientRect().bottom - screen.bottom };
+      return { authority: e.dataset.gridAuthority, font: e.dataset.fittedFontSize, lineHeight: Number(e.dataset.fittedLineHeight || 1), cols: Number(e.dataset.sharedCols), rows: Number(e.dataset.sharedRows), rightGap: bar.left - screen.right, bottomGap: e.getBoundingClientRect().bottom - screen.bottom };
     });
     const before = await measure();
     await panel.screenshot({ path: `${output}/${width}-before.png` });
@@ -102,6 +102,8 @@ try {
     results.push({ width, height, health, layout, titlebars, before, after, errors });
     assert.equal(before.authority, 'server');
     assert(before.bottomGap >= 0 && before.rightGap >= 0);
+    assert(before.lineHeight >= 1 && before.lineHeight <= 1.15);
+    assert(after.lineHeight >= 1 && after.lineHeight <= 1.15);
     assert.equal(after.rows, before.rows);
     assert.equal(after.cols, before.cols);
     assert(after.bottomGap >= 0 && after.rightGap >= 0);
