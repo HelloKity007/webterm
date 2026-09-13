@@ -118,6 +118,11 @@ select:focus, input:focus, textarea:focus, button:focus-visible, [role="button"]
 }
 .terminal-pane-shell { background: #1f211f; border: 1px solid #80ad82; border-radius: 0; overflow: hidden; }
 .terminal-grid { gap: 2px !important; background: #80ad82 !important; }
+/* Page scrollbar only; terminal history scrollbars retain their own styling. */
+.terminal-grid { scrollbar-color: #355f3d #d9edd9; }
+.terminal-grid::-webkit-scrollbar-track { background: #d9edd9; }
+.terminal-grid::-webkit-scrollbar-thumb { background: #355f3d; border-radius: 3px; }
+.terminal-grid::-webkit-scrollbar-thumb:hover { background: #24442a; }
 .terminal-grid-cell { background: #1f211f; }
 .terminal-pane { background: #1f211f; }
 .terminal-tab-content, .terminal-content { background: #1f211f; }

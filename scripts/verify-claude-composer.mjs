@@ -29,6 +29,30 @@ try {
     await toggle.click();
     assert.equal(await page.locator('.workspace-tabs').count(), 0);
     assert.equal(await page.locator('.terminal-grid').evaluate(e => e.clientHeight), gridHeight);
+    assert.equal(await toggle.evaluate(e => Array.from(e.parentElement.children).filter(n => n.classList.contains('activity-btn')).indexOf(e)), 1);
+    const files = page.locator('.ssh-files-sidebar');
+    const filesToggle = page.locator('.ssh-files-toggle');
+    assert.equal(await files.evaluate(e => e.getBoundingClientRect().width), 0);
+    await filesToggle.click();
+    const fileBounds = await files.boundingBox();
+    const gridBounds = await page.locator('.terminal-grid').boundingBox();
+    const railBounds = await page.locator('.activity-rail').boundingBox();
+    assert(Math.abs(fileBounds.x - (railBounds.x + railBounds.width)) < 1);
+    assert(fileBounds.x + fileBounds.width <= gridBounds.x + 1);
+    await page.screenshot({ path: `${output}/${width}-files-open.png` });
+    const resize = page.locator('.ssh-files-resize');
+    if (await resize.count()) {
+      const handle = await resize.boundingBox();
+      await page.mouse.move(handle.x + handle.width / 2, handle.y + 100);
+      await page.mouse.down();
+      await page.mouse.move(handle.x + handle.width / 2 + 40, handle.y + 100, { steps: 4 });
+      await page.mouse.up();
+      assert((await files.boundingBox()).width > fileBounds.width + 30);
+    }
+    await filesToggle.click();
+    assert.equal(await files.evaluate(e => e.getBoundingClientRect().width), 0);
+    assert.equal(await filesToggle.getAttribute('aria-expanded'), 'false');
+    assert.equal(await page.locator('.terminal-grid').evaluate(e => getComputedStyle(e).scrollbarColor), 'rgb(53, 95, 61) rgb(217, 237, 217)');
     const titlebars = await page.locator('.terminal-tabbar:visible').evaluateAll(bars => bars.map(bar => {
       const bounds = bar.getBoundingClientRect();
       const tabs = Array.from(bar.querySelectorAll('[data-terminal-tab]')).map(tab => {

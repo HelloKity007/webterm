@@ -25,6 +25,7 @@ describe('WorkspaceTabBar', () => {
     render(<><ActivityBar onOpenSettings={vi.fn()} sidebarCollapsed onToggleSidebar={vi.fn()} />
       <WorkspaceTabBar collapsible tabs={tabs} activeWorkspaceTabId="workspace-1" onSelect={onSelect} onClose={onClose} onRename={vi.fn()} onCreate={vi.fn()} /></>);
     expect(screen.queryByRole('tablist')).toBeNull();
+    expect(document.querySelectorAll('.activity-rail > .activity-btn')[1]).toBe(screen.getByRole('button', { name: '展开工作区标签栏' }));
     fireEvent.click(screen.getByRole('button', { name: '展开工作区标签栏' }));
     expect(screen.getByRole('tablist')).toBeTruthy();
     expect(screen.getByRole('button', { name: '收起工作区标签栏' }).getAttribute('aria-expanded')).toBe('true');

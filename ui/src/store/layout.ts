@@ -6,7 +6,10 @@ export type ModuleType = 'ssh' | 'sftp' | 'database' | 'config';
 export const useWorkspaceChromeStore = create<{
   expanded: boolean;
   toggle: () => void;
-}>((set) => ({ expanded: false, toggle: () => set(s => ({ expanded: !s.expanded })) }));
+  filesExpanded: boolean;
+  toggleFiles: () => void;
+}>((set) => ({ expanded: false, toggle: () => set(s => ({ expanded: !s.expanded })),
+  filesExpanded: false, toggleFiles: () => set(s => ({ filesExpanded: !s.filesExpanded })) }));
 
 export interface Tab {
   id: string;

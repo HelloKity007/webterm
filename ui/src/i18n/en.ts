@@ -12,6 +12,7 @@ const en: Record<string, string> = {
   workspace_tabs: 'Workspace tabs', workspace_name: 'Workspace name', workspace_new: 'New workspace',
   workspace_tabs_expand: 'Expand workspace tabs', workspace_tabs_collapse: 'Collapse workspace tabs',
   release_test_short: 'TEST',
+  ssh_files_expand: 'Expand SSH files', ssh_files_collapse: 'Collapse SSH files', ssh_files_select: 'Select a connected SSH panel to browse files.',
   workspace_create: 'Create workspace', workspace_create_mode: 'Choose how to create it', workspace_blank: 'Blank workspace', workspace_copy: 'Copy current layout',
   term_copy: 'Copy', term_paste: 'Paste', term_find: 'Find (Ctrl+F)', term_clear: 'Clear',
   term_select_copy: 'Select & copy', term_select_copy_armed: 'Drag to select…', term_select_copy_cancel: 'Cancel select-and-copy mode',

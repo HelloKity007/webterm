@@ -30,6 +30,8 @@ export default function ActivityBar({ onOpenSettings, sidebarCollapsed, onToggle
   const token = useAuthStore((s) => s.token);
   const expanded = useWorkspaceChromeStore(s => s.expanded);
   const toggleWorkspaceTabs = useWorkspaceChromeStore(s => s.toggle);
+  const filesExpanded = useWorkspaceChromeStore(s => s.filesExpanded);
+  const toggleFiles = useWorkspaceChromeStore(s => s.toggleFiles);
 
   return (
     <div className="activity-rail" style={{
@@ -40,20 +42,27 @@ export default function ActivityBar({ onOpenSettings, sidebarCollapsed, onToggle
         style={btnStyle(false)}>
         {sidebarCollapsed ? <Icon name="panel-left-open" size={14} /> : <Icon name="panel-left-close" size={14} />}
       </div>
+      <button type="button" className="activity-btn workspace-tabs-toggle"
+        aria-label={t(expanded ? 'workspace_tabs_collapse' : 'workspace_tabs_expand')}
+        title={t(expanded ? 'workspace_tabs_collapse' : 'workspace_tabs_expand')}
+        aria-expanded={expanded} disabled={!token || activeModule !== 'ssh'}
+        onClick={toggleWorkspaceTabs}
+        style={{ ...btnStyle(expanded), border: 0, padding: 0, flexShrink: 0 }}>
+        <Icon name="table" size={16} />
+      </button>
       {modules.map(({ type, label, icon }) => (
         <div key={type} className="activity-btn" title={label} onClick={() => { if (token) setActiveModule(type); }}
           style={btnStyle(activeModule === type)}>
           <Icon name={icon} size={16} />
         </div>
       ))}
-      {activeModule === 'ssh' && <button type="button" className="activity-btn workspace-tabs-toggle"
-        aria-label={t(expanded ? 'workspace_tabs_collapse' : 'workspace_tabs_expand')}
-        title={t(expanded ? 'workspace_tabs_collapse' : 'workspace_tabs_expand')}
-        aria-expanded={expanded} disabled={!token}
-        onClick={toggleWorkspaceTabs}
-        style={{ ...btnStyle(expanded), border: 0, padding: 0, flexShrink: 0 }}>
-        <Icon name="table" size={16} />
-      </button>}
+      <button type="button" className="activity-btn ssh-files-toggle"
+        aria-label={t(filesExpanded ? 'ssh_files_collapse' : 'ssh_files_expand')}
+        title={t(filesExpanded ? 'ssh_files_collapse' : 'ssh_files_expand')}
+        aria-expanded={filesExpanded} disabled={!token || activeModule !== 'ssh'} onClick={toggleFiles}
+        style={{ ...btnStyle(filesExpanded), border: 0, padding: 0, flexShrink: 0 }}>
+        <Icon name="file" size={16} />
+      </button>
       <div style={{ flex: 1 }} />
       <div className="activity-btn" title="个人设置" onClick={() => { if (token) onOpenSettings(); }}
         style={{ ...btnStyle(false), marginBottom: 8, flexShrink: 0 }}>
