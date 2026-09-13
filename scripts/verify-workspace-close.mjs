@@ -3,7 +3,7 @@ import { createRequire } from 'node:module';
 import { randomUUID, createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
-const { chromium } = createRequire(import.meta.url)('../ui/node_modules/playwright');
+const { chromium, devices } = createRequire(import.meta.url)('../ui/node_modules/playwright');
 const origin = 'https://192.168.11.87:9444';
 const output = process.env.WEBTERM_QA_OUTPUT || 'runtime/workspace-close-qa';
 await mkdir(output, { recursive: true });
@@ -38,22 +38,47 @@ try {
   const tab = i => ({ id: tabIDs[i], type: 'ssh', connId: 2, title: `QA close ${i + 1}`, labelNumber: i === 3 ? 1 : i + 1 });
   const pane = ids => ({ tabs: ids.map(tab), activeTabId: tabIDs[ids[0]] });
   const layout = { workspaceTabs: [
-    { id: 'qa-workspace-one', index: 1, name: '关闭验收甲', layout: { tree: { type: 'split', direction: 'horizontal', ratio: 0.5, children: [{ type: 'leaf', id: 'qa-left' }, { type: 'leaf', id: 'qa-right' }] }, panes: { 'qa-left': pane([0, 1]), 'qa-right': pane([2]) }, focusedPaneId: 'qa-left' } },
+    { id: 'qa-workspace-one', index: 1, name: '关闭验收甲', layout: { tree: { type: 'split', direction: 'horizontal', ratios: [0.5, 0.5], children: [{ type: 'leaf', id: 'qa-left' }, { type: 'leaf', id: 'qa-right' }] }, panes: { 'qa-left': pane([0, 1]), 'qa-right': pane([2]) }, focusedPaneId: 'qa-left' } },
     { id: 'qa-workspace-two', index: 2, name: '关闭验收乙', layout: { tree: { type: 'leaf', id: 'qa-last' }, panes: { 'qa-last': pane([3]) }, focusedPaneId: 'qa-last' } },
   ] };
   const saved = await api('GET', '/api/layout');
   await api('PUT', '/api/layout', { schema_version: 2, revision: saved.revision, layout });
   const context = await browser.newContext({ viewport: { width: 1920, height: 1080 }, ignoreHTTPSErrors: true });
+  // The release-test bootstrap otherwise replaces every login with admin.
+  // Suppress only that convenience request; all fixture authentication and
+  // layout/session endpoints still use the real server and real fixture JWT.
+  await context.route('**/api/auth/test-session', route => route.fulfill({ status: 404, body: '' }));
   await context.addInitScript(({ token, user }) => { localStorage.setItem('token', token); localStorage.setItem('webterm-user', JSON.stringify(user)); }, { token: userToken, user: { id: fixtureUser, username, role: 'admin' } });
-  const page = await context.newPage(); await page.goto(origin, { waitUntil: 'networkidle' });
+  let page = await context.newPage(); await page.goto(origin, { waitUntil: 'networkidle' });
+  assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('webterm-user')).id), fixtureUser, 'Refusing to operate in a non-fixture account');
   await page.locator('.workspace-tabs-toggle').click();
+  await page.locator(`[data-tab-id="${tabIDs[0]}"]`).click();
+  await waitFor(() => exists(0) && exists(2), 'Initial visible fixture sessions did not start');
   await page.locator(`[data-tab-id="${tabIDs[1]}"]`).click();
   await waitFor(() => [0, 1, 2].every(exists), 'Fixture sessions did not start');
   await page.getByRole('tab', { name: '2: 关闭验收乙', exact: true }).click();
   await waitFor(() => exists(3), 'Last workspace fixture did not start');
+  const fixturePids = [0, 1, 2, 3].map(i => Number(tmux(['display-message', '-pt', sessionName(i), '#{pane_pid}'])));
+  // A foreground process in our newly-created session must actually terminate,
+  // not merely disappear from the browser layout.
+  tmux(['send-keys', '-t', sessionName(0), '-l', 'exec sleep 3600']);
+  tmux(['send-keys', '-t', sessionName(0), 'Enter']);
+  await waitFor(() => tmux(['display-message', '-pt', sessionName(0), '#{pane_current_command}']) === 'sleep', 'Foreground fixture did not start');
   await page.getByRole('tab', { name: '1: 关闭验收甲', exact: true }).click();
   const peer = await context.newPage(); await peer.goto(origin, { waitUntil: 'networkidle' });
   await peer.locator('.workspace-tabs-toggle').click();
+  if (process.env.WEBTERM_QA_MOBILE === '1') {
+    const mobile = await browser.newContext({ ...devices['Pixel 7'], ignoreHTTPSErrors: true });
+    await mobile.route('**/api/auth/test-session', route => route.fulfill({ status: 404, body: '' }));
+    await mobile.addInitScript(({ token, user }) => { localStorage.setItem('token', token); localStorage.setItem('webterm-user', JSON.stringify(user)); }, { token: userToken, user: { id: fixtureUser, username, role: 'admin' } });
+    page = await mobile.newPage(); await page.goto(origin, { waitUntil: 'networkidle' });
+    assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('webterm-user')).id), fixtureUser);
+    await page.locator('.workspace-tabs-toggle').click();
+    report.viewport = 'Pixel 7 emulation';
+  }
+  await page.getByRole('tab', { name: '2: 关闭验收乙', exact: true }).click();
+  await page.locator(`[data-tab-id="${tabIDs[3]}"]`).waitFor();
+  await page.evaluate(() => { window.__qaSurvivor = document.querySelector('.terminal-surface'); });
   const closeOne = page.getByRole('button', { name: '关闭工作区: 1: 关闭验收甲', exact: true });
   page.once('dialog', async dialog => { report.dialogs.push(dialog.message()); await dialog.dismiss(); });
   await closeOne.click(); assert([0, 1, 2, 3].every(exists));
@@ -65,12 +90,13 @@ try {
   await page.getByRole('status').filter({ hasText: '部分终端关闭失败' }).waitFor();
   assert(await closeOne.isVisible()); assert(exists(1)); assert(!exists(0) && !exists(2));
   report.checks.push('partial failure keeps workspace and shows retry message');
-  await page.unrouteAll();
+  await page.unroute(`**/api/terminal-sessions/2?terminal_id=${tabIDs[1]}&**`);
   page.once('dialog', dialog => dialog.accept()); await closeOne.click();
   await closeOne.waitFor({ state: 'detached' });
   await waitFor(() => !exists(1), 'Retry did not terminate the remaining session');
   await peer.getByRole('tab', { name: '1: 关闭验收甲', exact: true }).waitFor({ state: 'detached' });
   assert(exists(3)); report.checks.push('all nested tabs close and peer layout synchronizes; other workspace survives');
+  assert(await page.evaluate(() => window.__qaSurvivor?.isConnected), 'Closing an inactive workspace remounted the active terminal');
   await page.reload({ waitUntil: 'networkidle' }); await page.locator('.workspace-tabs-toggle').click();
   const closeLast = page.getByRole('button', { name: '关闭工作区: 2: 关闭验收乙', exact: true });
   await closeLast.waitFor();
@@ -86,11 +112,22 @@ try {
   await page.screenshot({ path: `${output}/last-closed.png` });
   await new Promise(resolve => setTimeout(resolve, 5000));
   assert([0, 1, 2, 3].every(i => !exists(i)), 'A peer recreated an explicitly closed session');
+  await waitFor(() => fixturePids.every(pid => { try { process.kill(pid, 0); return false; } catch (error) { return error.code === 'ESRCH'; } }), 'Closed shell/foreground process is still alive');
+  report.terminatedFixturePids = fixturePids;
   assert.equal(tmux(['display-message', '-pt', 'wt01-01-06-ee8f330da4330735', '#{pid}:#{pane_pid}:#{pane_current_command}']), originalClaude);
   report.checks.push('last workspace leaves a persisted empty workspace; no recreation or existing-user impact');
   assert(report.dialogs[0].includes('Panel: 3') && report.dialogs[0].includes('无法撤销'));
   report.status = 'PASS';
-} catch (error) { report.status = 'FAIL'; report.error = error.message; throw error; }
+} catch (error) {
+  report.status = 'FAIL'; report.error = error.message;
+  report.fixtureSessions = fixtureUser ? tmux(['list-sessions', '-F', '#{session_name}']).split('\n').filter(name => name.startsWith(`wt${pad(fixtureUser)}-`)) : [];
+  const page = browser.contexts().at(-1)?.pages()[0];
+  if (page) {
+    await page.screenshot({ path: `${output}/failure.png` }).catch(() => {});
+    report.visibleText = (await page.locator('.workspace-tabs, .terminal-grid, [role="status"]').allInnerTexts()).join('\n').slice(0, 2000);
+  }
+  throw error;
+}
 finally {
   // Only the exact throwaway account and terminal IDs created by this runner.
   if (fixtureUser && userToken) {

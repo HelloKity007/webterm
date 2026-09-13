@@ -101,7 +101,7 @@ select:focus, input:focus, textarea:focus, button:focus-visible, [role="button"]
 .terminal-tabbar::-webkit-scrollbar { display: none; }
 .workspace-tabs [role="tab"], .terminal-tabbar > [data-terminal-tab] { transition: background-color .18s ease, color .18s ease; }
 .workspace-tabs [role="tab"][aria-selected="true"], .terminal-tabbar > [data-terminal-tab]:has(+ span) { box-shadow: inset 0 -2px var(--c-accent); }
-.workspace-tabs button, .terminal-tabbar button { min-width: 28px; min-height: 28px; }
+.workspace-tabs button:not(.tab-close-button), .terminal-tabbar button:not(.tab-close-button) { min-width: 28px; min-height: 28px; }
 /* Compact desktop chrome; retain the larger mobile touch targets. */
 @media (min-width: 701px) and (pointer: fine) {
   .workspace-tabs { height: 30px !important; }
@@ -146,8 +146,8 @@ select:focus, input:focus, textarea:focus, button:focus-visible, [role="button"]
 .terminal-tabbar > [data-terminal-tab] { color: #3d5b42 !important; }
 .terminal-tabbar > [data-terminal-tab]:hover { background: #a9d2aa !important; color: #203523 !important; }
 .workspace-tabs [role="tab"]:hover { background: #a9d2aa !important; color: #203523 !important; }
-.workspace-tabs button, .terminal-tabbar button { background: #d9edd9 !important; border-color: #80ad82 !important; color: #3d5b42 !important; }
-.workspace-tabs button:hover, .terminal-tabbar button:hover { background: #8fbd91 !important; color: #203523 !important; }
+.workspace-tabs button:not(.tab-close-button), .terminal-tabbar button:not(.tab-close-button) { background: #d9edd9 !important; border-color: #80ad82 !important; color: #3d5b42 !important; }
+.workspace-tabs button:not(.tab-close-button):hover, .terminal-tabbar button:not(.tab-close-button):hover { background: #8fbd91 !important; color: #203523 !important; }
 .surface-panel { background: #0e1223 !important; border-color: #253552 !important; }
 .modal-scrim { background: rgba(2,6,23,.78) !important; }
 .modal-card { background: #e6f2e4 !important; border-color: #80ad82 !important; border-radius: 8px !important; }

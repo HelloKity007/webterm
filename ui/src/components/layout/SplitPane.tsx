@@ -145,6 +145,7 @@ async function closeWorkspace(workspaceID: string) {
   syncActiveWorkspaceLayout();
   const workspace = workspaceState.workspaceTabs.find((candidate) => candidate.id === workspaceID);
   if (!workspace) return;
+  const confirmedTabIDs = new Set(Object.values(workspace.layout.panes).flatMap(pane => pane.tabs.map(tab => tab.id)));
   const terminalIDs = Object.values(workspace.layout.panes).flatMap((pane) => pane.tabs
     .filter((tab) => tab.type === 'ssh' && tab.connId)
     .map((tab) => ({ connId: tab.connId!, tabId: tab.id, panelNumber: tab.labelNumber || 1 })));
@@ -160,6 +161,11 @@ async function closeWorkspace(workspaceID: string) {
   }));
   // Keep the workspace reference when any tmux cleanup failed so the user can retry.
   if (cleanupResults.some((success) => !success)) throw new Error('部分终端关闭失败，工作区已保留；已关闭的程序无法恢复，请重试。');
+  syncActiveWorkspaceLayout();
+  const currentWorkspace = workspaceState.workspaceTabs.find(candidate => candidate.id === workspaceID);
+  if (currentWorkspace && Object.values(currentWorkspace.layout.panes).some(pane => pane.tabs.some(tab => !confirmedTabIDs.has(tab.id)))) {
+    throw new Error('关闭期间另一端新增了 Panel，工作区已保留；请重新确认关闭范围。');
+  }
   workspaceState = removeWorkspaceTab(workspaceState, workspaceID, nextLayoutID);
   const remaining = workspaceState.workspaceTabs;
   if (activeWorkspaceTabID === workspaceID) {
