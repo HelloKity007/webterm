@@ -2,6 +2,7 @@
 // Dry-run by default. Production sockets are intentionally not configurable.
 import { execFileSync } from 'node:child_process';
 const run = (cmd, args) => execFileSync(cmd, args, { encoding: 'utf8' }).trim();
+if (process.argv.includes('--apply')) throw new Error('Cleanup disabled pending investigation of the 2026-09-13 test-session recreation. Read-only audit only.');
 const candidates = run('ps', ['-eo', 'pid,ppid,args']).split('\n').flatMap(line => {
   const match = line.match(/^\s*(\d+)\s+1\s+tmux -L webterm-release-test -C attach-session -t (wt01-[\w-]+)$/);
   return match ? [{ pid: match[1], session: match[2] }] : [];
