@@ -80,6 +80,12 @@ try {
   await page.locator(`[data-tab-id="${tabIDs[3]}"]`).waitFor();
   await page.evaluate(() => { window.__qaSurvivor = document.querySelector('.terminal-surface'); });
   const closeOne = page.getByRole('button', { name: '关闭工作区: 1: 关闭验收甲', exact: true });
+  report.closeButtonSize = await closeOne.evaluate(button => {
+    const panel = document.querySelector('.terminal-tabbar .tab-close-button');
+    return { workspace: [button.offsetWidth, button.offsetHeight], panel: [panel.offsetWidth, panel.offsetHeight] };
+  });
+  assert.deepEqual(report.closeButtonSize.workspace, [14, 14]);
+  assert.deepEqual(report.closeButtonSize.panel, [14, 14]);
   page.once('dialog', async dialog => { report.dialogs.push(dialog.message()); await dialog.dismiss(); });
   await closeOne.click(); assert([0, 1, 2, 3].every(exists));
   report.checks.push('cancel leaves all sessions intact');
