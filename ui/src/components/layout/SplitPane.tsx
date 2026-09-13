@@ -4,7 +4,7 @@ import type { Tab } from '../../store/layout';
 import { useConnectionStore } from '../../store/connections';
 import TabBar from './TabBar';
 import { reorderTabs } from './tabOrder';
-const TerminalTab = lazy(() => import('../terminal/TerminalTab'));
+const TerminalTab = lazy(() => import('../terminal/PersistentTerminalTab'));
 const QueryEditor = lazy(() => import('../database/QueryEditor'));
 import { t } from '../../i18n';
 import MatrixRain from '../common/MatrixRain';
@@ -46,6 +46,7 @@ interface GridCell {
 // Module-level state
 let layoutRoot: LayoutNode = { type: 'leaf', id: 'root' };
 let listeners: Array<() => void> = [];
+const tabMoveListeners = new Set<(tabId: string, destination: string) => void>();
 let layoutRestoreVersion = 0;
 let generatedID = 0;
 let workspaceState: PersistedWorkspace = emptyPersistedWorkspace();
@@ -482,8 +483,18 @@ function LeafPane({ nodeId, restoreVersion, onActiveSshChange, isInSplit, worksp
   const setStatusConn = useLayoutStore((s) => s.setStatusConn);
   const drainRemovedTabs = useLayoutStore((s) => s.drainRemovedTabs);
   const removedTabs = useLayoutStore((s) => s.removedTabQueue);
-  const notifyTabMoved = useLayoutStore((s) => s.notifyTabMoved);
   const connections = useConnectionStore((s) => s.connections);
+
+  useEffect(() => {
+    const moved = (tabId: string, destination: string) => {
+      if (destination === nodeId || !tabs.some(tab => tab.id === tabId)) return;
+      const remaining = tabs.filter(tab => tab.id !== tabId);
+      setTabs(remaining);
+      setActiveTabId(current => current === tabId ? remaining.at(-1)?.id || null : current);
+    };
+    tabMoveListeners.add(moved);
+    return () => { tabMoveListeners.delete(moved); };
+  }, [nodeId, tabs]);
 
   useEffect(() => {
     paneTabsCache.set(nodeId, tabs);
@@ -513,7 +524,8 @@ function LeafPane({ nodeId, restoreVersion, onActiveSshChange, isInSplit, worksp
 
   const handleReceiveTab = (tab: Tab) => {
     setTabs((prev) => { if (prev.find((t) => t.id === tab.id)) return prev; return [...prev, tab]; });
-    setActiveTabId(tab.id); notifyTabMoved(tab.id);
+    setActiveTabId(tab.id);
+    tabMoveListeners.forEach(listener => listener(tab.id, nodeId));
   };
   const addConnectionTab = (connId: number) => {
     const connection = connections.find((conn) => conn.id === connId);
