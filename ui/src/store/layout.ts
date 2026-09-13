@@ -2,6 +2,12 @@ import { create } from 'zustand';
 
 export type ModuleType = 'ssh' | 'sftp' | 'database' | 'config';
 
+// Local UI chrome only: never persist or broadcast this preference as layout.
+export const useWorkspaceChromeStore = create<{
+  expanded: boolean;
+  toggle: () => void;
+}>((set) => ({ expanded: false, toggle: () => set(s => ({ expanded: !s.expanded })) }));
+
 export interface Tab {
   id: string;
   type: ModuleType;

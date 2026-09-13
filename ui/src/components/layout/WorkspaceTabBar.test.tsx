@@ -4,6 +4,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import WorkspaceTabBar from './WorkspaceTabBar';
 import type { WorkspaceTab } from './workspaceLayout';
 import { emptyPersistedLayout } from './layoutPersistence';
+import ActivityBar from './ActivityBar';
+import { useWorkspaceChromeStore } from '../../store/layout';
+import { useAuthStore } from '../../store/auth';
 
 const tabs: WorkspaceTab[] = [
   { id: 'workspace-1', index: 1, name: 'workspace', layout: emptyPersistedLayout() },
@@ -13,6 +16,24 @@ const tabs: WorkspaceTab[] = [
 afterEach(cleanup);
 
 describe('WorkspaceTabBar', () => {
+  it('starts collapsed and toggles through the activity rail without selecting or closing a workspace', () => {
+    useWorkspaceChromeStore.setState({ expanded: false });
+    const previousToken = useAuthStore.getState().token;
+    useAuthStore.setState({ token: 'ui-test' });
+    const onSelect = vi.fn();
+    const onClose = vi.fn();
+    render(<><ActivityBar onOpenSettings={vi.fn()} sidebarCollapsed onToggleSidebar={vi.fn()} />
+      <WorkspaceTabBar collapsible tabs={tabs} activeWorkspaceTabId="workspace-1" onSelect={onSelect} onClose={onClose} onRename={vi.fn()} onCreate={vi.fn()} /></>);
+    expect(screen.queryByRole('tablist')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '展开工作区标签栏' }));
+    expect(screen.getByRole('tablist')).toBeTruthy();
+    expect(screen.getByRole('button', { name: '收起工作区标签栏' }).getAttribute('aria-expanded')).toBe('true');
+    fireEvent.click(screen.getByRole('button', { name: '收起工作区标签栏' }));
+    expect(screen.queryByRole('tablist')).toBeNull();
+    expect(onSelect).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+    useAuthStore.setState({ token: previousToken });
+  });
   it('shows stable indexes and renders names as text', () => {
     render(<WorkspaceTabBar tabs={tabs} activeWorkspaceTabId="workspace-1" onSelect={vi.fn()} onRename={vi.fn()} onCreate={vi.fn()} />);
 

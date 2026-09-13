@@ -19,7 +19,16 @@ try {
     const panel = page.locator('.terminal-surface:visible').nth(5);
     await panel.waitFor();
     assert.equal(await page.locator('.app-statusbar').count(), 0);
+    assert.equal(await page.locator('.workspace-tabs').count(), 0);
+    const toggle = page.locator('.workspace-tabs-toggle');
+    const gridHeight = await page.locator('.terminal-grid').evaluate(e => e.clientHeight);
+    await toggle.click();
+    assert.equal(await toggle.getAttribute('aria-expanded'), 'true');
     assert.equal(await page.locator('.workspace-tabs').evaluate(e => e.getBoundingClientRect().height), 30);
+    assert.equal(await page.locator('.terminal-grid').evaluate(e => e.clientHeight), gridHeight - 30);
+    await toggle.click();
+    assert.equal(await page.locator('.workspace-tabs').count(), 0);
+    assert.equal(await page.locator('.terminal-grid').evaluate(e => e.clientHeight), gridHeight);
     const titlebars = await page.locator('.terminal-tabbar:visible').evaluateAll(bars => bars.map(bar => {
       const bounds = bar.getBoundingClientRect();
       const tabs = Array.from(bar.querySelectorAll('[data-terminal-tab]')).map(tab => {

@@ -10,6 +10,7 @@ const en: Record<string, string> = {
   menu_rename_group: 'Rename Group', menu_delete_group: 'Delete Group',
   tab_new: 'New Tab', tab_no_connections: 'No SSH connections', tab_close: 'Close tab', tab_close_confirm: 'Close this tab and its terminal session?', workspace_close: 'Close workspace', workspace_close_confirm: 'Close this workspace and all terminal sessions in it?', workspace_close_last: 'Keep at least one workspace open.',
   workspace_tabs: 'Workspace tabs', workspace_name: 'Workspace name', workspace_new: 'New workspace',
+  workspace_tabs_expand: 'Expand workspace tabs', workspace_tabs_collapse: 'Collapse workspace tabs',
   workspace_create: 'Create workspace', workspace_create_mode: 'Choose how to create it', workspace_blank: 'Blank workspace', workspace_copy: 'Copy current layout',
   term_copy: 'Copy', term_paste: 'Paste', term_find: 'Find (Ctrl+F)', term_clear: 'Clear',
   term_select_copy: 'Select & copy', term_select_copy_armed: 'Drag to select…', term_select_copy_cancel: 'Cancel select-and-copy mode',

@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import { t } from '../../i18n';
 import { colors, font } from '../../theme/tokens';
 import type { WorkspaceCreateMode, WorkspaceTab } from './workspaceLayout';
+import { useWorkspaceChromeStore } from '../../store/layout';
 
 interface Props {
   tabs: WorkspaceTab[];
@@ -10,9 +11,11 @@ interface Props {
   onRename: (id: string, name: string) => void;
   onCreate: (mode: WorkspaceCreateMode) => void;
   onClose?: (id: string) => void;
+  collapsible?: boolean;
 }
 
-export default function WorkspaceTabBar({ tabs, activeWorkspaceTabId, onSelect, onRename, onCreate, onClose }: Props) {
+export default function WorkspaceTabBar({ tabs, activeWorkspaceTabId, onSelect, onRename, onCreate, onClose, collapsible = false }: Props) {
+  const expanded = useWorkspaceChromeStore(s => s.expanded);
   const [editingID, setEditingID] = useState<string | null>(null);
   const [editingName, setEditingName] = useState('');
   const [showCreate, setShowCreate] = useState(false);
@@ -34,6 +37,7 @@ export default function WorkspaceTabBar({ tabs, activeWorkspaceTabId, onSelect, 
     setShowCreate(true);
   };
 
+  if (collapsible && !expanded) return null;
   return (
     <div className="workspace-tabs" style={{ position: 'relative', display: 'flex', alignItems: 'center', height: 38, flexShrink: 0, padding: '0 8px', gap: 4, overflow: 'visible', background: colors.bgDeep, borderBottom: `1px solid ${colors.border}` }}>
       <div role="tablist" aria-label={t('workspace_tabs')} style={{ display: 'flex', alignItems: 'center', gap: 3, minWidth: 0, overflowX: 'auto', scrollbarWidth: 'thin' }}>

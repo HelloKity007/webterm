@@ -10,6 +10,7 @@ const zh: Record<string, string> = {
   menu_rename_group: '重命名分组', menu_delete_group: '删除分组',
   tab_new: '新建标签', tab_no_connections: '暂无 SSH 连接', tab_close: '关闭标签', tab_close_confirm: '关闭此标签及其终端会话？', workspace_close: '关闭工作区', workspace_close_confirm: '关闭此工作区及其中的全部终端会话？', workspace_close_last: '至少保留一个工作区。',
   workspace_tabs: '工作区标签', workspace_name: '工作区名称', workspace_new: '新建工作区',
+  workspace_tabs_expand: '展开工作区标签栏', workspace_tabs_collapse: '收起工作区标签栏',
   workspace_create: '创建工作区', workspace_create_mode: '选择新建方式', workspace_blank: '空白工作区', workspace_copy: '复制当前布局',
   term_copy: '复制', term_paste: '粘贴', term_find: '查找 (Ctrl+F)', term_clear: '清屏',
   term_select_copy: '选择并复制', term_select_copy_armed: '拖动选择…', term_select_copy_cancel: '取消选择复制模式',

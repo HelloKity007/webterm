@@ -1023,6 +1023,7 @@ export default function SplitPane({ onActiveSshChange }: { onActiveSshChange?: (
       if (revision !== null) void loadLayout(revision).catch(() => setLayoutMessage('无法同步另一端更新的布局；请稍后重试。'));
     }} />}
     <WorkspaceTabBar
+      collapsible
       tabs={workspaceState.workspaceTabs}
       activeWorkspaceTabId={activeWorkspaceTabID}
       onSelect={switchWorkspace}
