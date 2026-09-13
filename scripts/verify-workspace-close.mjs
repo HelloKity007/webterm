@@ -3,6 +3,7 @@ import { createRequire } from 'node:module';
 import { randomUUID, createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
+import { visualReloadPhase } from './visual-reload-phase.mjs';
 const { chromium, devices } = createRequire(import.meta.url)('../ui/node_modules/playwright');
 const origin = 'https://192.168.11.87:9444';
 const output = process.env.WEBTERM_QA_OUTPUT || 'runtime/workspace-close-qa';
@@ -13,7 +14,9 @@ const originalClaude = tmux(['display-message', '-pt', 'wt01-01-06-ee8f330da4330
 const browser = await chromium.launch({ executablePath: '/usr/bin/google-chrome', headless: false, args: ['--no-sandbox'] });
 const admin = await browser.newContext({ ignoreHTTPSErrors: true });
 let fixtureUser, userToken, adminToken;
-const tabIDs = Array.from({ length: 4 }, () => `qa-close-${randomUUID()}`);
+const tabIDs = Array.from({ length: 5 }, () => `qa-close-${randomUUID()}`);
+const fixtureIndices = [0, 1, 2, 3];
+const panelNumber = i => i === 3 ? 1 : i === 4 ? 4 : i + 1;
 const report = { checks: [], originalClaude, dialogs: [] };
 const api = async (method, path, data, token = userToken) => {
   const response = await admin.request.fetch(origin + path, { method, data, headers: token ? { Authorization: `Bearer ${token}` } : {} });
@@ -21,7 +24,7 @@ const api = async (method, path, data, token = userToken) => {
   return response.json();
 };
 const pad = n => String(n).padStart(2, '0');
-const sessionName = i => `wt${pad(fixtureUser)}-${i === 3 ? '02' : '01'}-${pad(i === 3 ? 1 : i + 1)}-${createHash('sha256').update(tabIDs[i]).digest('hex').slice(0, 16)}`;
+const sessionName = i => `wt${pad(fixtureUser)}-${i === 3 ? '02' : '01'}-${pad(panelNumber(i))}-${createHash('sha256').update(tabIDs[i]).digest('hex').slice(0, 16)}`;
 const exists = i => { try { tmux(['has-session', '-t', sessionName(i)]); return true; } catch { return false; } };
 const waitFor = async (predicate, message) => {
   for (let i = 0; i < 50; i++) { if (await predicate()) return; await new Promise(resolve => setTimeout(resolve, 200)); }
@@ -35,7 +38,7 @@ try {
   fixtureUser = (await api('POST', '/api/users', { username, password, role: 'admin' }, adminToken)).id;
   assert(fixtureUser > 1);
   const login = await api('POST', '/api/auth/login', { username, password }); userToken = login.token; assert(userToken);
-  const tab = i => ({ id: tabIDs[i], type: 'ssh', connId: 2, title: `QA close ${i + 1}`, labelNumber: i === 3 ? 1 : i + 1 });
+  const tab = i => ({ id: tabIDs[i], type: 'ssh', connId: 2, title: `QA close ${i + 1}`, labelNumber: panelNumber(i) });
   const pane = ids => ({ tabs: ids.map(tab), activeTabId: tabIDs[ids[0]] });
   const layout = { workspaceTabs: [
     { id: 'qa-workspace-one', index: 1, name: '关闭验收甲', layout: { tree: { type: 'split', direction: 'horizontal', ratios: [0.5, 0.5], children: [{ type: 'leaf', id: 'qa-left' }, { type: 'leaf', id: 'qa-right' }] }, panes: { 'qa-left': pane([0, 1]), 'qa-right': pane([2]) }, focusedPaneId: 'qa-left' } },
@@ -50,6 +53,7 @@ try {
   await context.route('**/api/auth/test-session', route => route.fulfill({ status: 404, body: '' }));
   await context.addInitScript(({ token, user }) => { localStorage.setItem('token', token); localStorage.setItem('webterm-user', JSON.stringify(user)); }, { token: userToken, user: { id: fixtureUser, username, role: 'admin' } });
   let page = await context.newPage(); await page.goto(origin, { waitUntil: 'networkidle' });
+  await visualReloadPhase(page);
   assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('webterm-user')).id), fixtureUser, 'Refusing to operate in a non-fixture account');
   await page.locator('.workspace-tabs-toggle').click();
   await page.locator(`[data-tab-id="${tabIDs[0]}"]`).click();
@@ -72,6 +76,7 @@ try {
     await mobile.route('**/api/auth/test-session', route => route.fulfill({ status: 404, body: '' }));
     await mobile.addInitScript(({ token, user }) => { localStorage.setItem('token', token); localStorage.setItem('webterm-user', JSON.stringify(user)); }, { token: userToken, user: { id: fixtureUser, username, role: 'admin' } });
     page = await mobile.newPage(); await page.goto(origin, { waitUntil: 'networkidle' });
+    await visualReloadPhase(page);
     assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('webterm-user')).id), fixtureUser);
     await page.locator('.workspace-tabs-toggle').click();
     report.viewport = 'Pixel 7 emulation';
@@ -97,6 +102,28 @@ try {
   assert(await closeOne.isVisible()); assert(exists(1)); assert(!exists(0) && !exists(2));
   report.checks.push('partial failure keeps workspace and shows retry message');
   await page.unroute(`**/api/terminal-sessions/2?terminal_id=${tabIDs[1]}&**`);
+  if (process.env.WEBTERM_QA_CONCURRENT === '1') {
+    await page.route(`**/api/terminal-sessions/2?terminal_id=${tabIDs[1]}&**`, async route => {
+      const response = await route.fetch(); assert.equal(response.status(), 200);
+      const latest = await api('GET', '/api/layout');
+      const workspace = latest.layout.workspaceTabs.find(w => w.id === 'qa-workspace-one');
+      workspace.layout.panes['qa-right'].tabs.push(tab(4));
+      fixtureIndices.push(4);
+      const synced = page.waitForResponse(r => new URL(r.url()).pathname === '/api/layout' && r.request().method() === 'GET');
+      await api('PUT', '/api/layout', { schema_version: 2, revision: latest.revision, layout: latest.layout });
+      await (await synced).finished();
+      await peer.locator(`[data-tab-id="${tabIDs[4]}"]`).click();
+      await waitFor(() => exists(4), 'Concurrent fixture did not start');
+      fixturePids.push(Number(tmux(['display-message', '-pt', sessionName(4), '#{pane_pid}'])));
+      await page.waitForTimeout(300);
+      await route.fulfill({ response });
+    });
+    page.once('dialog', dialog => dialog.accept()); await closeOne.click();
+    await page.getByRole('status').filter({ hasText: '另一端新增了 Panel' }).waitFor();
+    assert(await closeOne.isVisible()); assert(exists(4));
+    report.checks.push('concurrently added panel is retained until a new explicit confirmation');
+    await page.unroute(`**/api/terminal-sessions/2?terminal_id=${tabIDs[1]}&**`);
+  }
   page.once('dialog', dialog => dialog.accept()); await closeOne.click();
   await closeOne.waitFor({ state: 'detached' });
   await waitFor(() => !exists(1), 'Retry did not terminate the remaining session');
@@ -117,7 +144,7 @@ try {
   assert.equal(await page.locator('[data-tab-id]').count(), 0);
   await page.screenshot({ path: `${output}/last-closed.png` });
   await new Promise(resolve => setTimeout(resolve, 5000));
-  assert([0, 1, 2, 3].every(i => !exists(i)), 'A peer recreated an explicitly closed session');
+  assert(fixtureIndices.every(i => !exists(i)), 'A peer recreated an explicitly closed session');
   await waitFor(() => fixturePids.every(pid => { try { process.kill(pid, 0); return false; } catch (error) { return error.code === 'ESRCH'; } }), 'Closed shell/foreground process is still alive');
   report.terminatedFixturePids = fixturePids;
   assert.equal(tmux(['display-message', '-pt', 'wt01-01-06-ee8f330da4330735', '#{pid}:#{pane_pid}:#{pane_current_command}']), originalClaude);
@@ -137,7 +164,7 @@ try {
 finally {
   // Only the exact throwaway account and terminal IDs created by this runner.
   if (fixtureUser && userToken) {
-    for (let i = 0; i < 4; i++) await api('DELETE', `/api/terminal-sessions/2?terminal_id=${tabIDs[i]}&workspace_index=${i === 3 ? 2 : 1}&panel_number=${i === 3 ? 1 : i + 1}&terminate=1`).catch(() => {});
+    for (const i of fixtureIndices) await api('DELETE', `/api/terminal-sessions/2?terminal_id=${tabIDs[i]}&workspace_index=${i === 3 ? 2 : 1}&panel_number=${panelNumber(i)}&terminate=1`).catch(() => {});
     await api('DELETE', `/api/users/${fixtureUser}`, undefined, adminToken);
   }
   await writeFile(`${output}/results.json`, JSON.stringify(report, null, 2));
