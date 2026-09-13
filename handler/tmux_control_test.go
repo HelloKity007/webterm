@@ -93,6 +93,17 @@ func TestTmuxControlTerminalSessionEncodesResizeAsControlCommand(t *testing.T) {
 	}
 }
 
+func TestTmuxControlCloseDetachesOnlyOwnClient(t *testing.T) {
+	var out strings.Builder
+	session := &tmuxControlTerminalSession{writer: &out}
+	if err := session.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if out.String() != "detach-client\n" {
+		t.Fatalf("unexpected cleanup: %q", out.String())
+	}
+}
+
 func TestEncodeTmuxControlSendKeysQuotesArbitraryInput(t *testing.T) {
 	got := encodeTmuxControlSendKeys("%7", "echo '你好'\\\n")
 	if got != "send-keys -t %7 -H 65 63 68 6f 20 27 e4 bd a0 e5 a5 bd 27 5c 0a\n" {

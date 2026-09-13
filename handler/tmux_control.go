@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 // pumpTmuxControlOutput consumes a control-mode stream and forwards only
@@ -174,8 +175,28 @@ func (s *tmuxControlTerminalSession) WindowChange(rows, cols int) error {
 }
 
 func (s *tmuxControlTerminalSession) Close() error {
-	if s == nil || s.base == nil {
+	if s == nil {
 		return nil
+	}
+	// Closing the SSH channel alone can orphan the remote control client,
+	// which then keeps contributing stale dimensions to window-size largest.
+	// Detach only this control attachment, never the shared shell/session.
+	if s.writer != nil {
+		_, _ = io.WriteString(s.writer, "detach-client\n")
+		if closer, ok := s.writer.(io.Closer); ok {
+			_ = closer.Close()
+		}
+	}
+	if s.base == nil {
+		return nil
+	}
+	if waiter, ok := s.base.(interface{ Wait() error }); ok {
+		done := make(chan struct{})
+		go func() { _ = waiter.Wait(); close(done) }()
+		select {
+		case <-done:
+		case <-time.After(500 * time.Millisecond):
+		}
 	}
 	return s.base.Close()
 }
