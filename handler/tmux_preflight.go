@@ -66,12 +66,16 @@ func tmuxConnectionFingerprint(connection *store.Connection) string {
 }
 
 func runTmuxVersion(client *sshmgr.Client) (string, error) {
+	return runTmuxVersionCommand(client, "tmux -V")
+}
+
+func runTmuxVersionCommand(client *sshmgr.Client, command string) (string, error) {
 	session, err := client.NewSession()
 	if err != nil {
 		return "", err
 	}
 	defer session.Close()
-	output, err := session.CombinedOutput("tmux -V")
+	output, err := session.CombinedOutput(command)
 	return string(output), err
 }
 
@@ -103,7 +107,9 @@ func (h *WSHandler) ensureTmuxPreflight(connection *store.Connection, client *ss
 
 	runner := h.RunTmuxPreflight
 	if runner == nil {
-		runner = runTmuxVersion
+		runner = func(client *sshmgr.Client) (string, error) {
+			return runTmuxVersionCommand(client, scopeTmuxCommand("tmux -V", h.TmuxSocket, h.TmuxBinary))
+		}
 	}
 	output, runErr := runner(client)
 	result := checkTmuxVersion(output, runErr)

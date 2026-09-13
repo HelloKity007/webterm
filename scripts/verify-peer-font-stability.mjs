@@ -6,7 +6,7 @@ import { visualReloadPhase } from './visual-reload-phase.mjs';
 const { chromium } = createRequire(import.meta.url)('../ui/node_modules/playwright');
 const output = process.env.WEBTERM_QA_OUTPUT || 'runtime/peer-font-stability';
 await mkdir(output, { recursive: true });
-const identity = () => execFileSync('tmux', ['-L', 'webterm-release-test', 'display-message', '-pt', 'wt01-01-06-ee8f330da4330735', '#{pid}:#{session_created}:#{pane_pid}:#{pane_current_command}'], { encoding: 'utf8' }).trim();
+const identity = () => execFileSync(process.env.WEBTERM_QA_TMUX_BINARY || 'tmux', ['-L', process.env.WEBTERM_QA_TMUX_SOCKET || 'webterm-release-test-fixed', 'display-message', '-pt', 'wt01-01-06-ee8f330da4330735', '#{pid}:#{session_created}:#{pane_pid}:#{pane_current_command}'], { encoding: 'utf8' }).trim();
 const original = identity();
 assert(original.endsWith(':claude'), 'Panel 6 must already be running Claude');
 const browser = await chromium.launch({ executablePath: '/usr/bin/google-chrome', headless: false, args: ['--no-sandbox'] });

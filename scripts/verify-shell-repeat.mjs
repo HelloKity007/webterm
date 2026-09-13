@@ -7,7 +7,7 @@ const require = createRequire(import.meta.url);
 const { chromium } = require('../ui/node_modules/playwright');
 const output = process.env.WEBTERM_QA_OUTPUT || 'runtime/shell-repeat-qa';
 await mkdir(output, { recursive: true });
-const capture = () => execFileSync('tmux', ['-L', 'webterm-release-test', 'capture-pane', '-pJt', 'wt01-01-02-2ceeceecf3172937'], { encoding: 'utf8' }).trimEnd();
+const capture = () => execFileSync(process.env.WEBTERM_QA_TMUX_BINARY || 'tmux', ['-L', process.env.WEBTERM_QA_TMUX_SOCKET || 'webterm-release-test-fixed', 'capture-pane', '-pJt', 'wt01-01-02-2ceeceecf3172937'], { encoding: 'utf8' }).trimEnd();
 // -J joins wrapped lines. Compare the complete prompt/draft, not the viewport's
 // unrelated leading history, which changes when another client resizes tmux.
 const draft = () => capture().split('\n').at(-1);
@@ -31,7 +31,7 @@ try {
       const after = capture();
       // No Enter: append to, but never execute or clear, the existing draft.
       assert(after.endsWith('z'.repeat(240)), 'Repeated key input must reach Bash intact');
-      const actualCols = execFileSync('tmux', ['-L', 'webterm-release-test', 'display-message', '-pt', 'wt01-01-02-2ceeceecf3172937', '#{pane_width}'], { encoding: 'utf8' }).trim();
+      const actualCols = execFileSync(process.env.WEBTERM_QA_TMUX_BINARY || 'tmux', ['-L', process.env.WEBTERM_QA_TMUX_SOCKET || 'webterm-release-test-fixed', 'display-message', '-pt', 'wt01-01-02-2ceeceecf3172937', '#{pane_width}'], { encoding: 'utf8' }).trim();
       assert.equal(await panel.getAttribute('data-shared-cols'), actualCols);
       await panel.screenshot({ path: `${output}/${width}-repeat.png` });
       results.push({ width, repeatedKeys: typed, sharedCols: actualCols, draftRestored: false });

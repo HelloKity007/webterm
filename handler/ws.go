@@ -36,6 +36,9 @@ type WSHandler struct {
 	// TmuxSocket isolates release-test from production's tmux server. Empty
 	// means the user's default tmux socket (production behavior).
 	TmuxSocket string
+	// TmuxBinary is an optional remotely installed executable, configured only
+	// for release-test. It must be a shell-safe absolute path.
+	TmuxBinary string
 	// RunTerminalCommand is overridden by handler tests to replace remote SSH I/O.
 	RunTerminalCommand func(*store.Connection, string) error
 	// RunTmuxPreflight is overridden by unit tests; production executes tmux -V
@@ -69,11 +72,15 @@ func (h *WSHandler) historyFor(key string) *terminalHistory {
 // scopeTmuxCommand routes every tmux invocation, including invocations inside
 // run-shell hooks, through the environment-specific server socket. Commands
 // are generated internally and contain only controlled tmux syntax.
-func scopeTmuxCommand(command, socket string) string {
-	if strings.TrimSpace(socket) == "" {
-		return command
+func scopeTmuxCommand(command, socket string, binary ...string) string {
+	prefix := "tmux"
+	if len(binary) > 0 && binary[0] != "" {
+		prefix = binary[0]
 	}
-	return strings.ReplaceAll(command, "tmux ", "tmux -L "+socket+" ")
+	if strings.TrimSpace(socket) != "" {
+		prefix += " -L " + socket
+	}
+	return strings.ReplaceAll(command, "tmux ", prefix+" ")
 }
 
 func applyPanelSessionName(command string, userID, connectionID int64, terminalID, workspaceRaw, panelRaw string) string {
@@ -169,7 +176,7 @@ func (h *WSHandler) CloseTerminalSession(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	command = applyPanelSessionName(command, user.UserID, connID, terminalID, r.URL.Query().Get("workspace_index"), r.URL.Query().Get("panel_number"))
-	command = scopeTmuxCommand(command, h.TmuxSocket)
+	command = scopeTmuxCommand(command, h.TmuxSocket, h.TmuxBinary)
 	if err := h.runTerminalCommand(connection, command); err != nil {
 		http.Error(w, `{"error":"failed to close terminal"}`, http.StatusBadGateway)
 		return
@@ -331,12 +338,12 @@ func (h *WSHandler) HandleSSH(conn *websocket.Conn) {
 	resumeInputCommand = applyPanelSessionName(resumeInputCommand, user.UserID, connID, terminalID, workspaceIndex, panelNumber)
 	claudeTranscriptCommand = applyPanelSessionName(claudeTranscriptCommand, user.UserID, connID, terminalID, workspaceIndex, panelNumber)
 	followInputCommand = applyPanelSessionName(followInputCommand, user.UserID, connID, terminalID, workspaceIndex, panelNumber)
-	tmuxCommand = scopeTmuxCommand(tmuxCommand, h.TmuxSocket)
-	clearCommand = scopeTmuxCommand(clearCommand, h.TmuxSocket)
-	codexScrollableCommand = scopeTmuxCommand(codexScrollableCommand, h.TmuxSocket)
-	resumeInputCommand = scopeTmuxCommand(resumeInputCommand, h.TmuxSocket)
-	claudeTranscriptCommand = scopeTmuxCommand(claudeTranscriptCommand, h.TmuxSocket)
-	followInputCommand = scopeTmuxCommand(followInputCommand, h.TmuxSocket)
+	tmuxCommand = scopeTmuxCommand(tmuxCommand, h.TmuxSocket, h.TmuxBinary)
+	clearCommand = scopeTmuxCommand(clearCommand, h.TmuxSocket, h.TmuxBinary)
+	codexScrollableCommand = scopeTmuxCommand(codexScrollableCommand, h.TmuxSocket, h.TmuxBinary)
+	resumeInputCommand = scopeTmuxCommand(resumeInputCommand, h.TmuxSocket, h.TmuxBinary)
+	claudeTranscriptCommand = scopeTmuxCommand(claudeTranscriptCommand, h.TmuxSocket, h.TmuxBinary)
+	followInputCommand = scopeTmuxCommand(followInputCommand, h.TmuxSocket, h.TmuxBinary)
 
 	terminalKey := terminalKeyFor(user.UserID, connID, terminalID)
 	releaseTerminal, err := h.terminalSessions.acquire(terminalKey, persistentTerminalSessionLimit)
@@ -458,8 +465,8 @@ func (h *WSHandler) HandleSSH(conn *websocket.Conn) {
 			}
 		}
 		targetName := captureTarget
-		captureCommand := scopeTmuxCommand("tmux capture-pane -p -e -t "+targetName, h.TmuxSocket)
-		paneCommand := scopeTmuxCommand("tmux display-message -p -t "+targetName+" '#{pane_id}\t#{pane_current_command}\t#{pane_width}\t#{pane_height}\t#{cursor_x}\t#{cursor_y}\t#{alternate_on}'", h.TmuxSocket)
+		captureCommand := scopeTmuxCommand("tmux capture-pane -p -e -t "+targetName, h.TmuxSocket, h.TmuxBinary)
+		paneCommand := scopeTmuxCommand("tmux display-message -p -t "+targetName+" '#{pane_id}\t#{pane_current_command}\t#{pane_width}\t#{pane_height}\t#{cursor_x}\t#{cursor_y}\t#{alternate_on}'", h.TmuxSocket, h.TmuxBinary)
 		go func() {
 			captureClient, captureErr := newSSHClient()
 			if captureErr != nil {
@@ -494,7 +501,7 @@ func (h *WSHandler) HandleSSH(conn *websocket.Conn) {
 				_ = paneSession.Close()
 			}
 			if len(paneState) == 7 && paneState[6] == "0" {
-				captureCommand = scopeTmuxCommand("tmux capture-pane -p -e -S -20000 -t "+targetName, h.TmuxSocket)
+				captureCommand = scopeTmuxCommand("tmux capture-pane -p -e -S -20000 -t "+targetName, h.TmuxSocket, h.TmuxBinary)
 			}
 			if captureErr = captureSession.Run(captureCommand); captureErr == nil && captured.Len() > 0 {
 				snapshot := terminalScreenSnapshot(captured.Bytes(), paneState)

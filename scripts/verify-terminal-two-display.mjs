@@ -10,7 +10,7 @@ const browser = await chromium.launch({ executablePath: '/usr/bin/google-chrome'
 const pages = [];
 const results = [];
 const requireClaude = () => {
-  const command = execFileSync('tmux', ['-L', 'webterm-release-test', 'display-message', '-pt', 'wt01-01-06-ee8f330da4330735', '#{pane_current_command}'], { encoding: 'utf8' }).trim();
+  const command = execFileSync(process.env.WEBTERM_QA_TMUX_BINARY || 'tmux', ['-L', process.env.WEBTERM_QA_TMUX_SOCKET || 'webterm-release-test-fixed', 'display-message', '-pt', 'wt01-01-06-ee8f330da4330735', '#{pane_current_command}'], { encoding: 'utf8' }).trim();
   assert.equal(command, 'claude', 'Panel 6 is not running Claude; stop rather than inject CLI mouse sequences into Bash');
 };
 try {

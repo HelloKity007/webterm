@@ -21,6 +21,17 @@ func TestScopeTmuxCommandUsesEnvironmentSocketEverywhere(t *testing.T) {
 	}
 }
 
+func TestScopeTmuxCommandUsesPrivateBinaryInsideHooks(t *testing.T) {
+	got := scopeTmuxCommand(`tmux run-shell "tmux list-clients"`, "webterm-release-test-fixed", "/opt/test/tmux")
+	want := `/opt/test/tmux -L webterm-release-test-fixed run-shell "/opt/test/tmux -L webterm-release-test-fixed list-clients"`
+	if got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+	if got := scopeTmuxCommand("tmux -V", "", ""); got != "tmux -V" {
+		t.Fatalf("default production executable changed: %q", got)
+	}
+}
+
 func TestCloseTerminalSessionKillsOnlyTheRequestedTabsTmuxSession(t *testing.T) {
 	st := newQuickConnectTestStore(t)
 	userID, err := st.CreateUser("terminal-owner", "hash", "user")

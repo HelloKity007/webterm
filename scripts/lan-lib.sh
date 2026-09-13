@@ -106,13 +106,16 @@ lan_start_release() {
   lan_check
   [[ -x "$LAN_RELEASE_BINARY" ]] || lan_die "missing release-test binary: $LAN_RELEASE_BINARY"
   [[ -f "$LAN_RELEASE_DATABASE" ]] || lan_die "missing release-test database snapshot: $LAN_RELEASE_DATABASE"
+  local test_tmux="$LAN_ROOT/runtime/tmux-fixed/bin/tmux"
+  [[ -x "$test_tmux" ]] || lan_die "build the isolated test tmux first: bash scripts/build-test-tmux.sh"
+  [[ "$("$test_tmux" -V)" == "tmux 3.7c" ]] || lan_die "unexpected isolated test tmux version"
   mkdir -p "$LAN_RELEASE_DIR"
   if [[ -f "$LAN_RUNTIME_DIR/webterm-release.pid" ]] && lan_pid_running "$(<"$LAN_RUNTIME_DIR/webterm-release.pid")"; then
     lan_die "release-test webterm is already running"
   fi
   (
     cd "$LAN_ROOT"
-    setsid "$LAN_RELEASE_BINARY" -config "$LAN_CONFIG" -listen-addr 127.0.0.1:8889 -database "$LAN_RELEASE_DATABASE" -environment release-test -test-auto-login -preserve-terminal-sessions >"$LAN_RUNTIME_DIR/webterm-release.log" 2>&1 &
+    setsid "$LAN_RELEASE_BINARY" -config "$LAN_CONFIG" -listen-addr 127.0.0.1:8889 -database "$LAN_RELEASE_DATABASE" -environment release-test -test-auto-login -preserve-terminal-sessions -test-tmux-binary "$test_tmux" -test-tmux-socket webterm-release-test-fixed >"$LAN_RUNTIME_DIR/webterm-release.log" 2>&1 &
     echo $! >"$LAN_RUNTIME_DIR/webterm-release.pid"
   )
 }

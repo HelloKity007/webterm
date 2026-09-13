@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"regexp"
 	"syscall"
 	"time"
 
@@ -38,10 +39,21 @@ func main() {
 	listenAddr := flag.String("listen-addr", "", "override loopback listen address")
 	databasePath := flag.String("database", "webterm.db", "path to SQLite database")
 	deploymentEnvironment := flag.String("environment", "production", "deployment environment name")
+	testTmuxBinary := flag.String("test-tmux-binary", "", "absolute remote tmux path, release-test only")
+	testTmuxSocket := flag.String("test-tmux-socket", "webterm-release-test", "private tmux socket, release-test only")
 	testAutoLogin := flag.Bool("test-auto-login", false, "temporarily allow admin auto-login in release-test only")
 	preserveTerminalSessions := flag.Bool("preserve-terminal-sessions", false, "do not kill shared tmux sessions when tabs close")
 	showVersion := flag.Bool("version", false, "print version and exit")
 	flag.Parse()
+	if *testTmuxBinary != "" || *testTmuxSocket != "webterm-release-test" {
+		if *deploymentEnvironment != "release-test" {
+			log.Fatal("test tmux overrides are allowed only in release-test")
+		}
+	}
+	if (*testTmuxBinary != "" && !regexp.MustCompile(`^/[a-zA-Z0-9_./-]+$`).MatchString(*testTmuxBinary)) ||
+		!regexp.MustCompile(`^webterm-release-test[a-zA-Z0-9_-]*$`).MatchString(*testTmuxSocket) {
+		log.Fatal("test tmux executable/socket must be shell-safe and test-scoped")
+	}
 
 	if *showVersion {
 		fmt.Println("webterm", version)
@@ -107,11 +119,12 @@ func main() {
 		Store: st, Pool: pool, AESCipher: aesCipher,
 		Registry:                 wsRegistry,
 		PreserveTerminalSessions: *preserveTerminalSessions,
+		TmuxBinary:               *testTmuxBinary,
 		// Release-test gets a private tmux server. Its copied layout may use the
 		// same terminal IDs, but must never resize or mutate production sessions.
 		TmuxSocket: func() string {
 			if *deploymentEnvironment == "release-test" {
-				return "webterm-release-test"
+				return *testTmuxSocket
 			}
 			return ""
 		}(),

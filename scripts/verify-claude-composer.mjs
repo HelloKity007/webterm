@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { mkdir, writeFile } from 'node:fs/promises';
+import { visualReloadPhase } from './visual-reload-phase.mjs';
 const require = createRequire(import.meta.url);
 const { chromium } = require('../ui/node_modules/playwright');
 const output = process.env.WEBTERM_QA_OUTPUT || 'runtime/claude-composer-qa';
@@ -16,6 +17,7 @@ try {
     const errors = [];
     page.on('pageerror', e => errors.push(String(e)));
     await page.goto('https://192.168.11.87:9444/', { waitUntil: 'networkidle' });
+    await visualReloadPhase(page);
     const panel = page.locator('.terminal-surface:visible').nth(5);
     await panel.waitFor();
     assert.equal(await page.locator('.app-statusbar').count(), 0);
@@ -87,7 +89,9 @@ try {
     const measure = () => panel.evaluate(e => {
       const screen = e.querySelector('.xterm-screen').getBoundingClientRect();
       const bar = e.querySelector('.scrollbar.vertical').getBoundingClientRect();
-      return { authority: e.dataset.gridAuthority, font: e.dataset.fittedFontSize, lineHeight: Number(e.dataset.fittedLineHeight || 1), cols: Number(e.dataset.sharedCols), rows: Number(e.dataset.sharedRows), rightGap: bar.left - screen.right, bottomGap: e.getBoundingClientRect().bottom - screen.bottom };
+      const surface = e.getBoundingClientRect();
+      const edge = e.classList.contains('desktop-local-viewport') ? surface.left + e.clientWidth : bar.left;
+      return { authority: e.dataset.gridAuthority, font: e.dataset.fittedFontSize, lineHeight: Number(e.dataset.fittedLineHeight || 1), cols: Number(e.dataset.sharedCols), rows: Number(e.dataset.sharedRows), rightGap: edge - screen.right, bottomGap: surface.top + e.clientHeight - screen.bottom };
     });
     const before = await measure();
     await panel.screenshot({ path: `${output}/${width}-before.png` });
