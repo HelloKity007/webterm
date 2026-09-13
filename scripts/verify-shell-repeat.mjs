@@ -2,9 +2,10 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { execFileSync } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
+import { visualReloadPhase } from './visual-reload-phase.mjs';
 const require = createRequire(import.meta.url);
 const { chromium } = require('../ui/node_modules/playwright');
-const output = 'runtime/shell-repeat-qa';
+const output = process.env.WEBTERM_QA_OUTPUT || 'runtime/shell-repeat-qa';
 await mkdir(output, { recursive: true });
 const capture = () => execFileSync('tmux', ['-L', 'webterm-release-test', 'capture-pane', '-pJt', 'wt01-01-02-2ceeceecf3172937'], { encoding: 'utf8' }).trimEnd();
 // -J joins wrapped lines. Compare the complete prompt/draft, not the viewport's
@@ -16,6 +17,7 @@ try {
   for (const width of [1920, 3440]) {
     const page = await browser.newPage({ viewport: { width, height: width === 1920 ? 1080 : 1440 }, ignoreHTTPSErrors: true });
     await page.goto('https://192.168.11.87:9444/', { waitUntil: 'networkidle' });
+    await visualReloadPhase(page);
     const panel = page.locator('.terminal-surface:visible').nth(1);
     await panel.waitFor(); await page.waitForTimeout(2000);
     const before = draft();

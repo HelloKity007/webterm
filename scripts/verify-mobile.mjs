@@ -3,6 +3,7 @@ import { createRequire } from 'node:module';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { visualReloadPhase } from './visual-reload-phase.mjs';
 
 const require = createRequire(import.meta.url);
 const { chromium, devices } = require('../ui/node_modules/playwright');
@@ -32,6 +33,7 @@ try {
   const pageErrors = [];
   page.on('pageerror', () => pageErrors.push('pageerror')); // No token-bearing error text.
   await page.goto(target.origin);
+  await visualReloadPhase(page);
   const digits = page.locator('.mobile-panel-switcher button');
   await digits.first().waitFor();
   assert.equal(await page.locator('.workspace-tabs').count(), 0);

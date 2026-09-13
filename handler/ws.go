@@ -433,6 +433,11 @@ func (h *WSHandler) HandleSSH(conn *websocket.Conn) {
 	})
 	defer h.Store.EndSessionLog(logID)
 	history := h.historyFor(terminalKey)
+	controlOutput := &terminalOutputOrder{write: func(data []byte) error {
+		history.appendBytes(data)
+		_, err := (&wsWriter{outbound: outbound}).Write(data)
+		return err
+	}}
 	controlTracker := &tmuxControlPaneTracker{}
 	var inputWriter io.Writer = stdinPipe
 	inputSession := terminalInputSession(session)
@@ -493,8 +498,7 @@ func (h *WSHandler) HandleSSH(conn *websocket.Conn) {
 			}
 			if captureErr = captureSession.Run(captureCommand); captureErr == nil && captured.Len() > 0 {
 				snapshot := terminalScreenSnapshot(captured.Bytes(), paneState)
-				history.appendBytes(snapshot)
-				_, _ = (&wsWriter{outbound: outbound}).Write(snapshot)
+				_ = controlOutput.snapshot(snapshot)
 			}
 		}()
 	}
@@ -544,16 +548,10 @@ func (h *WSHandler) HandleSSH(conn *websocket.Conn) {
 	}()
 
 	if controlMode {
-		go pumpTmuxControlOutput(stdoutPipe, "", func(data []byte) error {
-			history.appendBytes(data)
-			_, err := (&wsWriter{outbound: outbound}).Write(data)
-			return err
-		}, func(event tmuxControlEvent) error {
+		go pumpTmuxControlOutput(stdoutPipe, "", controlOutput.output, func(event tmuxControlEvent) error {
 			controlTracker.observe(event)
 			if grid := terminalGridFromLayout(event, controlTracker.target()); len(grid) > 0 {
-				history.appendBytes(grid)
-				_, err := (&wsWriter{outbound: outbound}).Write(grid)
-				return err
+				return controlOutput.grid(grid)
 			}
 			return nil
 		})

@@ -692,11 +692,11 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       resizingForSharedGrid = true;
       try {
         if (!mobileBrowser && fontMeasure) {
-          const surface = ref.current.getBoundingClientRect();
+          ref.current.classList.add('desktop-local-viewport');
+          ref.current.style.overflow = 'auto';
           const style = getComputedStyle(ref.current);
-          const scrollbar = term.element?.querySelector('.scrollbar.vertical')?.getBoundingClientRect();
-          const width = surface.width - parseFloat(style.paddingLeft || '0') - parseFloat(style.paddingRight || '0') - (scrollbar?.width || 5);
-          const height = surface.height - parseFloat(style.paddingTop || '0') - parseFloat(style.paddingBottom || '0');
+          const width = ref.current.clientWidth - parseFloat(style.paddingLeft || '0') - parseFloat(style.paddingRight || '0');
+          const height = ref.current.clientHeight - parseFloat(style.paddingTop || '0') - parseFloat(style.paddingBottom || '0');
           const dpr = window.devicePixelRatio || 1;
           const measure = (size: number) => {
             fontMeasure.font = `${size}px ${term.options.fontFamily}`;
@@ -733,7 +733,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
           ref.current.style.overflow = 'auto';
           if (term.element) {
             term.element.style.height = `${Math.max(height, contentHeight)}px`;
-            term.element.style.width = `${Math.max(width, contentWidth + 5)}px`;
+            term.element.style.width = `${Math.max(width, contentWidth)}px`;
           }
           viewportInitialized = true;
           if (following) {

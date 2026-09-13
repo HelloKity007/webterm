@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
+import { visualReloadPhase } from './visual-reload-phase.mjs';
 const { chromium } = createRequire(import.meta.url)('../ui/node_modules/playwright');
 const output = process.env.WEBTERM_QA_OUTPUT || 'runtime/terminal-two-display';
 await mkdir(output, { recursive: true });
@@ -18,6 +19,7 @@ try {
     const context = await browser.newContext({ viewport: { width, height: width === 1920 ? 1080 : 1440 }, ignoreHTTPSErrors: true, recordVideo: { dir: `${output}/video`, size: { width: 1280, height: 720 } } });
     const page = await context.newPage(); pages.push(page);
     await page.goto('https://192.168.11.87:9444/', { waitUntil: 'networkidle' });
+    await visualReloadPhase(page);
     await page.locator('[data-tab-id]').first().waitFor();
   }
   await pages[0].waitForTimeout(2500);
@@ -92,7 +94,8 @@ try {
         const screen = e.querySelector('.xterm-screen').getBoundingClientRect();
         const bar = e.querySelector('.scrollbar.vertical').getBoundingClientRect();
         const surface = e.getBoundingClientRect();
-        return { font: e.dataset.fittedFontSize, cols: Number(e.dataset.sharedCols), rows: Number(e.dataset.sharedRows), rightGap: bar.left - screen.right, bottomGap: surface.bottom - screen.bottom, cellWidth: screen.width / Number(e.dataset.sharedCols), cellHeight: screen.height / Number(e.dataset.sharedRows) };
+        const edge = e.classList.contains('desktop-local-viewport') ? surface.left + e.clientWidth : bar.left;
+        return { font: e.dataset.fittedFontSize, cols: Number(e.dataset.sharedCols), rows: Number(e.dataset.sharedRows), rightGap: edge - screen.right, bottomGap: surface.top + e.clientHeight - screen.bottom, cellWidth: screen.width / Number(e.dataset.sharedCols), cellHeight: screen.height / Number(e.dataset.sharedRows) };
       });
       results.push({ display: index, panel: number, fill });
       assert(fill.rightGap >= 0 && fill.bottomGap >= 0, 'Terminal overlaps a panel edge');

@@ -134,9 +134,10 @@ select:focus, input:focus, textarea:focus, button:focus-visible, [role="button"]
    the screen desynchronizes glyphs, cursor coordinates, and scrollback rows. */
 .terminal-surface .xterm-screen { transform: none !important; transform-origin: top left; }
 .terminal-surface .xterm-rows { line-height: normal; }
-.terminal-surface.desktop-local-viewport { scrollbar-width: thin; scrollbar-color: #76a78088 transparent; overscroll-behavior: contain; }
+.terminal-surface.desktop-local-viewport { scrollbar-width: auto; scrollbar-color: #76a78088 transparent; scrollbar-gutter: stable; overscroll-behavior: contain; padding-left: 4px !important; }
 .terminal-surface.desktop-local-viewport::-webkit-scrollbar { width: 5px; height: 5px; }
 .terminal-surface.desktop-local-viewport::-webkit-scrollbar-thumb { background: #76a78088; border-radius: 3px; }
+.terminal-surface.desktop-local-viewport .xterm .scrollbar.vertical { display: none !important; }
 .terminal-mobile-shell { background: #1f211f; }
 .mobile-panel-switcher { display: none; }
 .app-shell[data-mobile-viewport="true"] { position: fixed; left: 0; right: 0; top: var(--mobile-viewport-top, 0px); height: var(--mobile-viewport-height, 100dvh) !important; overflow: hidden; }

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { execFileSync } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
+import { visualReloadPhase } from './visual-reload-phase.mjs';
 const { chromium } = createRequire(import.meta.url)('../ui/node_modules/playwright');
 const output = process.env.WEBTERM_QA_OUTPUT || 'runtime/peer-font-stability';
 await mkdir(output, { recursive: true });
@@ -13,6 +14,7 @@ const result = { original };
 const open = async width => {
   const page = await browser.newPage({ viewport: { width, height: width === 1920 ? 1080 : 1440 }, ignoreHTTPSErrors: true });
   await page.goto('https://192.168.11.87:9444/', { waitUntil: 'networkidle' });
+  await visualReloadPhase(page);
   const tab = page.locator('[data-tab-id]').filter({ hasText: /^6:/ });
   await tab.click();
   const pane = tab.locator('xpath=ancestor::*[contains(@class,"terminal-grid-cell")]').locator('.terminal-surface:visible');

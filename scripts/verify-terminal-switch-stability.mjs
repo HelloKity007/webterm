@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { mkdir, writeFile } from 'node:fs/promises';
+import { visualReloadPhase } from './visual-reload-phase.mjs';
 const { chromium } = createRequire(import.meta.url)('../ui/node_modules/playwright');
 const output = process.env.WEBTERM_QA_OUTPUT || 'runtime/terminal-switch-stability';
 await mkdir(output, { recursive: true });
@@ -9,6 +10,7 @@ const results = [];
 try {
   const page = await browser.newPage({ viewport: { width: 1920, height: 1080 }, ignoreHTTPSErrors: true });
   await page.goto('https://192.168.11.87:9444/', { waitUntil: 'networkidle' });
+  await visualReloadPhase(page);
   await page.locator('[data-tab-id]').first().waitFor();
   for (const width of [1920, 3440, 1920, 3440]) {
     await page.setViewportSize({ width, height: width === 1920 ? 1080 : 1440 });
