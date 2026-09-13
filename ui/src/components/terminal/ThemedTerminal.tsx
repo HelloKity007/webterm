@@ -21,6 +21,7 @@ import TerminalHistoryHelp from './TerminalHistoryHelp';
 import MobileTerminalReader from './MobileTerminalReader';
 import { terminalModeAfterPrivateControl } from './terminalMode';
 import { fitGridRemainder } from './terminalGridRemainder';
+import { fitTerminalFont } from './terminalFontFit';
 import {
   createTerminalWheelState,
   createLatestTerminalWheelSender,
@@ -658,6 +659,8 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
     let widthFitFrame: number | null = null;
     let localWidthSettled = false;
     let announcedGrid: TerminalGrid | null = null;
+    let fittedGridKey = '';
+    const fontMeasure = document.createElement('canvas').getContext('2d');
 
     term.onResize(({ cols, rows }) => {
       if (cols < 2 || rows < 1) return; // ignore zero-size (hidden terminal)
@@ -675,6 +678,36 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       if (!ref.current || ref.current.offsetWidth <= 0 || ref.current.offsetHeight <= 0) return;
       resizingForSharedGrid = true;
       try {
+        if (!mobileBrowser && announcedGrid && fontMeasure) {
+          const surface = ref.current.getBoundingClientRect();
+          const style = getComputedStyle(ref.current);
+          const scrollbar = term.element?.querySelector('.scrollbar.vertical')?.getBoundingClientRect();
+          const width = surface.width - parseFloat(style.paddingLeft || '0') - parseFloat(style.paddingRight || '0') - (scrollbar?.width || 5);
+          const height = surface.height - parseFloat(style.paddingTop || '0') - parseFloat(style.paddingBottom || '0');
+          const dpr = window.devicePixelRatio || 1;
+          const key = [width, height, dpr, announcedGrid.cols, announcedGrid.rows, term.options.fontFamily, !!webglAddon, terminalModeRef.current, window.innerWidth < smallViewportWidth].join(':');
+          // Re-entering the viewport or receiving the same title is not a
+          // geometry change. Keep the already painted metrics untouched.
+          if (key === fittedGridKey) return;
+          const measure = (size: number) => {
+            fontMeasure.font = `${size}px ${term.options.fontFamily}`;
+            const metric = fontMeasure.measureText('W');
+            return { width: metric.width, height: metric.fontBoundingBoxAscent + metric.fontBoundingBoxDescent };
+          };
+          const fittedFont = fitTerminalFont(announcedGrid, width, height, dpr, measure, !!webglAddon);
+          if (fittedFont === null) return;
+          term.resize(announcedGrid.cols, announcedGrid.rows);
+          term.options.fontSize = fittedFont;
+          term.options.letterSpacing = 0;
+          const baseHeight = Math.round(announcedGrid.rows * Math.ceil(measure(fittedFont).height * dpr) / dpr);
+          term.options.lineHeight = window.innerWidth < smallViewportWidth && terminalModeRef.current === 'cli'
+            ? fitGridRemainder(baseHeight, height, announcedGrid.rows, dpr) : 1;
+          sharedGrid = announcedGrid;
+          if (myTabId) setSharedTerminalGrid(myTabId, sharedGrid);
+          Object.assign(ref.current.dataset, { sharedCols: String(sharedGrid.cols), sharedRows: String(sharedGrid.rows), gridAuthority: 'server', fittedFontSize: String(fittedFont), fittedLineHeight: String(term.options.lineHeight) });
+          fittedGridKey = key;
+          return;
+        }
         const currentScreen = term.element?.querySelector<HTMLElement>('.xterm-screen');
         if (currentScreen) currentScreen.style.transform = '';
 
@@ -697,73 +730,6 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
         // bottom rows (including the CLI composer). Only measure here.
         const nativeGrid = fitAddon.proposeDimensions();
         if (!nativeGrid) return;
-        const fullscreenCLI = !mobileBrowser && (term.buffer.active.type === 'alternate' || terminalModeRef.current === 'cli');
-        if (fullscreenCLI && announcedGrid) {
-          // Raw ANSI addresses the server grid, including the footer rows.
-          // Reducing local rows clamps every footer cursor movement to the
-          // last local row, destroying the composer after a history redraw.
-          const exactGrid = announcedGrid;
-          term.options.letterSpacing = 0;
-          term.options.lineHeight = 1;
-          term.resize(exactGrid.cols, exactGrid.rows);
-          sharedGrid = exactGrid;
-          ref.current.dataset.sharedCols = String(exactGrid.cols);
-          ref.current.dataset.sharedRows = String(exactGrid.rows);
-          ref.current.dataset.gridAuthority = 'server';
-          if (myTabId) setSharedTerminalGrid(myTabId, exactGrid);
-          if (widthFitFrame !== null) cancelAnimationFrame(widthFitFrame);
-          // Search rendered font sizes, not a one-way proportional shrink:
-          // xterm rounds glyphs to physical pixels, and the old correction
-          // could stop well below the largest size that actually fits.
-          let attempts = 0;
-          let fittingFont = 4;
-          let overflowingFont = 64;
-          const fitExactGrid = () => {
-            widthFitFrame = requestAnimationFrame(() => {
-              widthFitFrame = null;
-              const rect = term.element?.querySelector('.xterm-screen')?.getBoundingClientRect();
-              const bar = term.element?.querySelector('.scrollbar.vertical')?.getBoundingClientRect();
-              const surface = ref.current?.getBoundingClientRect();
-              if (!rect || !bar || !surface || rect.top >= innerHeight || rect.bottom <= 0 || !rect.width) return;
-              const currentFont = term.options.fontSize || responsiveFontSize;
-              const fits = rect.right <= bar.left - 2 && rect.bottom <= surface.bottom - 1;
-              if (fits) fittingFont = currentFont;
-              else overflowingFont = currentFont;
-              if (++attempts >= 12 || overflowingFont - fittingFont < 0.025) {
-                term.options.fontSize = fittingFont;
-                if (ref.current) ref.current.dataset.fittedFontSize = String(fittingFont);
-                // Only compact desktops: retain the accepted large/mobile
-                // metrics. Wait for the final font before measuring rounding
-                // remainder; never stretch the screen or alter ANSI rows.
-                if (useSmallViewportBaseline) {
-                  widthFitFrame = requestAnimationFrame(() => {
-                    widthFitFrame = requestAnimationFrame(() => {
-                      widthFitFrame = null;
-                      const screen = term.element?.querySelector('.xterm-screen')?.getBoundingClientRect();
-                      const panel = ref.current?.getBoundingClientRect();
-                      if (!screen || !panel || screen.top >= innerHeight || screen.bottom <= 0) return;
-                      term.options.lineHeight = fitGridRemainder(screen.height, panel.bottom - screen.top, exactGrid.rows, window.devicePixelRatio || 1);
-                      widthFitFrame = requestAnimationFrame(() => {
-                        widthFitFrame = requestAnimationFrame(() => {
-                          widthFitFrame = null;
-                          const rendered = term.element?.querySelector('.xterm-screen')?.getBoundingClientRect();
-                          const available = ref.current?.getBoundingClientRect();
-                          if (rendered && available && rendered.bottom > available.bottom - 1) term.options.lineHeight = 1;
-                          if (ref.current) ref.current.dataset.fittedLineHeight = String(term.options.lineHeight);
-                        });
-                      });
-                    });
-                  });
-                }
-                return;
-              }
-              term.options.fontSize = (fittingFont + overflowingFont) / 2;
-              widthFitFrame = requestAnimationFrame(fitExactGrid);
-            });
-          };
-          widthFitFrame = requestAnimationFrame(fitExactGrid);
-          return;
-        }
         // Raw pane ANSI coordinates must use the server's exact grid, even
         // on a large display with many small split panels.
         const targetGrid = useCappedViewportGrid
@@ -890,7 +856,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       const receivedGrid = parseSharedTerminalGridTitle(title);
       if (!receivedGrid) return;
       announcedGrid = receivedGrid;
-      if (!mobileBrowser && (term.buffer.active.type === 'alternate' || terminalModeRef.current === 'cli')) {
+      if (!mobileBrowser) {
         resizingForSharedGrid = true;
         term.resize(receivedGrid.cols, receivedGrid.rows);
         resizingForSharedGrid = false;

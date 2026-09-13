@@ -550,6 +550,11 @@ func (h *WSHandler) HandleSSH(conn *websocket.Conn) {
 			return err
 		}, func(event tmuxControlEvent) error {
 			controlTracker.observe(event)
+			if grid := terminalGridFromLayout(event, controlTracker.target()); len(grid) > 0 {
+				history.appendBytes(grid)
+				_, err := (&wsWriter{outbound: outbound}).Write(grid)
+				return err
+			}
 			return nil
 		})
 		io.Copy(&recordingWSWriter{wsWriter: wsWriter{outbound: outbound}, history: history}, stderrPipe)

@@ -12,13 +12,15 @@ interface Props {
   onCloseTab: (id: string) => void;
   onRenameTab?: (id: string, title: string) => void;
   onReceiveTab?: (tab: Tab) => void;
+  onReorderTab?: (sourceId: string, targetId: string, after: boolean) => void;
   onAddTab?: () => void;
   filterType?: string;
 }
 
-export default function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab, onRenameTab, onReceiveTab, onAddTab, filterType }: Props) {
+export default function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab, onRenameTab, onReceiveTab, onReorderTab, onAddTab, filterType }: Props) {
   const filtered = filterType ? tabs.filter((t) => t.type === filterType) : tabs;
   const [dragOverAdd, setDragOverAdd] = useState(false);
+  const [dropTarget, setDropTarget] = useState<{ id: string; after: boolean } | null>(null);
   const [editingTabID, setEditingTabID] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState('');
   const [coarsePointer, setCoarsePointer] = useState(() => window.matchMedia?.('(pointer: coarse)').matches ?? false);
@@ -76,11 +78,37 @@ export default function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab, onR
           )}
           <div
             data-terminal-tab="true"
+            data-tab-id={tab.id}
             data-active={activeTabId === tab.id}
             draggable={!coarsePointer && editingTabID !== tab.id}
             onDragStart={(e) => {
-              e.dataTransfer.setData('text/plain', JSON.stringify({ id: tab.id, title: tab.title, type: tab.type, connId: tab.connId }));
+              e.dataTransfer.setData('text/plain', JSON.stringify(tab));
               e.dataTransfer.effectAllowed = 'move';
+            }}
+            onDragEnd={() => { setDropTarget(null); setDragOverAdd(false); }}
+            onDragOver={(e) => {
+              if (!onReorderTab && !onReceiveTab) return;
+              e.preventDefault(); e.stopPropagation();
+              e.dataTransfer.dropEffect = 'move';
+              const rect = e.currentTarget.getBoundingClientRect();
+              setDropTarget({ id: tab.id, after: e.clientX > rect.left + rect.width / 2 });
+              const bar = barRef.current;
+              if (bar) {
+                const bounds = bar.getBoundingClientRect();
+                if (e.clientX > bounds.right - 32) bar.scrollLeft += 24;
+                else if (e.clientX < bounds.left + 32) bar.scrollLeft -= 24;
+              }
+            }}
+            onDragLeave={() => setDropTarget(null)}
+            onDrop={(e) => {
+              e.preventDefault(); e.stopPropagation(); setDropTarget(null);
+              try {
+                const data = JSON.parse(e.dataTransfer.getData('text/plain')) as Tab;
+                if (filtered.some(item => item.id === data.id)) {
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  onReorderTab?.(data.id, tab.id, e.clientX > rect.left + rect.width / 2);
+                } else if (data.id) onReceiveTab?.(data);
+              } catch { /* Ignore non-tab drops. */ }
             }}
             onClick={() => onSelectTab(tab.id)}
             onDoubleClick={(e) => { e.preventDefault(); beginRename(tab); }}
@@ -91,6 +119,7 @@ export default function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab, onR
               display: 'flex', alignItems: 'center', gap: 8, whiteSpace: 'nowrap',
               height: 28, marginBottom: 0,
               transition: 'background 0.1s',
+              boxShadow: dropTarget?.id === tab.id ? `inset ${dropTarget.after ? '-2px' : '2px'} 0 ${colors.accent}` : undefined,
             }}>
             {editingTabID === tab.id ? (
               <input
@@ -125,10 +154,14 @@ export default function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab, onR
         onDragLeave={() => setDragOverAdd(false)}
         onDrop={(e) => {
           e.preventDefault();
+          e.stopPropagation();
           setDragOverAdd(false);
           try {
             const data = JSON.parse(e.dataTransfer.getData('text/plain'));
-            if (data.id && onReceiveTab) onReceiveTab(data as Tab);
+            if (filtered.some(tab => tab.id === data.id)) {
+              const last = filtered.at(-1);
+              if (last) onReorderTab?.(data.id, last.id, true);
+            } else if (data.id && onReceiveTab) onReceiveTab(data as Tab);
           } catch { /* ignore malformed tab drag data */ }
         }}
         style={{ flex: 1, alignSelf: 'stretch', minWidth: 4, background: dragOverAdd ? 'rgba(0,122,204,0.3)' : 'transparent' }}

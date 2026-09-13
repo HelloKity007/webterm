@@ -3,6 +3,7 @@ import { useLayoutStore } from '../../store/layout';
 import type { Tab } from '../../store/layout';
 import { useConnectionStore } from '../../store/connections';
 import TabBar from './TabBar';
+import { reorderTabs } from './tabOrder';
 const TerminalTab = lazy(() => import('../terminal/TerminalTab'));
 const QueryEditor = lazy(() => import('../database/QueryEditor'));
 import { t } from '../../i18n';
@@ -623,6 +624,7 @@ function LeafPane({ nodeId, onActiveSshChange, isInSplit, workspaceIndex }: {
     <div className="terminal-pane" onClick={() => setFocusedPane(nodeId)} style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0, minHeight: 0 }}>
       <div style={{ position: 'relative', flexShrink: 0 }}>
         <TabBar tabs={tabs} activeTabId={activeTabId} onSelectTab={setActiveTabId} onCloseTab={closeTab} onRenameTab={renameTab} filterType="ssh"
+          onReorderTab={(source, target, after) => setTabs(prev => reorderTabs(prev, source, target, after))}
           onReceiveTab={handleReceiveTab} onAddTab={() => setShowAddMenu((open) => !open)} />
         {showAddMenu && (
           <div role="menu" aria-label={t('tab_new')} onClick={(event) => event.stopPropagation()}

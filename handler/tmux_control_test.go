@@ -22,6 +22,37 @@ func TestParseTmuxControlOutputDecodesPaneAndEscapes(t *testing.T) {
 	}
 }
 
+func TestGridFromLayoutTargetsActualPane(t *testing.T) {
+	event := tmuxControlEvent{Name: "layout-change", Raw: "%layout-change @1 abcd,152x32,0,0,7 abcd,152x32,0,0,7 *"}
+	if got := string(terminalGridFromLayout(event, "%7")); got != "\x1b]2;webterm-grid:152x32\x07" {
+		t.Fatalf("grid=%q", got)
+	}
+	if got := terminalGridFromLayout(event, "%8"); got != nil {
+		t.Fatalf("other pane grid=%q", got)
+	}
+	event.Raw = "%layout-change @1 abcd,200x32,0,0{99x32,0,0,7,100x32,100,0,8} ignored *"
+	if got := string(terminalGridFromLayout(event, "%8")); got != "\x1b]2;webterm-grid:100x32\x07" {
+		t.Fatalf("split grid=%q", got)
+	}
+	if got := terminalGridFromLayout(event, ""); got != nil {
+		t.Fatalf("ambiguous grid=%q", got)
+	}
+}
+
+func TestGridAnnouncementPrecedesLiveRedraw(t *testing.T) {
+	var out bytes.Buffer
+	err := pumpTmuxControlOutput(strings.NewReader("%layout-change @1 abcd,152x32,0,0,7 ignored *\n%output %7 redraw\n"), "%7", func(data []byte) error { _, err := out.Write(data); return err }, func(event tmuxControlEvent) error {
+		_, err := out.Write(terminalGridFromLayout(event, "%7"))
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := out.String(); got != "\x1b]2;webterm-grid:152x32\x07redraw" {
+		t.Fatalf("order=%q", got)
+	}
+}
+
 func TestTmuxControlPaneTrackerLearnsServerAssignedPane(t *testing.T) {
 	tracker := &tmuxControlPaneTracker{}
 	tracker.observe(tmuxControlEvent{Name: "session-changed", Pane: "%9"})

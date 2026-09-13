@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -61,6 +62,36 @@ type tmuxControlEvent struct {
 	Pane string
 	Data []byte
 	Raw  string
+}
+
+var tmuxLayoutPaneSize = regexp.MustCompile(`(\d+)x(\d+),\d+,\d+,(\d+)`)
+
+// Layout notifications precede subsequent live pane output. Announce the
+// pane's actual grid, not this control client's requested viewport size.
+func terminalGridFromLayout(event tmuxControlEvent, pane string) []byte {
+	if event.Name != "layout-change" {
+		return nil
+	}
+	fields := strings.Fields(event.Raw)
+	if len(fields) < 3 {
+		return nil
+	}
+	leaves := tmuxLayoutPaneSize.FindAllStringSubmatch(fields[2], -1)
+	for _, leaf := range leaves {
+		if pane != "" && "%"+leaf[3] != pane {
+			continue
+		}
+		if pane == "" && len(leaves) != 1 {
+			return nil
+		}
+		cols, _ := strconv.Atoi(leaf[1])
+		rows, _ := strconv.Atoi(leaf[2])
+		if cols < 2 || cols > 1000 || rows < 1 || rows > 499 {
+			return nil
+		}
+		return []byte(fmt.Sprintf("\x1b]2;webterm-grid:%dx%d\x07", cols, rows))
+	}
+	return nil
 }
 
 // tmuxControlPaneTracker learns the pane id emitted by tmux for a single
