@@ -673,6 +673,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
     let fittedGridKey = '';
     let requestedGeometryKey = '';
     let viewportInitialized = false;
+    let fittedTerminalMode: 'unknown' | 'shell' | 'cli' = 'unknown';
     let viewportFollowFrame: number | null = null;
     const fontMeasure = document.createElement('canvas').getContext('2d');
 
@@ -723,7 +724,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
           // Re-entering the viewport or receiving the same title is not a
           // geometry change. Keep the already painted metrics untouched.
           if (key === fittedGridKey) return;
-          const following = !viewportInitialized || ref.current.scrollHeight - ref.current.clientHeight - ref.current.scrollTop < 2;
+          const following = !viewportInitialized || (terminalModeRef.current === 'cli' && fittedTerminalMode !== 'cli') || ref.current.scrollHeight - ref.current.clientHeight - ref.current.scrollTop < 2;
           term.resize(exactGrid.cols, exactGrid.rows);
           term.options.fontSize = fittedFont;
           term.options.letterSpacing = 0;
@@ -738,12 +739,20 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
             term.element.style.width = `${Math.max(width, contentWidth)}px`;
           }
           viewportInitialized = true;
+          fittedTerminalMode = terminalModeRef.current;
           if (following) {
-            ref.current.scrollTop = ref.current.scrollHeight;
+            const follow = () => {
+              const surface = ref.current;
+              if (!surface) return;
+              surface.scrollTop = terminalModeRef.current === 'cli' ? surface.scrollHeight :
+                localViewportRevealRow(surface.scrollTop, surface.clientHeight, surface.scrollHeight,
+                  contentHeight / exactGrid.rows, term.buffer.active.cursorY);
+            };
+            follow();
             if (viewportFollowFrame !== null) cancelAnimationFrame(viewportFollowFrame);
             viewportFollowFrame = requestAnimationFrame(() => {
               viewportFollowFrame = null;
-              if (ref.current) ref.current.scrollTop = ref.current.scrollHeight;
+              follow();
             });
           }
           sharedGrid = exactGrid;
