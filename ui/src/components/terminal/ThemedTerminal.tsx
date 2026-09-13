@@ -20,8 +20,7 @@ import { deliverTerminalBytes } from './terminalOutput';
 import TerminalHistoryHelp from './TerminalHistoryHelp';
 import MobileTerminalReader from './MobileTerminalReader';
 import { terminalModeAfterPrivateControl } from './terminalMode';
-import { fitGridRemainder } from './terminalGridRemainder';
-import { fitTerminalFont } from './terminalFontFit';
+import { localTerminalFont, localViewportScroll } from './localViewport';
 import {
   createTerminalWheelState,
   createLatestTerminalWheelSender,
@@ -525,6 +524,15 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
         (terminalModeRef.current === 'unknown' && (alternateScreenRef.current || term.buffer.active.type === 'alternate'));
       return routeTerminalWheel(event, {
         scrollNotch: (lines) => {
+          const surface = ref.current;
+          if (!mobileBrowser && surface) {
+            const screenHeight = term.element?.querySelector('.xterm-screen')?.getBoundingClientRect().height || 0;
+            const next = localViewportScroll(surface.scrollTop, surface.clientHeight, surface.scrollHeight, screenHeight / term.rows, lines);
+            if (Math.abs(next - surface.scrollTop) > 0.5) {
+              surface.scrollTop = next;
+              return;
+            }
+          }
           if (!alternate) {
             term.scrollLines(lines);
             return;
@@ -710,14 +718,22 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
           // Re-entering the viewport or receiving the same title is not a
           // geometry change. Keep the already painted metrics untouched.
           if (key === fittedGridKey) return;
-          const fittedFont = fitTerminalFont(exactGrid, width, height, dpr, measure, !!webglAddon);
-          if (fittedFont === null) return;
+          const fittedFont = localTerminalFont(fontSize);
+          const following = ref.current.scrollHeight - ref.current.clientHeight - ref.current.scrollTop < 2;
           term.resize(exactGrid.cols, exactGrid.rows);
           term.options.fontSize = fittedFont;
           term.options.letterSpacing = 0;
-          const baseHeight = Math.round(exactGrid.rows * Math.ceil(measure(fittedFont).height * dpr) / dpr);
-          term.options.lineHeight = window.innerWidth < smallViewportWidth && terminalModeRef.current === 'cli'
-            ? fitGridRemainder(baseHeight, height, exactGrid.rows, dpr) : 1;
+          term.options.lineHeight = 1;
+          const metric = measure(fittedFont);
+          const contentHeight = Math.round(exactGrid.rows * Math.ceil(metric.height * dpr) / dpr);
+          const contentWidth = Math.round(exactGrid.cols * (webglAddon ? Math.floor(metric.width * dpr) : metric.width * dpr) / dpr);
+          ref.current.classList.add('desktop-local-viewport');
+          ref.current.style.overflow = 'auto';
+          if (term.element) {
+            term.element.style.height = `${Math.max(height, contentHeight)}px`;
+            term.element.style.width = `${Math.max(width, contentWidth + 5)}px`;
+          }
+          if (following) ref.current.scrollTop = ref.current.scrollHeight;
           sharedGrid = exactGrid;
           if (myTabId) setSharedTerminalGrid(myTabId, sharedGrid);
           Object.assign(ref.current.dataset, { sharedCols: String(sharedGrid.cols), sharedRows: String(sharedGrid.rows), gridAuthority: 'server', fittedFontSize: String(fittedFont), fittedLineHeight: String(term.options.lineHeight) });
@@ -1217,7 +1233,10 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
         onMouseDownCapture={handleSurfaceMouseDown}
         onMouseMoveCapture={handleSurfaceMouseMove}
         onMouseUpCapture={handleSurfaceMouseUp}
-        onKeyDownCapture={() => { mouseStateRef.current.tmuxMenuActive = false; }}
+        onKeyDownCapture={() => {
+          mouseStateRef.current.tmuxMenuActive = false;
+          if (ref.current?.classList.contains('desktop-local-viewport')) ref.current.scrollTop = ref.current.scrollHeight;
+        }}
         onContextMenuCapture={(e) => routeTerminalContextMenu(e, (position) => {
           contextSelectionRef.current = termRef.current?.getSelection() || selectionSnapshotRef.current;
           setContextMenu(position);
