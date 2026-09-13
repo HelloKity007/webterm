@@ -1,0 +1,16 @@
+# Every-version terminal visual gate
+
+This gate applies to every candidate, not only terminal-related changes. Record candidate SHA, URL, browser/DPR, viewport, terminal IDs, server grid, before/during/after screenshots or frame samples, console/WS errors, and evidence paths. Test only 9444 unless the user explicitly authorizes production.
+
+| Scenario | Required repetition and observations |
+| --- | --- |
+| Panel tabs | At least 5 current-tab clicks and 5 A→B→A switches; both Bash and Claude sessions. Existing terminal canvas/socket must survive revisits; no font jumps or blank replay. |
+| Drag | At least 5 same-pane reorder/restore cycles; also exercise supported Panel position movement. Check local and synced second browser, session identity, active selection, stable font and history; restore original layout. |
+| Page scroll | At least 5 top→lower panels→top cycles in 1920×1080; lower Claude must not run visible font searches. |
+| History | At least 5 up→bottom→up cycles in Bash and Claude at small/large widths; three-line wheel stepping, no stall, composer/statusline intact after return. |
+| Two displays | 1920×1080 and 3440×1440 simultaneously showing same session then different sessions, with repeated tab changes; also resize one browser between these viewports. Include actual user DPR where available. |
+| Continuous input | Repeated keydown/physical hold crossing multiple wrap boundaries in both sizes, check intermediate frames as well as final output; preserve draft, no Enter executing arbitrary text. Claude input must also be checked without submitting a costly request. |
+| Fill/readability | Record font and screen/surface bounds, right/bottom gaps, no clipping/scrollbar overlap, natural CJK spacing; large must retain accepted fill, small maximize without hiding composer/statusline. Large gaps cannot pass merely because content fits. Shared tmux grid aspect-ratio conflicts must be reported, not hidden by stretching glyphs or desynchronizing columns. |
+| Mobile regression | Native touch history/tab scrolling, consistent font, input/reading transitions, keyboard restoration, no white ruler or clipping. Physical-device checks and browser emulation must be distinguished. |
+
+Starting tools: `verify-terminal-switch-stability.mjs`, `verify-panel-tab-order.mjs`, `diagnose-terminal-grid.mjs`, `verify-claude-composer.mjs`, `verify-shell-repeat.mjs`, `verify-mobile.mjs`. Existing scripts are partial coverage, not a substitute for unautomated matrix cells. Final status per row: PASS / FAIL / NOT RUN. Any missing required row prevents “all visual acceptance passed.”

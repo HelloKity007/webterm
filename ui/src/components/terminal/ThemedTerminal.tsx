@@ -132,6 +132,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
   const outputQueueRef = useRef<Uint8Array[]>([]);
   const outputFrameRef = useRef<number | null>(null);
   const sendRef = useRef<(data: string) => void>(() => {});
+  const requestedGridRef = useRef<TerminalGrid | null>(null);
   const inputViewportFollowedRef = useRef(false);
   const onStatusRef = useRef(onStatus);
   const onResizeDimRef = useRef(onResizeDim);
@@ -660,11 +661,13 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
     let localWidthSettled = false;
     let announcedGrid: TerminalGrid | null = null;
     let fittedGridKey = '';
+    let requestedGeometryKey = '';
     const fontMeasure = document.createElement('canvas').getContext('2d');
 
     term.onResize(({ cols, rows }) => {
       if (cols < 2 || rows < 1) return; // ignore zero-size (hidden terminal)
       if (resizingForSharedGrid) return;
+      if (!mobileBrowser) return; // Desktop geometry is negotiated explicitly below.
       // Changing font metrics can emit a delayed native-grid resize after the
       // adaptive fit has completed. Never let that transient event shrink the
       // PTY below the grid already announced by tmux.
@@ -678,31 +681,44 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       if (!ref.current || ref.current.offsetWidth <= 0 || ref.current.offsetHeight <= 0) return;
       resizingForSharedGrid = true;
       try {
-        if (!mobileBrowser && announcedGrid && fontMeasure) {
+        if (!mobileBrowser && fontMeasure) {
           const surface = ref.current.getBoundingClientRect();
           const style = getComputedStyle(ref.current);
           const scrollbar = term.element?.querySelector('.scrollbar.vertical')?.getBoundingClientRect();
           const width = surface.width - parseFloat(style.paddingLeft || '0') - parseFloat(style.paddingRight || '0') - (scrollbar?.width || 5);
           const height = surface.height - parseFloat(style.paddingTop || '0') - parseFloat(style.paddingBottom || '0');
           const dpr = window.devicePixelRatio || 1;
-          const key = [width, height, dpr, announcedGrid.cols, announcedGrid.rows, term.options.fontFamily, !!webglAddon, terminalModeRef.current, window.innerWidth < smallViewportWidth].join(':');
-          // Re-entering the viewport or receiving the same title is not a
-          // geometry change. Keep the already painted metrics untouched.
-          if (key === fittedGridKey) return;
           const measure = (size: number) => {
             fontMeasure.font = `${size}px ${term.options.fontFamily}`;
             const metric = fontMeasure.measureText('W');
             return { width: metric.width, height: metric.fontBoundingBoxAscent + metric.fontBoundingBoxDescent };
           };
-          const fittedFont = fitTerminalFont(announcedGrid, width, height, dpr, measure, !!webglAddon);
+          const geometryKey = [width, height, dpr, fontSize, term.options.fontFamily, !!webglAddon].join(':');
+          if (geometryKey !== requestedGeometryKey) {
+            const metric = measure(Math.max(fontSize, 16));
+            const cellWidth = (webglAddon ? Math.floor(metric.width * dpr) : metric.width * dpr) / dpr;
+            const cellHeight = Math.ceil(metric.height * dpr) / dpr;
+            if (cellWidth > 0 && cellHeight > 0) {
+              requestedGridRef.current = { cols: Math.max(2, Math.min(1000, Math.floor((width - 2) / cellWidth))), rows: Math.max(1, Math.min(499, Math.floor((height - 1) / cellHeight))) };
+              requestedGeometryKey = geometryKey;
+              sendRef.current(JSON.stringify(requestedGridRef.current));
+            }
+          }
+          const exactGrid = announcedGrid || requestedGridRef.current;
+          if (!exactGrid) return;
+          const key = [width, height, dpr, exactGrid.cols, exactGrid.rows, term.options.fontFamily, !!webglAddon, terminalModeRef.current, window.innerWidth < smallViewportWidth].join(':');
+          // Re-entering the viewport or receiving the same title is not a
+          // geometry change. Keep the already painted metrics untouched.
+          if (key === fittedGridKey) return;
+          const fittedFont = fitTerminalFont(exactGrid, width, height, dpr, measure, !!webglAddon);
           if (fittedFont === null) return;
-          term.resize(announcedGrid.cols, announcedGrid.rows);
+          term.resize(exactGrid.cols, exactGrid.rows);
           term.options.fontSize = fittedFont;
           term.options.letterSpacing = 0;
-          const baseHeight = Math.round(announcedGrid.rows * Math.ceil(measure(fittedFont).height * dpr) / dpr);
+          const baseHeight = Math.round(exactGrid.rows * Math.ceil(measure(fittedFont).height * dpr) / dpr);
           term.options.lineHeight = window.innerWidth < smallViewportWidth && terminalModeRef.current === 'cli'
-            ? fitGridRemainder(baseHeight, height, announcedGrid.rows, dpr) : 1;
-          sharedGrid = announcedGrid;
+            ? fitGridRemainder(baseHeight, height, exactGrid.rows, dpr) : 1;
+          sharedGrid = exactGrid;
           if (myTabId) setSharedTerminalGrid(myTabId, sharedGrid);
           Object.assign(ref.current.dataset, { sharedCols: String(sharedGrid.cols), sharedRows: String(sharedGrid.rows), gridAuthority: 'server', fittedFontSize: String(fittedFont), fittedLineHeight: String(term.options.lineHeight) });
           fittedGridKey = key;
@@ -861,7 +877,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
         term.resize(receivedGrid.cols, receivedGrid.rows);
         resizingForSharedGrid = false;
         sharedGrid = receivedGrid;
-        scheduleFit();
+        fitWhenVisible();
         return;
       }
       // This control client publishes its measured local grid. A title from
@@ -1019,11 +1035,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       // fallback PTY size (especially after a layout or tab-title update).
       const term = termRef.current;
       if (term && term.cols > 1 && term.rows > 0) {
-        const cachedGrid = terminalID ? getSharedTerminalGrid(terminalID) : null;
-        sendNow(JSON.stringify({
-          cols: Math.max(term.cols, cachedGrid?.cols || 0),
-          rows: Math.max(term.rows, cachedGrid?.rows || 0),
-        }));
+        sendNow(JSON.stringify(requestedGridRef.current || { cols: term.cols, rows: term.rows }));
       }
       sendNow(terminalActionMessage(followTerminalInputAction));
       inputViewportFollowedRef.current = true;

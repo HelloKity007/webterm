@@ -455,8 +455,8 @@ function doEightPaneSplit(targetID: string, activeTab: Tab): boolean {
 }
 
 // Leaf pane component — always mounted, just hidden when not in layout
-function LeafPane({ nodeId, onActiveSshChange, isInSplit, workspaceIndex }: {
-  nodeId: string; onActiveSshChange?: (connId: number | null, tabId: string | null) => void; isInSplit: boolean; workspaceIndex: number;
+function LeafPane({ nodeId, restoreVersion, onActiveSshChange, isInSplit, workspaceIndex }: {
+  nodeId: string; restoreVersion: number; onActiveSshChange?: (connId: number | null, tabId: string | null) => void; isInSplit: boolean; workspaceIndex: number;
 }) {
   const [tabs, setTabs] = useState<Tab[]>(() => {
     return paneTabsCache.get(nodeId) || [];
@@ -464,6 +464,16 @@ function LeafPane({ nodeId, onActiveSshChange, isInSplit, workspaceIndex }: {
   const [activeTabId, setActiveTabId] = useState<string | null>(() => {
     return paneActiveCache.get(nodeId) || null;
   });
+  const [seenRestore, setSeenRestore] = useState(restoreVersion);
+  const [visitedTabs, setVisitedTabs] = useState<string[]>(() => activeTabId ? [activeTabId] : []);
+  // Restore data, not component identity. A remote reorder must not tear down
+  // every socket/canvas in this pane. Guarded render updates precede effects.
+  if (seenRestore !== restoreVersion) {
+    setSeenRestore(restoreVersion);
+    setTabs(paneTabsCache.get(nodeId) || []);
+    setActiveTabId(paneActiveCache.get(nodeId) || null);
+  }
+  if (activeTabId && !visitedTabs.includes(activeTabId)) setVisitedTabs([...visitedTabs, activeTabId]);
   const [showAddMenu, setShowAddMenu] = useState(false);
   const drainTabQueue = useLayoutStore((s) => s.drainTabQueue);
   const queuedTabs = useLayoutStore((s) => s.newTabQueue);
@@ -641,8 +651,8 @@ function LeafPane({ nodeId, onActiveSshChange, isInSplit, workspaceIndex }: {
         )}
       </div>
       <div className="terminal-content" style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-        {tabs.filter((tab) => tab.id === activeTabId).map((tab) => (
-          <div key={tab.id} style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+        {tabs.filter((tab) => visitedTabs.includes(tab.id)).map((tab) => (
+          <div key={tab.id} style={{ flex: 1, display: tab.id === activeTabId ? 'flex' : 'none', overflow: 'hidden' }}>
             {tab.type === 'ssh' && tab.connId && (
               <Suspense fallback={<div style={{ padding: 12, fontSize: font.md, color: colors.textMuted }}>Loading…</div>}>
                 <TerminalTab connId={tab.connId} myTabId={tab.id} workspaceIndex={workspaceIndex} panelNumber={tab.labelNumber ?? tabs.findIndex((candidate) => candidate.id === tab.id) + 1} extraMenuItems={[
@@ -734,7 +744,7 @@ function GridContainer({ onActiveSshChange, workspaceIndex }: { onActiveSshChang
             display: cell && (!mobile || id === effectiveMobilePaneId) ? 'flex' : 'none',
             overflow: 'hidden',
           }}>
-            <LeafPane key={`${id}-${layoutRestoreVersion}`} nodeId={id} onActiveSshChange={onActiveSshChange} isInSplit={isInSplit && cellMap.has(id)} workspaceIndex={workspaceIndex} />
+            <LeafPane key={id} nodeId={id} restoreVersion={layoutRestoreVersion} onActiveSshChange={onActiveSshChange} isInSplit={isInSplit && cellMap.has(id)} workspaceIndex={workspaceIndex} />
           </div>
         );
       })}
