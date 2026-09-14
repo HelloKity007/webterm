@@ -118,6 +118,29 @@ describe("FileList", () => {
     expect(actions.onDelete).not.toHaveBeenCalled();
   });
 
+  it("drops selections whose files disappear after a refresh", async () => {
+    const actions = handlers();
+    const { rerender } = render(
+      <FileList
+        files={[file(1)]}
+        loading={false}
+        currentPath="/"
+        {...actions}
+      />,
+    );
+    fireEvent.click(screen.getByRole("option"));
+    expect(screen.getAllByText("1 selected")).toHaveLength(2);
+    rerender(
+      <FileList
+        files={[]}
+        loading={false}
+        currentPath="/"
+        {...actions}
+      />,
+    );
+    await waitFor(() => expect(screen.queryAllByText("1 selected")).toHaveLength(0));
+  });
+
   it("confirms an inline rename without opening the selected directory", () => {
     const actions = handlers();
     render(

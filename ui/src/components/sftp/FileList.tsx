@@ -183,6 +183,19 @@ export default function FileList(p: Props) {
     [onSelectionChange, selected],
   );
   useEffect(() => {
+    const available = new Set(files.map((file) => file.path));
+    const frame = requestAnimationFrame(() => {
+      setSelected((current) => {
+        const next = new Set([...current].filter((path) => available.has(path)));
+        return next.size === current.size ? current : next;
+      });
+      setAnchor((current) =>
+        current && available.has(current) ? current : null,
+      );
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [files]);
+  useEffect(() => {
     const wanted = pendingReveal.current;
     if (!wanted) return;
     const index = visible.findIndex((file) => file.path === wanted);
