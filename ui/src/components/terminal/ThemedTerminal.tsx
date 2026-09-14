@@ -967,6 +967,21 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
         term.element.style.backgroundColor = themeConfig.background;
       }
       termRef.current = term;
+      const settleInitialOutputViewport = () => {
+        initialOutputFollowTimer = null;
+        if (!initialOutputFollow) return;
+        if (!surfaceElement.classList.contains('desktop-local-viewport')) {
+          initialOutputFollowTimer = setTimeout(settleInitialOutputViewport, 120);
+          return;
+        }
+        const screen = term.element?.querySelector<HTMLElement>('.xterm-screen');
+        if (screen) {
+          surfaceElement.scrollTop = terminalModeRef.current === 'cli' ? surfaceElement.scrollHeight :
+            localViewportRevealRow(surfaceElement.scrollTop, surfaceElement.clientHeight, surfaceElement.scrollHeight,
+              screen.getBoundingClientRect().height / term.rows, term.buffer.active.cursorY);
+        }
+        initialOutputFollow = false;
+      };
       const recordOutputBatch = (bytes: number) => {
         if (!surfaceElement) return;
         surfaceElement.dataset.outputBatches = String(Number(surfaceElement.dataset.outputBatches || 0) + 1);
@@ -977,17 +992,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
         // already taken ownership of history scrolling.
         if (initialOutputFollow && !mobileBrowser) {
           if (initialOutputFollowTimer) clearTimeout(initialOutputFollowTimer);
-          initialOutputFollowTimer = setTimeout(() => {
-            initialOutputFollowTimer = null;
-            if (!initialOutputFollow || !surfaceElement.classList.contains('desktop-local-viewport')) return;
-            const screen = term.element?.querySelector<HTMLElement>('.xterm-screen');
-            if (screen) {
-              surfaceElement.scrollTop = terminalModeRef.current === 'cli' ? surfaceElement.scrollHeight :
-                localViewportRevealRow(surfaceElement.scrollTop, surfaceElement.clientHeight, surfaceElement.scrollHeight,
-                  screen.getBoundingClientRect().height / term.rows, term.buffer.active.cursorY);
-            }
-            initialOutputFollow = false;
-          }, 120);
+          initialOutputFollowTimer = setTimeout(settleInitialOutputViewport, 120);
         }
       };
       const pumpTerminalOutput = () => {
