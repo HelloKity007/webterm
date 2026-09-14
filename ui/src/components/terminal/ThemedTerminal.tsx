@@ -503,7 +503,12 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
     );
     const mobileBrowser = isMobileBrowserEnvironment();
     const wheelSender = createLatestTerminalWheelSender((data) => sendRef.current(JSON.stringify({ data })));
+    let initialOutputFollow = true;
+    let initialOutputFollowTimer: ReturnType<typeof setTimeout> | null = null;
     const handleTerminalWheel = (event: WheelEvent) => {
+      initialOutputFollow = false;
+      if (initialOutputFollowTimer) clearTimeout(initialOutputFollowTimer);
+      initialOutputFollowTimer = null;
       pendingCursorRevealRef.current = false;
       if (event.deltaY < 0) inputViewportFollowedRef.current = false;
       // A normal shell has a local xterm scrollback. Do not let tmux's mouse
@@ -967,6 +972,23 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
         surfaceElement.dataset.outputBatches = String(Number(surfaceElement.dataset.outputBatches || 0) + 1);
         surfaceElement.dataset.lastOutputBytes = String(bytes);
         surfaceElement.dataset.lastOutputAt = performance.now().toFixed(3);
+        // A bounded initial snapshot can finish after the first geometry fit.
+        // Follow its final cursor once the burst settles, unless the user has
+        // already taken ownership of history scrolling.
+        if (initialOutputFollow && !mobileBrowser) {
+          if (initialOutputFollowTimer) clearTimeout(initialOutputFollowTimer);
+          initialOutputFollowTimer = setTimeout(() => {
+            initialOutputFollowTimer = null;
+            if (!initialOutputFollow || !surfaceElement.classList.contains('desktop-local-viewport')) return;
+            const screen = term.element?.querySelector<HTMLElement>('.xterm-screen');
+            if (screen) {
+              surfaceElement.scrollTop = terminalModeRef.current === 'cli' ? surfaceElement.scrollHeight :
+                localViewportRevealRow(surfaceElement.scrollTop, surfaceElement.clientHeight, surfaceElement.scrollHeight,
+                  screen.getBoundingClientRect().height / term.rows, term.buffer.active.cursorY);
+            }
+            initialOutputFollow = false;
+          }, 120);
+        }
       };
       const pumpTerminalOutput = () => {
         if (outputFrameRef.current !== null || outputWritePendingRef.current || outputQueueRef.current.length === 0) return;
@@ -1027,6 +1049,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       if (viewportFollowFrame !== null) cancelAnimationFrame(viewportFollowFrame);
       if (widthFitFrame !== null) cancelAnimationFrame(widthFitFrame);
       if (outputFrameRef.current !== null) cancelAnimationFrame(outputFrameRef.current);
+      if (initialOutputFollowTimer) clearTimeout(initialOutputFollowTimer);
       outputFrameRef.current = null;
       outputWritePendingRef.current = false;
       outputPumpRef.current = () => {};
