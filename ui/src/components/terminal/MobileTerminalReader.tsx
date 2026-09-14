@@ -66,7 +66,6 @@ export default function MobileTerminalReader({ terminalRef, revision, fontSize, 
     let frame: number | undefined;
     const update = () => {
       frame = undefined;
-      if (window.innerWidth > 700) { setSnapshot(null); return; }
       setSnapshot({ rows: readTerminalRows(terminal), style: {
         fontSize: terminal.options.fontSize, fontFamily: terminal.options.fontFamily,
         color: terminal.options.theme?.foreground, backgroundColor: terminal.options.theme?.background,

@@ -74,4 +74,15 @@ describe('mobile wrapped terminal reader', () => {
       expect(screen.getByLabelText('终端换行阅读').style.fontSize).toBe('14px');
     } finally { terminal.dispose(); }
   });
+
+  it('keeps wrapped reading available on a phone in landscape orientation', async () => {
+    vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue('Android Mobile');
+    vi.spyOn(window, 'innerWidth', 'get').mockReturnValue(915);
+    const terminal = new Terminal({ cols: 104, rows: 21, fontSize: 12 });
+    try {
+      render(<MobileTerminalReader terminalRef={{ current: terminal }} revision={1} fontSize={12} onHistory={() => {}} />);
+      await waitFor(() => expect(screen.getByLabelText('终端换行阅读')).toBeTruthy());
+      expect(screen.getByLabelText('自动换行的终端输出')).toBeTruthy();
+    } finally { terminal.dispose(); }
+  });
 });

@@ -140,6 +140,12 @@ select:focus, input:focus, textarea:focus, button:focus-visible, [role="button"]
 .terminal-surface.desktop-local-viewport .xterm .scrollbar.vertical { display: none !important; }
 .terminal-mobile-shell { background: #1f211f; }
 .mobile-panel-switcher { display: none; }
+.terminal-mobile-shell > .mobile-panel-switcher { display: flex; flex: 0 0 38px; align-items: center; gap: 6px; padding: 4px 8px; overflow-x: auto; background: #b9dcb9; border-bottom: 1px solid #80ad82; }
+.terminal-mobile-shell > .mobile-panel-switcher button { flex: 0 0 32px; height: 30px; padding: 0; border: 1px solid #80ad82; border-radius: 5px; background: #d9edd9; color: #3d5b42; font: 600 13px/1 sans-serif; }
+.terminal-mobile-shell > .mobile-panel-switcher button[aria-current="page"] { background: #4f8f55; color: #fff; border-color: #3d7542; }
+.terminal-mobile-shell .terminal-tabbar { min-width: 0; max-width: 100%; overflow-x: auto !important; overflow-y: hidden !important; touch-action: pan-x; overscroll-behavior-x: contain; scrollbar-width: none; }
+.terminal-mobile-shell .terminal-tabbar > [data-terminal-tab] { flex-shrink: 0; -webkit-user-drag: none; }
+.terminal-mobile-shell .terminal-tabbar > .terminal-tabbar-spacer { flex: 0 0 4px !important; }
 .app-shell[data-mobile-viewport="true"] { position: fixed; left: 0; right: 0; top: var(--mobile-viewport-top, 0px); height: var(--mobile-viewport-height, 100dvh) !important; overflow: hidden; }
 .app-shell[data-mobile-viewport="true"] > .app-body { min-height: 0; }
 .app-shell[data-mobile-viewport="true"] { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
@@ -155,12 +161,6 @@ select:focus, input:focus, textarea:focus, button:focus-visible, [role="button"]
 .login-shell { background: radial-gradient(circle at 18% 12%, rgba(97,161,101,.22), transparent 30%), radial-gradient(circle at 82% 88%, rgba(120,169,127,.18), transparent 32%), #d9edd9 !important; }
 
 @media (max-width: 700px) {
-  .terminal-tabbar { min-width: 0; max-width: 100%; overflow-x: auto !important; overflow-y: hidden !important; touch-action: pan-x; overscroll-behavior-x: contain; scrollbar-width: none; }
-  .terminal-tabbar > [data-terminal-tab] { flex-shrink: 0; -webkit-user-drag: none; }
-  .terminal-tabbar > .terminal-tabbar-spacer { flex: 0 0 4px !important; }
-  .mobile-panel-switcher { display: flex; flex: 0 0 38px; align-items: center; gap: 6px; padding: 4px 8px; overflow-x: auto; background: #b9dcb9; border-bottom: 1px solid #80ad82; }
-  .mobile-panel-switcher button { flex: 0 0 32px; height: 30px; padding: 0; border: 1px solid #80ad82; border-radius: 5px; background: #d9edd9; color: #3d5b42; font: 600 13px/1 sans-serif; }
-  .mobile-panel-switcher button[aria-current="page"] { background: #4f8f55; color: #fff; border-color: #3d7542; }
   .mobile-single-panel-grid { gap: 0 !important; }
   .mobile-single-panel-grid .terminal-grid-cell { min-width: 0; min-height: 0; }
   .terminal-surface { touch-action: none; }
