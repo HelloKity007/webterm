@@ -30,6 +30,10 @@ export function panelGrid(paneIDs: string[], columns: number): LayoutNode | null
   return { type: 'split', direction: 'vertical', ratios: rows.map(() => 1 / rows.length), children: rows };
 }
 
+export function presetDestinationID(targetPaneIDs: string[], preferredPaneID: string): string {
+  return targetPaneIDs.includes(preferredPaneID) ? preferredPaneID : targetPaneIDs[0] || preferredPaneID;
+}
+
 export function replaceLeafWithEightPaneGrid(
   root: LayoutNode,
   targetID: string,

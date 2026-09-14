@@ -106,7 +106,7 @@ try {
   report.frames = { samples: intervals.length, p50Ms: percentile(intervals, 0.5), p95Ms: frameP95, maxMs: Math.max(...intervals) };
   assert(frameP95 <= 22.2, `p95 frame interval ${frameP95.toFixed(2)}ms exceeds 22.2ms`);
   assert.equal(pageErrors.length, 0, `page errors: ${pageErrors.join(' | ')}`);
-  report.checks.push('8 panes sustained 64 KiB/s each for 60 seconds with p95 frame interval <= 22.2ms');
+  report.checks.push(`8 panes sustained 64 KiB/s each for ${outputSeconds} seconds with p95 frame interval <= 22.2ms`);
 
   const echoLatencies = [];
   const firstSurface = surfaces.first();

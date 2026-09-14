@@ -16,7 +16,7 @@ import { layoutEventRevision, presenceControlEvent } from './layoutSync';
 import { websocketTicketURL, webSocketClientID } from '../../api/wsTicket';
 import { shouldPersistLayout } from './layoutSave';
 import { useWebSocket } from '../../hooks/useWebSocket';
-import { panelGrid, replaceLeafWithEightPaneGrid } from './layoutPresets';
+import { panelGrid, presetDestinationID, replaceLeafWithEightPaneGrid } from './layoutPresets';
 import { closeTerminalSession } from '../../api/terminalSessions';
 import WorkspaceTabBar from './WorkspaceTabBar';
 import { getSharedTerminalGrid, setSharedTerminalGrid } from '../terminal/terminalGridCache';
@@ -485,10 +485,13 @@ function doEightPaneSplit(targetID: string, activeTab: Tab): boolean {
 
 function doWorkspacePreset(mode: 'single' | 'four-by-two', preferredPaneID: string) {
   const existingPaneIDs = leafIDs(layoutRoot);
-  const destinationID = existingPaneIDs.includes(preferredPaneID) ? preferredPaneID : existingPaneIDs[0] || 'root';
   const targetCount = mode === 'single' ? 1 : 8;
-  const targetPaneIDs = mode === 'single' ? [destinationID] : existingPaneIDs.slice(0, targetCount);
+  const preferredID = existingPaneIDs.includes(preferredPaneID) ? preferredPaneID : existingPaneIDs[0] || 'root';
+  const targetPaneIDs = mode === 'single' ? [preferredID] : existingPaneIDs.slice(0, targetCount);
   while (targetPaneIDs.length < targetCount) targetPaneIDs.push(nextLayoutID('pane'));
+  // A focused pane can sit beyond the eight panes retained by the 4x2 preset.
+  // Merge removed tabs into a pane that is guaranteed to survive the preset.
+  const destinationID = presetDestinationID(targetPaneIDs, preferredID);
   const targetSet = new Set(targetPaneIDs);
   const panes: PersistedLayout['panes'] = {};
   for (const paneID of targetPaneIDs) {

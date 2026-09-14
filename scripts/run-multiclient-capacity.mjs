@@ -15,6 +15,8 @@ const rows = Number.parseInt(process.env.WEBTERM_LOADTEST_ROWS || '10', 10);
 const cols = Number.parseInt(process.env.WEBTERM_LOADTEST_COLS || '10', 10);
 const timeout = Number.parseInt(process.env.WEBTERM_LOADTEST_TIMEOUT_MS || '180000', 10);
 const chromePath = process.env.CHROME_PATH || '/usr/bin/google-chrome';
+const tmuxBinary = process.env.WEBTERM_TMUX_BINARY || 'tmux';
+const tmuxSocket = process.env.WEBTERM_TMUX_SOCKET || '';
 
 if (!baseURL || !username || !password || !Number.isInteger(clients) || clients < 1 || !Number.isInteger(rows) || rows < 1 || !Number.isInteger(cols) || cols < 1) {
   throw new Error('set WEBTERM_BASE_URL, WEBTERM_LOADTEST_USERNAME and WEBTERM_LOADTEST_PASSWORD; client, row and column counts must be positive integers');
@@ -33,7 +35,8 @@ function tmuxSessionName(userID, workspaceIndex, panelNumber, terminalID) {
 function removeTemporaryTmuxSessions(sessionNames) {
   for (const sessionName of sessionNames) {
     try {
-      execFileSync('tmux', ['kill-session', '-t', sessionName], { stdio: 'ignore' });
+      const socketArgs = tmuxSocket ? ['-L', tmuxSocket] : [];
+      execFileSync(tmuxBinary, [...socketArgs, 'kill-session', '-t', sessionName], { stdio: 'ignore' });
     } catch { /* the session may not have started or may already be gone */ }
   }
 }
@@ -87,7 +90,7 @@ function makeLayout(connectionID, activePaneCount) {
       const active = paneIndex < activePaneCount;
       const tabID = `load-ssh-${row}-${col}`;
       panes[paneID] = {
-        tabs: active ? [{ id: tabID, type: 'ssh', title: `容量会话 ${row}-${col}`, connId: connectionID }] : [],
+        tabs: active ? [{ id: tabID, type: 'ssh', title: `容量会话 ${row}-${col}`, connId: connectionID, labelNumber: paneIndex + 1 }] : [],
         activeTabId: active ? tabID : null,
       };
       paneIndex += 1;

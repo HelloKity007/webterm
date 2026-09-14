@@ -73,6 +73,11 @@ try {
 
   const divider = clientA.page.locator('[data-layout-divider="root:0"]');
   await divider.waitFor();
+  let layoutPutCount = 0;
+  const countLayoutPut = request => {
+    if (request.method() === 'PUT' && new URL(request.url()).pathname === '/api/layout') layoutPutCount += 1;
+  };
+  clientA.page.on('request', countLayoutPut);
   const before = await clientA.page.locator('.terminal-grid-cell:visible').first().boundingBox();
   const bounds = await divider.boundingBox();
   assert(before && bounds);
@@ -81,12 +86,14 @@ try {
   await clientA.page.mouse.move(bounds.x + 500, bounds.y + bounds.height / 2, { steps: 12 });
   await clientA.page.mouse.up();
   await clientA.page.waitForTimeout(1200);
+  clientA.page.off('request', countLayoutPut);
   const after = await clientA.page.locator('.terminal-grid-cell:visible').first().boundingBox();
   assert(after.width > before.width + 300, `divider did not resize the first panel: ${before.width} -> ${after.width}`);
   await clientB.page.waitForFunction(() => document.querySelector('.terminal-grid-cell')?.getBoundingClientRect().width > 1900);
   const authoritative = await ok('GET', '/api/layout', undefined, userToken);
   const ratios = authoritative.layout.workspaceTabs[0].layout.tree.ratios;
   assert(ratios[0] > 0.6 && ratios[0] < 0.9, `unexpected saved ratios ${ratios}`);
+  assert.equal(layoutPutCount, 1, `divider drag issued ${layoutPutCount} layout PUT requests`);
   report.checks.push('pointer divider resizes live, saves once after release and converges on peer');
   await clientA.page.screenshot({ path: `${output}/divider-and-presence.png` });
 
