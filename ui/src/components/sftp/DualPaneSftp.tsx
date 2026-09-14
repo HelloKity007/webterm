@@ -10,10 +10,10 @@ interface Props {
 }
 
 export default function DualPaneSftp({ connections }: Props) {
-  const [leftConnId, setLeftConnId] = useState<number | null>(
+  const [selectedLeftConnId, setLeftConnId] = useState<number | null>(
     connections[0]?.id || null,
   );
-  const [rightConnId, setRightConnId] = useState<number | null>(null);
+  const [selectedRightConnId, setRightConnId] = useState<number | null>(null);
   const [clipboard, setClipboard] = useState<FileClipboard | null>(null);
   const [leftPath, setLeftPath] = useState("/");
   const [rightPath, setRightPath] = useState("/home");
@@ -28,6 +28,16 @@ export default function DualPaneSftp({ connections }: Props) {
     from: "left" | "right";
     paths: string[];
   } | null>(null);
+  const leftConnId = connections.some(
+    (connection) => connection.id === selectedLeftConnId,
+  )
+    ? selectedLeftConnId
+    : connections[0]?.id || null;
+  const rightConnId = connections.some(
+    (connection) => connection.id === selectedRightConnId,
+  )
+    ? selectedRightConnId
+    : null;
   const leftEndpoint = `remote:${leftConnId ?? "none"}`;
   const rightEndpoint = rightConnId == null ? "local" : `remote:${rightConnId}`;
 

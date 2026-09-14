@@ -39,6 +39,14 @@ describe("DualPaneSftp transfer", () => {
     vi.restoreAllMocks();
   });
 
+  it("selects the first remote endpoint when connections load asynchronously", async () => {
+    setLang("en");
+    const { rerender } = render(<DualPaneSftp connections={[]} />);
+    expect(screen.queryByText("remote:7")).toBeNull();
+    rerender(<DualPaneSftp connections={[{ id: 7, name: "server-7" }]} />);
+    expect(await screen.findByText("remote:7")).toBeTruthy();
+  });
+
   it("transfers selected remote files to the current local directory", async () => {
     setLang("en");
     localStorage.setItem("token", "test-token");
