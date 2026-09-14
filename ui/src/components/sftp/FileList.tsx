@@ -140,6 +140,7 @@ export default function FileList(p: Props) {
     [viewportHeight, setViewportHeight] = useState(500);
   const fileInput = useRef<HTMLInputElement>(null),
     uploadTarget = useRef<string | null>(null),
+    pendingReveal = useRef<string | null>(null),
     listRef = useRef<HTMLDivElement>(null);
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -173,6 +174,22 @@ export default function FileList(p: Props) {
     () => onSelectionChange?.([...selected]),
     [onSelectionChange, selected],
   );
+  useEffect(() => {
+    const wanted = pendingReveal.current;
+    if (!wanted) return;
+    const index = visible.findIndex((file) => file.path === wanted);
+    if (index < 0) return;
+    pendingReveal.current = null;
+    const frame = requestAnimationFrame(() => {
+      setSelected(new Set([wanted]));
+      setAnchor(wanted);
+      if (listRef.current) {
+        listRef.current.scrollTop = index * 32;
+        setScrollTop(listRef.current.scrollTop);
+      }
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [visible]);
   const flash = useCallback((s: string) => {
     setNotice(s);
     window.setTimeout(() => setNotice(null), 5000);
@@ -663,7 +680,9 @@ export default function FileList(p: Props) {
             onChange={setFolderName}
             onConfirm={() => {
               if (folderName.trim()) {
-                onMkdir(folderName.trim());
+                const name = folderName.trim();
+                pendingReveal.current = `${currentPath.replace(/\/$/, "")}/${name}`;
+                onMkdir(name);
                 setNewFolder(false);
                 setFolderName("");
               }
@@ -677,8 +696,11 @@ export default function FileList(p: Props) {
             onChange={(name) => setRenaming({ ...renaming, name })}
             label={t("config_confirm")}
             onConfirm={() => {
-              if (renaming.name.trim())
-                onRename(renaming.path, renaming.name.trim());
+              if (renaming.name.trim()) {
+                const name = renaming.name.trim();
+                pendingReveal.current = `${renaming.path.slice(0, renaming.path.lastIndexOf("/") + 1)}${name}`;
+                onRename(renaming.path, name);
+              }
               setRenaming(null);
             }}
             onCancel={() => setRenaming(null)}
