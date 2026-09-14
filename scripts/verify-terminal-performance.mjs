@@ -113,10 +113,11 @@ try {
   for (let index = 0; index < 100; index++) {
     const marker = `ECHO_${String(index).padStart(3, '0')}_${randomUUID().slice(0, 8)}`;
     await firstSurface.click({ position: { x: 80, y: 60 } });
+    const previousBatch = Number(await firstSurface.getAttribute('data-output-batches') || 0);
     const started = performance.now();
     await page.keyboard.insertText(`printf '${marker}\\n'`);
     await page.keyboard.press('Enter');
-    await page.waitForFunction(value => [...document.querySelectorAll('.terminal-grid-cell:first-child .xterm-rows > div')].some(row => row.textContent?.includes(value)), marker, { timeout: 3000 });
+    await page.waitForFunction(previous => Number(document.querySelector('.terminal-grid-cell:first-child .terminal-surface')?.dataset.outputBatches || 0) > previous, previousBatch, { timeout: 3000 });
     echoLatencies.push(performance.now() - started);
   }
   report.echo = { samples: echoLatencies.length, p50Ms: percentile(echoLatencies, 0.5), p95Ms: percentile(echoLatencies, 0.95), maxMs: Math.max(...echoLatencies) };

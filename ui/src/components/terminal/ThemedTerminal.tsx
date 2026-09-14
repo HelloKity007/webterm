@@ -962,6 +962,12 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
         term.element.style.backgroundColor = themeConfig.background;
       }
       termRef.current = term;
+      const recordOutputBatch = (bytes: number) => {
+        if (!surfaceElement) return;
+        surfaceElement.dataset.outputBatches = String(Number(surfaceElement.dataset.outputBatches || 0) + 1);
+        surfaceElement.dataset.lastOutputBytes = String(bytes);
+        surfaceElement.dataset.lastOutputAt = performance.now().toFixed(3);
+      };
       const pumpTerminalOutput = () => {
         if (outputFrameRef.current !== null || outputWritePendingRef.current || outputQueueRef.current.length === 0) return;
         outputFrameRef.current = requestAnimationFrame(() => {
@@ -971,11 +977,13 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
           try {
             if (zsentryRef.current) {
               deliverTerminalBytes(term, zsentryRef.current, merged);
+              recordOutputBatch(merged.byteLength);
               pumpTerminalOutput();
             } else {
               outputWritePendingRef.current = true;
               term.write(merged, () => {
                 outputWritePendingRef.current = false;
+                recordOutputBatch(merged.byteLength);
                 pumpTerminalOutput();
               });
             }
