@@ -293,12 +293,7 @@ try {
       assert(downloadPath, 'browser did not persist the remote download');
       const downloaded = await import('node:fs/promises').then(({ readFile }) => readFile(downloadPath, 'utf8'));
       assert.equal(downloaded, payload, 'uploaded/downloaded bytes differ');
-      await navigatePane(remotePane, localRoot);
-      page.once('dialog', (dialog) => dialog.accept());
-      const remoteFixtureRow = await namedRow(remotePane, `${localName}-remote`);
-      await remoteFixtureRow.click();
-      await remoteFixtureRow.press('Delete');
-      await remoteFixtureRow.waitFor({ state: 'detached', timeout: 10000 });
+      await remoteSocketAction('delete', remoteFixturePath);
       pass('Dedicated remote fixture supports upload/download byte round-trip and cleanup', {
         connectionID: remoteConnectionID, path: remoteFixturePath, bytes: Buffer.byteLength(payload),
       });
