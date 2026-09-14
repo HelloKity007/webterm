@@ -503,7 +503,6 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
     const mobileBrowser = isMobileBrowserEnvironment();
     const wheelSender = createLatestTerminalWheelSender((data) => sendRef.current(JSON.stringify({ data })));
     let initialOutputFollow = true;
-    let initialOutputFollowStartedAt: number | null = null;
     let initialOutputFollowTimer: ReturnType<typeof setTimeout> | null = null;
     let userOwnsViewport = false;
     const handleTerminalWheel = (event: WheelEvent) => {
@@ -974,7 +973,6 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       const settleInitialOutputViewport = () => {
         initialOutputFollowTimer = null;
         if (!initialOutputFollow) return;
-        if (initialOutputFollowStartedAt === null) initialOutputFollowStartedAt = performance.now();
         if (!surfaceElement.classList.contains('desktop-local-viewport')) {
           initialOutputFollowTimer = setTimeout(settleInitialOutputViewport, 120);
           return;
@@ -985,15 +983,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
             localViewportRevealRow(surfaceElement.scrollTop, surfaceElement.clientHeight, surfaceElement.scrollHeight,
               screen.getBoundingClientRect().height / term.rows, term.buffer.active.cursorY);
         }
-        // A reconnect snapshot can arrive in several batches with gaps longer
-        // than the quiet-period debounce. Keep revealing its final cursor for
-        // a bounded window; an actual user wheel cancels this immediately.
-        const remaining = 2000 - (performance.now() - initialOutputFollowStartedAt);
-        if (remaining <= 0) {
-          initialOutputFollow = false;
-          return;
-        }
-        initialOutputFollowTimer = setTimeout(settleInitialOutputViewport, Math.min(120, remaining));
+        initialOutputFollow = false;
       };
       const recordOutputBatch = (bytes: number) => {
         if (!surfaceElement) return;
@@ -1004,7 +994,6 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
         // Follow its final cursor once the burst settles, unless the user has
         // already taken ownership of history scrolling.
         if (initialOutputFollow && !mobileBrowser) {
-          if (initialOutputFollowStartedAt === null) initialOutputFollowStartedAt = performance.now();
           if (initialOutputFollowTimer) clearTimeout(initialOutputFollowTimer);
           initialOutputFollowTimer = setTimeout(settleInitialOutputViewport, 120);
         }
