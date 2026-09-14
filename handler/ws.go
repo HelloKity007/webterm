@@ -764,8 +764,8 @@ func (h *WSHandler) HandleSFTP(conn *websocket.Conn) {
 			files, err := sftpClient.ListDir(msg.Path)
 			if err != nil {
 				outbound.Send(map[string]interface{}{"type": "error", "error": err.Error()})
-			} else {
-				outbound.Send(map[string]interface{}{"type": "file_list", "path": msg.Path, "files": files})
+			} else if err := sendChunkedFileList(outbound, msg.Path, files); err != nil {
+				return
 			}
 		case "read":
 			data, err := sftpClient.ReadFile(msg.Path)

@@ -25,6 +25,31 @@ type LocalFileInfo struct {
 	IsLink  bool   `json:"is_link"`
 }
 
+// File lists can be much larger than the WebSocket frame budget. Send small
+// ordered batches so the browser can render a virtualized directory without a
+// single oversized JSON message or a long write deadline.
+const fileListChunkSize = 1000
+
+func sendChunkedFileList[T any](outbound *wsOutbound, path string, files []T) error {
+	if err := outbound.Send(map[string]interface{}{
+		"type": "file_list_start", "path": path, "total": len(files),
+	}); err != nil {
+		return err
+	}
+	for start := 0; start < len(files); start += fileListChunkSize {
+		end := start + fileListChunkSize
+		if end > len(files) {
+			end = len(files)
+		}
+		if err := outbound.Send(map[string]interface{}{
+			"type": "file_list_chunk", "path": path, "files": files[start:end],
+		}); err != nil {
+			return err
+		}
+	}
+	return outbound.Send(map[string]interface{}{"type": "file_list_end", "path": path})
+}
+
 func HandleLocalFS(conn *websocket.Conn) {
 	handleLocalFS(conn, nil)
 }
@@ -99,11 +124,9 @@ func handleLocalFS(conn *websocket.Conn, registry *WSRegistry) {
 				}
 				return strings.ToLower(files[i].Name) < strings.ToLower(files[j].Name)
 			})
-			outbound.Send(map[string]interface{}{
-				"type":  "file_list",
-				"path":  path,
-				"files": files,
-			})
+			if err := sendChunkedFileList(outbound, path, files); err != nil {
+				return
+			}
 		case "read":
 			cleanPath, err := cleanLocalPath(msg.Path)
 			if err == nil {

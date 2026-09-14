@@ -263,6 +263,14 @@ export default function SftpPanel({
             setFiles(msg.files || []);
             setPath(msg.path || pathRef.current);
             setLoading(false);
+          } else if (msg.type === "file_list_start") {
+            setFiles([]);
+            setPath(msg.path || pathRef.current);
+            setLoading(true);
+          } else if (msg.type === "file_list_chunk") {
+            setFiles((current) => [...current, ...(msg.files || [])]);
+          } else if (msg.type === "file_list_end") {
+            setLoading(false);
           } else if (msg.type === "error") {
             setError(msg.error);
             if (lastOperationRef.current) {
