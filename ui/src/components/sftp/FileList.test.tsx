@@ -96,6 +96,26 @@ describe("FileList", () => {
     expect(actions.onDelete).not.toHaveBeenCalled();
   });
 
+  it("confirms an inline rename without opening the selected directory", () => {
+    const actions = handlers();
+    render(
+      <FileList
+        files={[file(1, true)]}
+        loading={false}
+        currentPath="/"
+        {...actions}
+      />,
+    );
+    const row = screen.getByRole("option");
+    fireEvent.click(row);
+    fireEvent.keyDown(row, { key: "F2" });
+    const editor = screen.getByRole("textbox", { name: "Folder Name" });
+    fireEvent.change(editor, { target: { value: "renamed" } });
+    fireEvent.keyDown(editor, { key: "Enter" });
+    expect(actions.onRename).toHaveBeenCalledWith("/item-00001", "renamed");
+    expect(actions.onNavigate).not.toHaveBeenCalled();
+  });
+
   it("keeps the DOM bounded for a 10k-entry directory", () => {
     render(
       <FileList

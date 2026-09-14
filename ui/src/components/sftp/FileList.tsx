@@ -76,8 +76,16 @@ function NameInput({
         placeholder={t("file_folder_name")}
         onChange={(e) => onChange(e.target.value)}
         onKeyDown={(e) => {
-          if (e.key === "Enter") onConfirm();
-          if (e.key === "Escape") onCancel();
+          if (e.key === "Enter") {
+            e.preventDefault();
+            e.stopPropagation();
+            onConfirm();
+          }
+          if (e.key === "Escape") {
+            e.preventDefault();
+            e.stopPropagation();
+            onCancel();
+          }
         }}
       />
       <button className="sftp-action sftp-primary" onClick={onConfirm}>

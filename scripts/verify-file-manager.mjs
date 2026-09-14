@@ -148,8 +148,19 @@ async function createDirectory(pane, name) {
 }
 
 async function namedRow(pane, name) {
-  const row = pane.locator('[data-file-row]').filter({ has: pane.locator('.sftp-file-name', { hasText: name }) }).first();
-  await row.waitFor({ timeout: 10000 });
+  // `has` locators are evaluated relative to every candidate row. Reusing a
+  // locator rooted at `pane` makes the inner selector look for the pane inside
+  // each row, so an existing virtualized row can never match.
+  const row = pane.locator('[data-file-row]').filter({
+    has: page.locator('.sftp-file-name', { hasText: name }),
+  }).first();
+  try {
+    await row.waitFor({ timeout: 10000 });
+  } catch (error) {
+    const visibleRows = await pane.locator('[data-file-row]').evaluateAll((rows) =>
+      rows.map((entry) => entry.textContent?.trim()).filter(Boolean).slice(0, 20));
+    throw new Error(`${error.message}\nVisible rows while looking for ${name}: ${JSON.stringify(visibleRows)}`);
+  }
   return row;
 }
 
