@@ -267,6 +267,7 @@ try {
 
     const remotePane = endpoint(0);
     if (remoteConnectionID) {
+      await page.getByText(remoteConnectionName, { exact: true }).last().waitFor({ timeout: 10000 });
       const connectionSelect = remotePane.locator('.sftp-endpoint-head > div').last();
       await connectionSelect.click();
       const connectionOption = page.getByText(remoteConnectionName, { exact: true }).last();
