@@ -61,13 +61,16 @@ export default function LayoutDividerOverlay({ root, container, onPreview, onDra
             const next = resizeLayoutDivider(latestRoot.current, divider.path, divider.index, lastShare);
             latestRoot.current = next;
             onCommit(next);
-            event.currentTarget.removeEventListener('pointermove', move);
-            event.currentTarget.removeEventListener('pointerup', finish);
-            event.currentTarget.removeEventListener('pointercancel', finish);
+            window.removeEventListener('pointermove', move, true);
+            window.removeEventListener('pointerup', finish, true);
+            window.removeEventListener('pointercancel', finish, true);
           };
-          event.currentTarget.addEventListener('pointermove', move);
-          event.currentTarget.addEventListener('pointerup', finish);
-          event.currentTarget.addEventListener('pointercancel', finish);
+          // Window-level capture survives React re-renders while the grid is
+          // changing under the pointer and also handles release outside the
+          // narrow visual separator hit target.
+          window.addEventListener('pointermove', move, true);
+          window.addEventListener('pointerup', finish, true);
+          window.addEventListener('pointercancel', finish, true);
         }}>
         <span aria-hidden="true" style={{
           position: 'absolute', background: 'rgba(122,162,247,0.55)', borderRadius: 1,
