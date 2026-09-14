@@ -46,6 +46,7 @@ const en: Record<string, string> = {
   file_download_failed: 'Download failed', file_loading: 'Loading...', file_folder_name: 'Folder Name', file_bak: 'Backup .bak before save',
   file_external_change: 'This file changed outside the editor. Reload it?', file_reload: 'Reload', file_keep_draft: 'Keep draft',
   file_refresh_mode_prompt: 'Choose how this open file refreshes.', file_auto_refresh: 'Enable auto-refresh', file_manual_refresh: 'Use manual refresh', file_pause_auto_refresh: 'Pause auto-refresh',
+  file_save_conflict: 'The server file changed since you opened it. Save was not applied.', file_cancel_save: 'Cancel save', file_force_save: 'Force save',
   file_browser: 'File browser', file_filter: 'Filter files', file_filter_clear: 'Clear filter',
   file_empty: 'Empty directory', file_empty_hint: 'Upload files or create a folder to get started', file_no_matches: 'No matching files',
   file_selected_count: 'selected', file_item_count: 'items', file_hidden_count: 'hidden',

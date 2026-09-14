@@ -22,7 +22,7 @@ interface Props {
   onSaved: () => void;
 }
 
-type RemoteFileMessage = { type?: string; path?: string; content?: string; error?: string };
+type RemoteFileMessage = { type?: string; path?: string; content?: string; error?: string; revision?: string };
 
 function detectLanguage(fileName: string): Extension | Extension[] {
   const ext = fileName.split('.').pop()?.toLowerCase();
@@ -49,7 +49,9 @@ export default function FileEditor({ filePath, fileName, ws, revision, refreshMo
   const [backup, setBackup] = useState(true);
   const [reloadNonce, setReloadNonce] = useState(0);
   const [externalChange, setExternalChange] = useState(false);
+  const [saveConflict, setSaveConflict] = useState(false);
   const origContentRef = useRef('');
+  const serverRevisionRef = useRef(revision);
   const saveHandlerRef = useRef<() => void>(() => {});
   const lastRevisionRef = useRef(revision);
 
@@ -63,6 +65,7 @@ export default function FileEditor({ filePath, fileName, ws, revision, refreshMo
       if (msg.type === 'file_content' && msg.path === filePath) {
         setContent(msg.content || '');
         origContentRef.current = msg.content || '';
+        serverRevisionRef.current = msg.revision || serverRevisionRef.current;
         setExternalChange(false);
         setLoading(false);
         ws.removeEventListener('message', handler);
@@ -142,35 +145,45 @@ export default function FileEditor({ filePath, fileName, ws, revision, refreshMo
     return () => view.destroy();
   }, [content, fileName, loading]);
 
-  const handleSave = useCallback(() => {
+  const handleSave = useCallback((force = false) => {
     if (!ws || !viewRef.current) return;
     const text = viewRef.current.state.doc.toString();
     const bakPath = filePath + '.bak';
     setSaving(true);
     setError('');
+    setSaveConflict(false);
 
     const handler = (e: MessageEvent) => {
       const msg = JSON.parse(e.data) as RemoteFileMessage;
       if (msg.type === 'write_done' && msg.path === filePath) {
+        if (backup) {
+          // The guarded write must finish first: creating a .bak cannot mask
+          // a concurrent change or leave the editor waiting for a stale reply.
+          ws.send(JSON.stringify({ action: 'write', path: bakPath, content: origContentRef.current, force: true }));
+        } else {
+          setSaving(false);
+          onSaved();
+          onClose();
+          ws.removeEventListener('message', handler);
+        }
+      } else if (msg.type === 'write_conflict' && msg.path === filePath) {
         setSaving(false);
-        onSaved();
-        onClose();
+        setSaveConflict(true);
         ws.removeEventListener('message', handler);
       } else if (msg.type === 'error') {
         setError(msg.error || 'Unable to save file');
         setSaving(false);
         ws.removeEventListener('message', handler);
       } else if (backup && msg.type === 'write_done' && msg.path === bakPath) {
-        ws.send(JSON.stringify({ action: 'write', path: filePath, content: text }));
+        setSaving(false);
+        onSaved();
+        onClose();
+        ws.removeEventListener('message', handler);
       }
     };
     ws.addEventListener('message', handler);
 
-    if (backup) {
-      ws.send(JSON.stringify({ action: 'write', path: bakPath, content: origContentRef.current }));
-    } else {
-      ws.send(JSON.stringify({ action: 'write', path: filePath, content: text }));
-    }
+    ws.send(JSON.stringify({ action: 'write', path: filePath, content: text, expected_revision: serverRevisionRef.current, force }));
   }, [backup, filePath, onClose, onSaved, ws]);
 
   useEffect(() => {
@@ -189,6 +202,13 @@ export default function FileEditor({ filePath, fileName, ws, revision, refreshMo
             <span>{t('file_external_change')}</span>
             <button onClick={reloadExternalChange}>{t('file_reload')}</button>
             <button onClick={() => setExternalChange(false)}>{t('file_keep_draft')}</button>
+          </div>
+        )}
+        {saveConflict && (
+          <div style={{ padding: '6px 12px', color: colors.text, background: colors.dangerSoft, fontSize: font.md }} role="alert">
+            <span>{t('file_save_conflict')}</span>
+            <button onClick={() => setSaveConflict(false)}>{t('file_cancel_save')}</button>
+            <button onClick={() => handleSave(true)}>{t('file_force_save')}</button>
           </div>
         )}
         {refreshMode === null && !loading && (
@@ -218,7 +238,7 @@ export default function FileEditor({ filePath, fileName, ws, revision, refreshMo
               </>
             ) : null}
           </span>
-          <button onClick={handleSave} disabled={saving} style={{
+          <button onClick={() => handleSave()} disabled={saving} style={{
             background: saving ? colors.border : colors.info, border: 'none',
             color: colors.white, padding: '6px 16px', borderRadius: 4, cursor: 'pointer', fontSize: font.md,
           }}>

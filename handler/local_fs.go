@@ -16,13 +16,21 @@ import (
 )
 
 type LocalFileInfo struct {
-	Name    string `json:"name"`
-	Path    string `json:"path"`
-	Size    int64  `json:"size"`
-	Mode    uint32 `json:"mode"`
-	ModTime string `json:"mod_time"`
-	IsDir   bool   `json:"is_dir"`
-	IsLink  bool   `json:"is_link"`
+	Name     string `json:"name"`
+	Path     string `json:"path"`
+	Size     int64  `json:"size"`
+	Mode     uint32 `json:"mode"`
+	ModTime  string `json:"mod_time"`
+	Revision string `json:"revision"`
+	IsDir    bool   `json:"is_dir"`
+	IsLink   bool   `json:"is_link"`
+}
+
+// fileRevision is an opaque, cheap version marker used for optimistic
+// concurrency checks. It deliberately includes nanoseconds and size, rather
+// than the display-oriented second-resolution modified time.
+func fileRevision(info os.FileInfo) string {
+	return fmt.Sprintf("%d:%d", info.ModTime().UnixNano(), info.Size())
 }
 
 // File lists can be much larger than the WebSocket frame budget. Send small
@@ -63,13 +71,15 @@ func handleLocalFS(conn *websocket.Conn, registry *WSRegistry) {
 	outbound := newWSOutbound(conn, registry)
 	defer outbound.Close()
 	var msg struct {
-		Action      string   `json:"action"`
-		Path        string   `json:"path"`
-		Content     string   `json:"content"`
-		NewPath     string   `json:"new_path"`
-		Paths       []string `json:"paths"`
-		Destination string   `json:"destination"`
-		RequestID   string   `json:"request_id"`
+		Action           string   `json:"action"`
+		Path             string   `json:"path"`
+		Content          string   `json:"content"`
+		NewPath          string   `json:"new_path"`
+		Paths            []string `json:"paths"`
+		Destination      string   `json:"destination"`
+		RequestID        string   `json:"request_id"`
+		ExpectedRevision string   `json:"expected_revision"`
+		Force            bool     `json:"force"`
 	}
 
 	for {
@@ -108,13 +118,14 @@ func handleLocalFS(conn *websocket.Conn, registry *WSRegistry) {
 				}
 				fullPath := filepath.Join(path, e.Name())
 				f := LocalFileInfo{
-					Name:    e.Name(),
-					Path:    fullPath,
-					Size:    info.Size(),
-					Mode:    uint32(info.Mode()),
-					ModTime: info.ModTime().Format("2006-01-02 15:04:05"),
-					IsDir:   e.IsDir(),
-					IsLink:  info.Mode()&os.ModeSymlink != 0,
+					Name:     e.Name(),
+					Path:     fullPath,
+					Size:     info.Size(),
+					Mode:     uint32(info.Mode()),
+					ModTime:  info.ModTime().Format("2006-01-02 15:04:05"),
+					Revision: fileRevision(info),
+					IsDir:    e.IsDir(),
+					IsLink:   info.Mode()&os.ModeSymlink != 0,
 				}
 				files = append(files, f)
 			}
@@ -135,7 +146,7 @@ func handleLocalFS(conn *websocket.Conn, registry *WSRegistry) {
 				if err == nil {
 					err = outbound.Send(map[string]interface{}{
 						"type": "file_stat", "path": path, "size": info.Size(),
-						"mod_time": info.ModTime().Format("2006-01-02 15:04:05"),
+						"mod_time": info.ModTime().Format("2006-01-02 15:04:05"), "revision": fileRevision(info),
 					})
 				}
 			}
@@ -148,8 +159,12 @@ func handleLocalFS(conn *websocket.Conn, registry *WSRegistry) {
 				var data []byte
 				data, err = os.ReadFile(cleanPath)
 				if err == nil {
-					outbound.Send(map[string]interface{}{"type": "file_content", "path": cleanPath, "content": string(data)})
-					continue
+					info, statErr := os.Stat(cleanPath)
+					if statErr == nil {
+						outbound.Send(map[string]interface{}{"type": "file_content", "path": cleanPath, "content": string(data), "revision": fileRevision(info)})
+						continue
+					}
+					err = statErr
 				}
 			}
 			if err != nil {
@@ -158,12 +173,30 @@ func handleLocalFS(conn *websocket.Conn, registry *WSRegistry) {
 		case "write":
 			cleanPath, err := cleanLocalPath(msg.Path)
 			if err == nil {
-				err = os.WriteFile(cleanPath, []byte(msg.Content), 0644)
+				if !msg.Force && msg.ExpectedRevision != "" {
+					info, statErr := os.Stat(cleanPath)
+					if statErr != nil || fileRevision(info) != msg.ExpectedRevision {
+						if statErr != nil && !os.IsNotExist(statErr) {
+							err = statErr
+						} else {
+							outbound.Send(map[string]interface{}{"type": "write_conflict", "path": cleanPath})
+							continue
+						}
+					}
+				}
+				if err == nil {
+					err = os.WriteFile(cleanPath, []byte(msg.Content), 0644)
+				}
 			}
 			if err != nil {
 				outbound.Send(map[string]interface{}{"type": "error", "error": err.Error()})
 			} else {
-				outbound.Send(map[string]interface{}{"type": "write_done", "path": msg.Path})
+				info, statErr := os.Stat(cleanPath)
+				if statErr != nil {
+					outbound.Send(map[string]interface{}{"type": "error", "error": statErr.Error()})
+				} else {
+					outbound.Send(map[string]interface{}{"type": "write_done", "path": msg.Path, "revision": fileRevision(info)})
+				}
 			}
 		case "delete":
 			cleanPath, err := cleanLocalPath(msg.Path)

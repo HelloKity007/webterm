@@ -20,7 +20,13 @@ const renamedName = `${localName}-renamed`;
 const secondName = `${localName}-second`;
 const editorName = `${localName}-editor.txt`;
 const localRoot = '/tmp';
-const localPaths = [`${localRoot}/${localName}`, `${localRoot}/${renamedName}`, `${localRoot}/${secondName}`, `${localRoot}/${editorName}`];
+const localPaths = [
+  `${localRoot}/${localName}`,
+  `${localRoot}/${renamedName}`,
+  `${localRoot}/${secondName}`,
+  `${localRoot}/${editorName}`,
+  `${localRoot}/${editorName}.bak`,
+];
 const remoteConnectionID = process.env.WEBTERM_QA_REMOTE_CONNECTION_ID
   ? Number(process.env.WEBTERM_QA_REMOTE_CONNECTION_ID) : null;
 const remoteConnectionName = process.env.WEBTERM_QA_REMOTE_CONNECTION_NAME || '';
@@ -282,12 +288,15 @@ try {
     await filter.fill(renamedName);
     assert.equal(await localPane.locator('[data-file-row]').filter({ hasText: renamedName }).count(), 1);
     assert.equal(await localPane.locator('[data-file-row]').filter({ hasText: secondName }).count(), 0);
-    await localPane.getByRole('button', { name: /清除筛选|Clear filter/ }).click();
+    await localPane.getByRole('button', { name: /清除筛选|Clear filter/ }).first().click();
     pass('File-name filter narrows rows and its explicit clear action restores the list', { query: renamedName });
 
     const editorPath = `${localRoot}/${editorName}`;
     await localFileContent(editorPath, 'initial content\n');
     await localPane.getByRole('button', { name: /刷新|Refresh/ }).click();
+    // The list is virtualized; use its normal filename filter so this exact
+    // file is rendered even when /tmp contains many directory fixtures.
+    await filter.fill(editorName);
     const editorRow = await namedRow(localPane, editorName);
     await editorRow.dblclick();
     const editorModal = page.locator('.modal-card');
@@ -310,22 +319,54 @@ try {
     await editorContent.click();
     await page.keyboard.press('Control+A');
     await page.keyboard.type('saved version');
+    await page.waitForTimeout(1100);
+    await localFileContent(editorPath, 'concurrent server version\n');
     await editorModal.getByRole('button', { name: /保存|Save/ }).click();
-    await editorModal.waitFor({ state: 'detached', timeout: 10000 });
+    const saveConflict = editorModal.getByRole('alert');
+    await saveConflict.waitFor();
+    assert.equal(await localFileContent(editorPath), 'concurrent server version\n', 'conflicting save overwrote the server file');
+    await saveConflict.getByRole('button', { name: /强制保存|Force save/ }).click();
+    try {
+      await editorModal.waitFor({ state: 'detached', timeout: 10000 });
+    } catch (error) {
+      throw new Error(`${error.message}\nEditor after force-save: ${await editorModal.innerText()}`);
+    }
     assert.equal(await localFileContent(editorPath), 'saved version');
+    await localPane.getByRole('button', { name: /刷新|Refresh/ }).click();
+    await namedRow(localPane, editorName).then((row) => row.dblclick());
+    const autoEditorModal = page.locator('.modal-card');
+    await autoEditorModal.waitFor();
+    const autoEditorContent = autoEditorModal.locator('.cm-content');
+    await autoEditorContent.waitFor();
+    await autoEditorModal.getByRole('button', { name: /自动刷新|Use auto-refresh/ }).click();
+    await page.waitForTimeout(1100);
+    await localFileContent(editorPath, 'auto refreshed version\n');
+    await page.waitForFunction(
+      () => document.querySelector('.modal-card .cm-content')?.textContent?.includes('auto refreshed version'),
+      undefined,
+      { timeout: 10000 },
+    );
+    await autoEditorModal.getByRole('button', { name: /暂停自动刷新|Pause auto-refresh/ }).click();
+    await autoEditorModal.getByRole('button', { name: /重新加载|Reload/ }).waitFor();
+    await autoEditorModal.getByRole('button', { name: /关闭|Close/ }).click();
+    await autoEditorModal.waitFor({ state: 'detached', timeout: 10000 });
     await localSocketAction('delete', editorPath);
-    pass('Editor save persists bytes; manual refresh preserves drafts until the user confirms reload', { path: editorPath });
+    await localSocketAction('delete', `${editorPath}.bak`);
+    pass('Editor save detects concurrent writes before explicit force-save; manual refresh protects drafts; automatic refresh is opt-in and can be paused', { path: editorPath });
 
     page.once('dialog', (dialog) => dialog.accept());
+    await filter.fill(renamedName);
     firstRow = await namedRow(localPane, renamedName);
     await firstRow.click();
     await firstRow.press('Delete');
     await firstRow.waitFor({ state: 'detached', timeout: 10000 });
     page.once('dialog', (dialog) => dialog.accept());
+    await filter.fill(secondName);
     const cleanupRow = await namedRow(localPane, secondName);
     await cleanupRow.click();
     await cleanupRow.press('Delete');
     await cleanupRow.waitFor({ state: 'detached', timeout: 10000 });
+    await localPane.getByRole('button', { name: /清除筛选|Clear filter/ }).first().click();
     pass('Keyboard Delete removes only named QA fixtures after confirmation', { root: localRoot });
 
     const remotePane = endpoint(0);

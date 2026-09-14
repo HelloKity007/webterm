@@ -29,14 +29,15 @@ func NewClient(sshClient *ssh.Client) (*Client, error) {
 }
 
 type FileInfo struct {
-	Name    string      `json:"name"`
-	Path    string      `json:"path"`
-	Size    int64       `json:"size"`
-	Mode    os.FileMode `json:"mode"`
-	ModTime string      `json:"mod_time"`
-	IsDir   bool        `json:"is_dir"`
-	IsLink  bool        `json:"is_link"`
-	LinkTo  string      `json:"link_to,omitempty"`
+	Name     string      `json:"name"`
+	Path     string      `json:"path"`
+	Size     int64       `json:"size"`
+	Mode     os.FileMode `json:"mode"`
+	ModTime  string      `json:"mod_time"`
+	Revision string      `json:"revision"`
+	IsDir    bool        `json:"is_dir"`
+	IsLink   bool        `json:"is_link"`
+	LinkTo   string      `json:"link_to,omitempty"`
 }
 
 func (c *Client) ListDir(path string) ([]FileInfo, error) {
@@ -56,12 +57,13 @@ func (c *Client) ListDir(path string) ([]FileInfo, error) {
 	var result []FileInfo
 	for _, f := range files {
 		info := FileInfo{
-			Name:    f.Name(),
-			Path:    filepath.Join(path, f.Name()),
-			Size:    f.Size(),
-			Mode:    f.Mode(),
-			ModTime: f.ModTime().Format("2006-01-02 15:04:05"),
-			IsDir:   f.IsDir(),
+			Name:     f.Name(),
+			Path:     filepath.Join(path, f.Name()),
+			Size:     f.Size(),
+			Mode:     f.Mode(),
+			ModTime:  f.ModTime().Format("2006-01-02 15:04:05"),
+			Revision: fmt.Sprintf("%d:%d", f.ModTime().UnixNano(), f.Size()),
+			IsDir:    f.IsDir(),
 		}
 		if f.Mode()&os.ModeSymlink != 0 {
 			info.IsLink = true

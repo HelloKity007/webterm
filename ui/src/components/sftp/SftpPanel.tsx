@@ -22,6 +22,7 @@ export interface SftpFile {
   size: number;
   mode: number;
   mod_time: string;
+  revision?: string;
   is_dir: boolean;
   is_link: boolean;
   link_to?: string;
@@ -303,7 +304,7 @@ export default function SftpPanel({
               if (!current || current.path !== msg.path) return current;
               return {
                 ...current,
-                revision: `${msg.mod_time || ""}:${msg.size ?? ""}`,
+                revision: msg.revision || `${msg.mod_time || ""}:${msg.size ?? ""}`,
               };
             });
           } else if (msg.type === "error") {
@@ -523,7 +524,7 @@ export default function SftpPanel({
     setEditFile({
       path: filePath,
       name: fileName,
-      revision: file ? `${file.mod_time}:${file.size}` : undefined,
+      revision: file?.revision || (file ? `${file.mod_time}:${file.size}` : undefined),
       refreshMode: null,
     });
   };

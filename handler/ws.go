@@ -744,14 +744,16 @@ func (h *WSHandler) HandleSFTP(conn *websocket.Conn) {
 	defer h.Store.EndSessionLog(logID)
 
 	var msg struct {
-		Action      string   `json:"action"`
-		Path        string   `json:"path"`
-		NewPath     string   `json:"new_path"`
-		Content     string   `json:"content"`
-		Mode        string   `json:"mode"`
-		Paths       []string `json:"paths"`
-		Destination string   `json:"destination"`
-		RequestID   string   `json:"request_id"`
+		Action           string   `json:"action"`
+		Path             string   `json:"path"`
+		NewPath          string   `json:"new_path"`
+		Content          string   `json:"content"`
+		Mode             string   `json:"mode"`
+		Paths            []string `json:"paths"`
+		Destination      string   `json:"destination"`
+		RequestID        string   `json:"request_id"`
+		ExpectedRevision string   `json:"expected_revision"`
+		Force            bool     `json:"force"`
 	}
 	for {
 		if err := receiveWebSocketJSON(conn, &msg); err != nil {
@@ -773,7 +775,7 @@ func (h *WSHandler) HandleSFTP(conn *websocket.Conn) {
 				outbound.Send(map[string]interface{}{"type": "error", "error": err.Error()})
 			} else if err := outbound.Send(map[string]interface{}{
 				"type": "file_stat", "path": msg.Path, "size": info.Size(),
-				"mod_time": info.ModTime().Format("2006-01-02 15:04:05"),
+				"mod_time": info.ModTime().Format("2006-01-02 15:04:05"), "revision": fileRevision(info),
 			}); err != nil {
 				return
 			}
@@ -781,15 +783,31 @@ func (h *WSHandler) HandleSFTP(conn *websocket.Conn) {
 			data, err := sftpClient.ReadFile(msg.Path)
 			if err != nil {
 				outbound.Send(map[string]interface{}{"type": "error", "error": err.Error()})
+			} else if info, statErr := sftpClient.Stat(msg.Path); statErr != nil {
+				outbound.Send(map[string]interface{}{"type": "error", "error": statErr.Error()})
 			} else {
-				outbound.Send(map[string]interface{}{"type": "file_content", "path": msg.Path, "content": string(data)})
+				outbound.Send(map[string]interface{}{"type": "file_content", "path": msg.Path, "content": string(data), "revision": fileRevision(info)})
 			}
 		case "write":
-			err := sftpClient.WriteFile(msg.Path, []byte(msg.Content))
+			var err error
+			if !msg.Force && msg.ExpectedRevision != "" {
+				info, statErr := sftpClient.Stat(msg.Path)
+				if statErr != nil || fileRevision(info) != msg.ExpectedRevision {
+					if statErr != nil {
+						outbound.Send(map[string]interface{}{"type": "write_conflict", "path": msg.Path})
+					} else {
+						outbound.Send(map[string]interface{}{"type": "write_conflict", "path": msg.Path, "revision": fileRevision(info)})
+					}
+					continue
+				}
+			}
+			err = sftpClient.WriteFile(msg.Path, []byte(msg.Content))
 			if err != nil {
 				outbound.Send(map[string]interface{}{"type": "error", "error": err.Error()})
+			} else if info, statErr := sftpClient.Stat(msg.Path); statErr != nil {
+				outbound.Send(map[string]interface{}{"type": "error", "error": statErr.Error()})
 			} else {
-				outbound.Send(map[string]interface{}{"type": "write_done", "path": msg.Path})
+				outbound.Send(map[string]interface{}{"type": "write_done", "path": msg.Path, "revision": fileRevision(info)})
 			}
 		case "delete":
 			err := sftpClient.Delete(msg.Path)
