@@ -467,7 +467,7 @@ git diff --check
 
 ## 15. Progress Notes
 
-- [2026-09-13] dev-1.0.5 完成 M5–M7：布局模板/divider/CAS 收敛、distinct-client presence、renderer lifecycle/context-loss fallback 和有界输出解析。真实 Chrome 8 pane × 64KiB/s × 60 秒 p95 16.8ms，100 次真实回车输入 p95 30.8ms，30 分钟内存门禁通过；24 shell 与 400 次 tmux churn 通过。最终 9444 动态视觉矩阵及物理设备边界见 `docs/qa/2026-09-13-dev-1.0.5-m5-m8.md`。
+- [2026-09-13] dev-1.0.5 完成 M5–M7：布局模板/divider/CAS 收敛、distinct-client presence、renderer lifecycle/context-loss fallback 和有界输出解析。真实 Chrome 8 pane × 64KiB/s × 60 秒 p95 16.8ms，100 次真实回车输入 p95 30.8ms，30 分钟内存门禁通过；24 shell 与 400 次 tmux churn 通过。候选 `d069630` 的 fresh/normal/hard 33 项桌面与移动 viewport 动态矩阵通过并人工抽查代表截图；物理设备仍明确留给用户复检。详见 `docs/qa/2026-09-13-dev-1.0.5-m5-m8.md`。
 - [2026-09-13] 工作区 Tab 关闭需求已实现并仅部署测试 9444，候选 `729b196`：同 Panel 的 14px 关闭按钮、确认提示、隐藏子会话级联终止、失败重试、多端新增保护、最后 Tab 留新空工作区。桌面/移动模拟/并发/普通与强制刷新关闭专项通过。整体视觉门禁仍未验收：普通刷新 Claude 行数偶发变化与 2860 宽度留白仍待解决；复跑通过不撤销原 FAIL。详见 `docs/qa/2026-09-13-workspace-close-acceptance.md`；生产未动。
 - [2026-09-11] `2df868a`生产版本用户确认；创建dev-1.0.4。主Spec追加MOB-01–08，归并横滑标签、换行、触摸历史、去白线、统一字号和键盘视口恢复；同步主/补充计划，不将剩余P0自动视为验收。
 - [2026-09-11] 用户取消跨 Panel 广播入口；删除按钮、前端广播 store 和转发逻辑，同一 terminalID 的多设备 tmux attach 输入默认共享保持不变。

@@ -31,7 +31,8 @@ try {
   assert.equal(report.health.environment, 'release-test', 'Refusing a production backend');
   const page = await context.newPage();
   const pageErrors = [];
-  page.on('pageerror', () => pageErrors.push('pageerror')); // No token-bearing error text.
+  page.on('pageerror', error => pageErrors.push(error.message
+    .replace(/(token|ticket)=[^\s&]+/gi, '$1=[redacted]').slice(0, 500)));
   await page.goto(target.origin);
   await visualReloadPhase(page);
   const digits = page.locator('.mobile-panel-switcher button');
@@ -136,7 +137,7 @@ try {
   }
   check('MOB-05: three simulated keyboard open/close cycles restore viewport', baseline);
   await page.screenshot({ path: resolve(output, 'mobile-restored.png') });
-  assert.equal(pageErrors.length, 0);
+  assert.deepEqual(pageErrors, []);
   check('No browser page errors', true);
   report.status = 'PASS (listed smoke checks only; not full acceptance)';
 } catch (error) {
