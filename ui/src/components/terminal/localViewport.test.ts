@@ -24,5 +24,6 @@ describe('peer-independent local viewport', () => {
     expect(small).toBeLessThanOrEqual(16);
     expect(104 * Math.floor(measure(small).width)).toBeLessThanOrEqual(922);
     expect(localViewportFont(16, 924, 1, measure, true)).toBe(small);
+    expect(localViewportFont(16, 1420, 1, measure, true)).toBeGreaterThan(16);
   });
 });

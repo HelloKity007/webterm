@@ -91,7 +91,7 @@ try {
       const bar = e.querySelector('.scrollbar.vertical').getBoundingClientRect();
       const surface = e.getBoundingClientRect();
       const edge = e.classList.contains('desktop-local-viewport') ? surface.left + e.clientWidth : bar.left;
-      return { authority: e.dataset.gridAuthority, font: e.dataset.fittedFontSize, lineHeight: Number(e.dataset.fittedLineHeight || 1), cols: Number(e.dataset.sharedCols), rows: Number(e.dataset.sharedRows), rightGap: edge - screen.right, bottomGap: surface.top + e.clientHeight - screen.bottom };
+      return { authority: e.dataset.gridAuthority, font: e.dataset.fittedFontSize, lineHeight: Number(e.dataset.fittedLineHeight || 1), cols: Number(e.dataset.sharedCols), rows: Number(e.dataset.sharedRows), width: e.clientWidth, height: e.clientHeight, rightGap: edge - screen.right, bottomGap: surface.top + e.clientHeight - screen.bottom };
     });
     const before = await measure();
     await panel.screenshot({ path: `${output}/${width}-before.png` });
@@ -108,8 +108,13 @@ try {
     assert(before.bottomGap >= 0 && before.rightGap >= 0);
     assert(before.lineHeight >= 1 && before.lineHeight <= 1.15);
     assert(after.lineHeight >= 1 && after.lineHeight <= 1.15);
-    assert.equal(after.rows, before.rows);
-    assert.equal(after.cols, before.cols);
+    // Another attached display may legitimately renegotiate the shared PTY
+    // rows/columns. History navigation must not change this browser's geometry
+    // or local font, and the returned composer must still fit without clipping.
+    assert.equal(after.width, before.width);
+    assert.equal(after.height, before.height);
+    assert.equal(after.font, before.font);
+    assert(after.rows > 0 && after.cols > 1);
     assert(after.bottomGap >= 0 && after.rightGap >= 0);
     assert.equal(errors.length, 0);
     await context.close();
