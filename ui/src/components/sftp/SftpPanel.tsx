@@ -95,6 +95,8 @@ export default function SftpPanel({
   const reconnectAttemptsRef = useRef(0);
   const pathRef = useRef(path);
   const prevKeyRef = useRef(sessionKey);
+  const listingFilesRef = useRef<SftpFile[]>([]);
+  const listingFrameRef = useRef<number | null>(null);
 
   useEffect(() => {
     pathRef.current = path;
@@ -260,16 +262,33 @@ export default function SftpPanel({
           const msg = JSON.parse(event.data);
           if (msg.type === "pong" || msg.type === "ping") return;
           if (msg.type === "file_list") {
+            listingFilesRef.current = msg.files || [];
             setFiles(msg.files || []);
             setPath(msg.path || pathRef.current);
             setLoading(false);
           } else if (msg.type === "file_list_start") {
+            if (listingFrameRef.current !== null) {
+              cancelAnimationFrame(listingFrameRef.current);
+              listingFrameRef.current = null;
+            }
+            listingFilesRef.current = [];
             setFiles([]);
             setPath(msg.path || pathRef.current);
             setLoading(true);
           } else if (msg.type === "file_list_chunk") {
-            setFiles((current) => [...current, ...(msg.files || [])]);
+            listingFilesRef.current.push(...(msg.files || []));
+            if (listingFrameRef.current === null) {
+              listingFrameRef.current = requestAnimationFrame(() => {
+                listingFrameRef.current = null;
+                setFiles([...listingFilesRef.current]);
+              });
+            }
           } else if (msg.type === "file_list_end") {
+            if (listingFrameRef.current !== null) {
+              cancelAnimationFrame(listingFrameRef.current);
+              listingFrameRef.current = null;
+            }
+            setFiles([...listingFilesRef.current]);
             setLoading(false);
           } else if (msg.type === "error") {
             setError(msg.error);
@@ -331,6 +350,10 @@ export default function SftpPanel({
       cancelled = true;
       clearTimeout(retryTimer);
       clearInterval(heartbeat);
+      if (listingFrameRef.current !== null) {
+        cancelAnimationFrame(listingFrameRef.current);
+        listingFrameRef.current = null;
+      }
       window.removeEventListener("online", reconnectOnline);
       window.removeEventListener("offline", pauseOffline);
     };
