@@ -440,7 +440,9 @@ export default function SftpPanel({
   const navigateTo = useCallback(
     (newPath: string, pushHistory = true) => {
       setPath(newPath);
-      fetchDir(newPath);
+      // Typing updates the controlled path before Enter is handled; navigation
+      // is intentional and must not be de-duplicated against that new value.
+      fetchDir(newPath, true);
       onPathChange?.(newPath);
       if (pushHistory) {
         const nav = navRef.current;
@@ -595,7 +597,7 @@ export default function SftpPanel({
             value={path}
             onChange={(event) => setPath(event.target.value)}
             onKeyDown={(event) => {
-              if (event.key === "Enter") handleNavigate(path);
+              if (event.key === "Enter") handleNavigate(event.currentTarget.value);
             }}
             spellCheck={false}
           />

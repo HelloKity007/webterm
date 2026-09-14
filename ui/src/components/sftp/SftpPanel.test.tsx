@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import SftpPanel from "./SftpPanel";
 
@@ -60,5 +60,20 @@ describe("SftpPanel local endpoint", () => {
     view.unmount();
 
     expect(MockWebSocket.instances[0].close).toHaveBeenCalledOnce();
+  });
+
+  it("uses the current path input value when navigating with Enter", async () => {
+    vi.stubGlobal("WebSocket", MockWebSocket);
+    const view = render(<SftpPanel localMode />);
+    await waitFor(() => expect(MockWebSocket.instances).toHaveLength(1));
+    const socket = MockWebSocket.instances[0];
+    socket.onopen?.();
+    socket.send.mockClear();
+    const path = view.container.querySelector(".sftp-path") as HTMLInputElement;
+    fireEvent.change(path, { target: { value: "/tmp/current-value" } });
+    fireEvent.keyDown(path, { key: "Enter" });
+    expect(socket.send).toHaveBeenCalledWith(
+      JSON.stringify({ action: "list", path: "/tmp/current-value" }),
+    );
   });
 });
