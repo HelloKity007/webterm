@@ -91,4 +91,10 @@ describe('TabBar', () => {
     expect(wheel.defaultPrevented).toBe(true);
     expect(onPageWheel).not.toHaveBeenCalled();
   });
+
+  it('shows a distinct-device count beside the terminal name', () => {
+    render(<TabBar tabs={[{ id: 'ssh-1', type: 'ssh', title: '本机', connId: 1 }]} activeTabId="ssh-1" onSelectTab={() => {}} onCloseTab={() => {}} onlineCounts={{ 'ssh-1': 2 }} />);
+    expect(screen.getByTitle('在线设备：2').getAttribute('data-presence-count')).toBe('2');
+    expect(screen.queryByText('广播')).toBeNull();
+  });
 });

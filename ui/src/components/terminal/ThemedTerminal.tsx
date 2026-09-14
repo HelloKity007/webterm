@@ -4,7 +4,7 @@ import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { SearchAddon } from '@xterm/addon-search';
 import { WebglAddon } from '@xterm/addon-webgl';
-import { websocketTicketURL } from '../../api/wsTicket';
+import { websocketTicketURL, webSocketClientID } from '../../api/wsTicket';
 import { useHighlightRules } from '../../hooks/useTerminalTheme';
 import type { HighlightRule } from '../../hooks/useTerminalTheme';
 import { useWebSocket } from '../../hooks/useWebSocket';
@@ -21,6 +21,7 @@ import TerminalHistoryHelp from './TerminalHistoryHelp';
 import MobileTerminalReader from './MobileTerminalReader';
 import { terminalModeAfterPrivateControl } from './terminalMode';
 import { localViewportFont, localViewportScroll, localViewportRevealRow } from './localViewport';
+import { observeTerminalRenderer } from './terminalRendererMetrics';
 import {
   createTerminalWheelState,
   createLatestTerminalWheelSender,
@@ -897,6 +898,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
     };
 
     const scheduleFit = () => {
+      if (document.documentElement.dataset.layoutDragging === 'true') return;
       if (pendingFitFrame !== null) cancelAnimationFrame(pendingFitFrame);
       if (widthFitFrame !== null) cancelAnimationFrame(widthFitFrame);
       pendingFitFrame = requestAnimationFrame(() => {
@@ -941,6 +943,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
 
     const surfaceElement = ref.current;
     let webglAddon: WebglAddon | null = null;
+    const rendererObservation = surfaceElement ? observeTerminalRenderer(surfaceElement) : null;
     if (surfaceElement) {
       surfaceElement.style.backgroundColor = themeConfig.background;
       term.open(surfaceElement);
@@ -950,9 +953,12 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       try {
         webglAddon = new WebglAddon();
         term.loadAddon(webglAddon);
+        rendererObservation?.webgl();
         webglAddon.onContextLoss(() => {
           webglAddon?.dispose();
           webglAddon = null;
+          rendererObservation?.contextLost();
+          scheduleFit();
         });
       } catch (error) {
         console.warn('WebGL renderer unavailable; using xterm DOM renderer', error);
@@ -995,6 +1001,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
 
     const handleResize = () => scheduleFit();
     window.addEventListener('resize', handleResize);
+    window.addEventListener('webterm-layout-drag-end', handleResize);
 
     return () => {
       if (pendingFitFrame !== null) cancelAnimationFrame(pendingFitFrame);
@@ -1010,6 +1017,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       surfaceElement?.removeEventListener('touchend', handleTouchEnd, true);
       surfaceElement?.removeEventListener('wheel', handleSurfaceWheel, true);
       wheelSender.dispose();
+      rendererObservation?.dispose();
       if (webglAddon) {
         try { webglAddon.dispose(); } catch { /* ignore */ }
         webglAddon = null;
@@ -1018,6 +1026,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       resizeObserver.disconnect();
       visibilityObserver.disconnect();
       window.removeEventListener('resize', handleResize);
+      window.removeEventListener('webterm-layout-drag-end', handleResize);
     };
   }, [copyCurrentSelection, fontSize, myTabId, pasteFromClipboard, setSftpCdPath, themeName]);
 
@@ -1027,12 +1036,14 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
   // Control Mode provides per-client viewport state and deterministic replay
   // for both desktop and mobile. Keep an emergency opt-out for operators
   // during rollout, but make the tested transport the normal data plane.
+  const terminalClientID = webSocketClientID();
   const createWsUrl = useCallback(() => websocketTicketURL(`/ws/ssh/${connId}`,
-    { endpoint: 'ssh', connId, terminalId: terminalID }, {
+    { endpoint: 'ssh', connId, terminalId: terminalID, clientId: terminalClientID }, {
       terminal_id: terminalID,
+      client_id: terminalClientID,
       ...(workspaceIndex && panelNumber ? { workspace_index: String(workspaceIndex), panel_number: String(panelNumber) } : {}),
       ...(localStorage.getItem('webterm-control-mode') === '0' ? {} : { control: '1' }),
-    }), [connId, panelNumber, terminalID, workspaceIndex]);
+    }), [connId, panelNumber, terminalClientID, terminalID, workspaceIndex]);
 
   const { send } = useWebSocket({
     createUrl: createWsUrl,

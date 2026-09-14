@@ -9,14 +9,14 @@ const QueryEditor = lazy(() => import('../database/QueryEditor'));
 import { t } from '../../i18n';
 import MatrixRain from '../common/MatrixRain';
 import { useAuthStore } from '../../store/auth';
-import { apiGet, apiPost, apiPut } from '../../api/client';
+import { ApiError, apiGet, apiPost, apiPut } from '../../api/client';
 import { colors, font } from '../../theme/tokens';
 import { emptyPersistedLayout, localActiveTabID, normalizePersistedLayout, sharedLayoutSnapshot, type Direction, type LayoutNode, type PersistedLayout } from './layoutPersistence';
-import { layoutEventRevision } from './layoutSync';
+import { layoutEventRevision, presenceControlEvent } from './layoutSync';
 import { websocketTicketURL, webSocketClientID } from '../../api/wsTicket';
 import { shouldPersistLayout } from './layoutSave';
 import { useWebSocket } from '../../hooks/useWebSocket';
-import { replaceLeafWithEightPaneGrid } from './layoutPresets';
+import { panelGrid, replaceLeafWithEightPaneGrid } from './layoutPresets';
 import { closeTerminalSession } from '../../api/terminalSessions';
 import WorkspaceTabBar from './WorkspaceTabBar';
 import { getSharedTerminalGrid, setSharedTerminalGrid } from '../terminal/terminalGridCache';
@@ -34,6 +34,7 @@ import {
 import { isMobileBrowserEnvironment } from './mobileLayout';
 import { smallViewportWidth } from '../terminal/terminalScaling';
 import { buildCompactPanelGrid, compactPanelRowTemplate, shouldUseCompactDesktopGrid } from './responsivePanelGrid';
+import LayoutDividerOverlay from './LayoutDividerOverlay';
 
 // Grid cell — computed from the tree
 interface GridCell {
@@ -50,6 +51,7 @@ let listeners: Array<() => void> = [];
 const tabMoveListeners = new Set<(tabId: string, destination: string) => void>();
 let layoutRestoreVersion = 0;
 let generatedID = 0;
+let layoutMutationPaused = false;
 let workspaceState: PersistedWorkspace = emptyPersistedWorkspace();
 let activeWorkspaceTabID = workspaceState.workspaceTabs[0].id;
 
@@ -66,6 +68,24 @@ function subscribe(fn: () => void) {
   return () => { listeners = listeners.filter((l) => l !== fn); };
 }
 function notify() { listeners.forEach((fn) => fn()); }
+
+function previewLayoutRatios(next: LayoutNode) {
+  layoutRoot = next;
+  notify();
+}
+
+function beginLayoutRatioDrag() {
+  layoutMutationPaused = true;
+  document.documentElement.dataset.layoutDragging = 'true';
+}
+
+function commitLayoutRatios(next: LayoutNode) {
+  layoutRoot = next;
+  layoutMutationPaused = false;
+  delete document.documentElement.dataset.layoutDragging;
+  window.dispatchEvent(new Event('webterm-layout-drag-end'));
+  notify();
+}
 
 function leafIDs(node: LayoutNode, ids: string[] = []): string[] {
   if (node.type === 'leaf') {
@@ -463,9 +483,36 @@ function doEightPaneSplit(targetID: string, activeTab: Tab): boolean {
   return true;
 }
 
+function doWorkspacePreset(mode: 'single' | 'four-by-two', preferredPaneID: string) {
+  const existingPaneIDs = leafIDs(layoutRoot);
+  const destinationID = existingPaneIDs.includes(preferredPaneID) ? preferredPaneID : existingPaneIDs[0] || 'root';
+  const targetCount = mode === 'single' ? 1 : 8;
+  const targetPaneIDs = mode === 'single' ? [destinationID] : existingPaneIDs.slice(0, targetCount);
+  while (targetPaneIDs.length < targetCount) targetPaneIDs.push(nextLayoutID('pane'));
+  const targetSet = new Set(targetPaneIDs);
+  const panes: PersistedLayout['panes'] = {};
+  for (const paneID of targetPaneIDs) {
+    panes[paneID] = {
+      tabs: (paneTabsCache.get(paneID) || []).map((tab) => ({ ...tab })),
+      activeTabId: paneActiveCache.get(paneID) || null,
+    };
+  }
+  for (const paneID of existingPaneIDs) {
+    if (targetSet.has(paneID)) continue;
+    const tabs = paneTabsCache.get(paneID) || [];
+    panes[destinationID].tabs.push(...tabs.map((tab) => ({ ...tab })));
+  }
+  if (!panes[destinationID].activeTabId || !panes[destinationID].tabs.some(tab => tab.id === panes[destinationID].activeTabId)) {
+    panes[destinationID].activeTabId = panes[destinationID].tabs[0]?.id || null;
+  }
+  const tree = panelGrid(targetPaneIDs, mode === 'single' ? 1 : 4);
+  if (!tree) return;
+  restoreLayout({ tree, panes, focusedPaneId: destinationID });
+}
+
 // Leaf pane component — always mounted, just hidden when not in layout
-function LeafPane({ nodeId, restoreVersion, onActiveSshChange, isInSplit, workspaceIndex }: {
-  nodeId: string; restoreVersion: number; onActiveSshChange?: (connId: number | null, tabId: string | null) => void; isInSplit: boolean; workspaceIndex: number;
+function LeafPane({ nodeId, restoreVersion, onActiveSshChange, isInSplit, workspaceIndex, presenceCounts }: {
+  nodeId: string; restoreVersion: number; onActiveSshChange?: (connId: number | null, tabId: string | null) => void; isInSplit: boolean; workspaceIndex: number; presenceCounts: Record<string, number>;
 }) {
   const [tabs, setTabs] = useState<Tab[]>(() => {
     return paneTabsCache.get(nodeId) || [];
@@ -653,7 +700,7 @@ function LeafPane({ nodeId, restoreVersion, onActiveSshChange, isInSplit, worksp
   return (
     <div className="terminal-pane" onClick={() => setFocusedPane(nodeId)} style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0, minHeight: 0 }}>
       <div style={{ position: 'relative', flexShrink: 0 }}>
-        <TabBar tabs={tabs} activeTabId={activeTabId} onSelectTab={setActiveTabId} onCloseTab={closeTab} onRenameTab={renameTab} filterType="ssh"
+        <TabBar tabs={tabs} activeTabId={activeTabId} onSelectTab={setActiveTabId} onCloseTab={closeTab} onRenameTab={renameTab} filterType="ssh" onlineCounts={presenceCounts}
           onReorderTab={(source, target, after) => setTabs(prev => reorderTabs(prev, source, target, after))}
           onReceiveTab={handleReceiveTab} onAddTab={() => setShowAddMenu((open) => !open)} />
         {showAddMenu && (
@@ -680,6 +727,8 @@ function LeafPane({ nodeId, restoreVersion, onActiveSshChange, isInSplit, worksp
                   { label: t('term_split_v'), action: () => handleSplit('vertical') },
                   { label: t('term_split_quad'), action: handleQuadSplit },
                   { label: t('term_split_eight'), action: handleEightPaneSplit },
+                  { label: t('term_layout_single'), action: () => doWorkspacePreset('single', nodeId) },
+                  { label: t('term_layout_four_by_two'), action: () => doWorkspacePreset('four-by-two', nodeId) },
                   ...(isInSplit ? [{ label: t('term_close_pane'), action: handleClosePane }] : []),
                 ]} />
               </Suspense>
@@ -698,8 +747,9 @@ function LeafPane({ nodeId, restoreVersion, onActiveSshChange, isInSplit, worksp
 }
 
 // Top-level grid container — ALL panes are direct children with stable keys
-function GridContainer({ onActiveSshChange, workspaceIndex }: { onActiveSshChange?: (connId: number | null, tabId: string | null) => void; workspaceIndex: number }) {
+function GridContainer({ onActiveSshChange, workspaceIndex, presenceCounts }: { onActiveSshChange?: (connId: number | null, tabId: string | null) => void; workspaceIndex: number; presenceCounts: Record<string, number> }) {
   const [, forceUpdate] = useState(0);
+  const gridRef = useRef<HTMLDivElement>(null);
   const mobile = isMobileBrowserEnvironment();
   const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth);
 
@@ -747,14 +797,14 @@ function GridContainer({ onActiveSshChange, workspaceIndex }: { onActiveSshChang
           ))}
         </nav>
       )}
-      <div className={mobile ? 'terminal-grid mobile-single-panel-grid' : 'terminal-grid'} data-panel-columns={displayColumns} data-panel-rows={displayRows} style={{
+      <div ref={gridRef} className={mobile ? 'terminal-grid mobile-single-panel-grid' : 'terminal-grid'} data-panel-columns={displayColumns} data-panel-rows={displayRows} style={{
       display: 'grid',
       gridTemplateColumns: mobile ? '1fr' : `repeat(${displayColumns}, 1fr)`,
       gridTemplateRows: mobile ? '1fr' : compactGrid ? compactPanelRowTemplate(displayRows) : `repeat(${displayRows}, 1fr)`,
       gridTemplateAreas: mobile ? `"${effectiveMobilePaneId}"` : gridTemplateAreas,
       flex: 1, overflowX: 'hidden', overflowY: compactScrollable ? 'auto' : 'hidden', minWidth: 0, minHeight: 0,
       alignContent: 'start', overscrollBehaviorY: 'contain', scrollbarWidth: 'thin',
-      gap: 1, background: colors.border,
+      gap: 1, background: colors.border, position: 'relative',
     }}>
       {paneIds.map((id) => {
         const cell = cellMap.get(id);
@@ -764,10 +814,13 @@ function GridContainer({ onActiveSshChange, workspaceIndex }: { onActiveSshChang
             display: cell && (!mobile || id === effectiveMobilePaneId) ? 'flex' : 'none',
             overflow: 'hidden',
           }}>
-            <LeafPane key={id} nodeId={id} restoreVersion={layoutRestoreVersion} onActiveSshChange={onActiveSshChange} isInSplit={isInSplit && cellMap.has(id)} workspaceIndex={workspaceIndex} />
+            <LeafPane key={id} nodeId={id} restoreVersion={layoutRestoreVersion} onActiveSshChange={onActiveSshChange} isInSplit={isInSplit && cellMap.has(id)} workspaceIndex={workspaceIndex} presenceCounts={presenceCounts} />
           </div>
         );
       })}
+      {!mobile && !compactDesktop && layoutRoot.type === 'split' && (
+        <LayoutDividerOverlay root={layoutRoot} container={gridRef} onPreview={previewLayoutRatios} onDragStart={beginLayoutRatioDrag} onCommit={commitLayoutRatios} />
+      )}
       </div>
     </div>
   );
@@ -977,6 +1030,7 @@ export default function SplitPane({ onActiveSshChange }: { onActiveSshChange?: (
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [layoutMessage, setLayoutMessage] = useState('');
   const [closingWorkspace, setClosingWorkspace] = useState(false);
+  const [presenceCounts, setPresenceCounts] = useState<Record<string, number>>({});
   const workspaceClosePending = useRef(false);
   const [, forceWorkspaceUpdate] = useState(0);
 
@@ -1018,6 +1072,7 @@ export default function SplitPane({ onActiveSshChange }: { onActiveSshChange?: (
   useEffect(() => {
     if (!token || !userID) return;
     const scheduleSave = () => {
+      if (layoutMutationPaused) return;
       if (Date.now() - restoredAtRef.current < 500) return;
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
       saveTimerRef.current = setTimeout(() => {
@@ -1033,7 +1088,7 @@ export default function SplitPane({ onActiveSshChange }: { onActiveSshChange?: (
           persistedLayoutRef.current = serializedLayout;
           setLayoutMessage('');
         }).catch((error: Error) => {
-          if (error.message.includes('layout revision conflict')) {
+          if (error instanceof ApiError && error.code === 'LAYOUT_CONFLICT') {
             setLayoutMessage('布局已在另一端更新，正在同步最新布局。');
             void loadLayout().catch(() => setLayoutMessage('布局同步失败；请稍后重试。'));
             return;
@@ -1053,6 +1108,14 @@ export default function SplitPane({ onActiveSshChange }: { onActiveSshChange?: (
 
   return <>
     {token && <LayoutSync token={token} onMessage={(raw) => {
+      const presence = presenceControlEvent(raw);
+      if (presence?.type === 'presence_snapshot') setPresenceCounts(presence.terminals);
+      if (presence?.type === 'presence_delta') setPresenceCounts(current => {
+        const next = { ...current };
+        if (presence.online === 0) delete next[presence.terminalId];
+        else next[presence.terminalId] = presence.online;
+        return next;
+      });
       const revision = layoutEventRevision(raw, revisionRef.current);
       if (revision !== null) void loadLayout(revision).catch(() => setLayoutMessage('无法同步另一端更新的布局；请稍后重试。'));
     }} />}
@@ -1075,7 +1138,7 @@ export default function SplitPane({ onActiveSshChange }: { onActiveSshChange?: (
         });
       }}
     />
-    <GridContainer onActiveSshChange={onActiveSshChange} workspaceIndex={workspaceState.workspaceTabs.find((workspace) => workspace.id === activeWorkspaceTabID)?.index || 1} />
+    <GridContainer onActiveSshChange={onActiveSshChange} workspaceIndex={workspaceState.workspaceTabs.find((workspace) => workspace.id === activeWorkspaceTabID)?.index || 1} presenceCounts={presenceCounts} />
     </div>
     {layoutMessage && <div role="status" style={{ position: 'fixed', right: 16, bottom: 16, zIndex: 20, padding: '8px 12px', borderRadius: 4, background: colors.bgRaised, border: `1px solid ${colors.border}`, color: colors.text, fontSize: font.md }}>{layoutMessage}</div>}
   </>;

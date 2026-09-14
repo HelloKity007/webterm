@@ -15,6 +15,21 @@ function eightPaneGrid(paneIDs: string[]): LayoutNode {
   };
 }
 
+export function panelGrid(paneIDs: string[], columns: number): LayoutNode | null {
+  if (paneIDs.length === 0 || columns < 1 || !Number.isInteger(columns) || new Set(paneIDs).size !== paneIDs.length) return null;
+  if (paneIDs.length === 1) return { type: 'leaf', id: paneIDs[0] };
+  const rows: LayoutNode[] = [];
+  for (let offset = 0; offset < paneIDs.length; offset += columns) {
+    const ids = paneIDs.slice(offset, offset + columns);
+    rows.push(ids.length === 1 ? { type: 'leaf', id: ids[0] } : {
+      type: 'split', direction: 'horizontal', ratios: ids.map(() => 1 / ids.length),
+      children: ids.map((id) => ({ type: 'leaf', id })),
+    });
+  }
+  if (rows.length === 1) return rows[0];
+  return { type: 'split', direction: 'vertical', ratios: rows.map(() => 1 / rows.length), children: rows };
+}
+
 export function replaceLeafWithEightPaneGrid(
   root: LayoutNode,
   targetID: string,

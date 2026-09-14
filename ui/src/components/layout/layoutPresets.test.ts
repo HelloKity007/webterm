@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { LayoutNode } from './layoutPersistence';
-import { replaceLeafWithEightPaneGrid } from './layoutPresets';
+import { panelGrid, replaceLeafWithEightPaneGrid } from './layoutPresets';
 
 describe('replaceLeafWithEightPaneGrid', () => {
   it('replaces the target with two rows of four panes', () => {
@@ -42,5 +42,14 @@ describe('replaceLeafWithEightPaneGrid', () => {
     expect(result?.type).toBe('split');
     expect(result && result.type === 'split' ? result.children[0] : null).toEqual({ type: 'leaf', id: 'left' });
     expect(result && result.type === 'split' ? result.children[1] : null).toMatchObject({ type: 'split', direction: 'vertical' });
+  });
+});
+
+describe('panelGrid', () => {
+  it('creates a one-panel layout and a four-by-two layout', () => {
+    expect(panelGrid(['only'], 1)).toEqual({ type: 'leaf', id: 'only' });
+    const grid = panelGrid(['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'], 4);
+    expect(grid).toMatchObject({ type: 'split', direction: 'vertical', ratios: [0.5, 0.5] });
+    expect(grid && grid.type === 'split' && grid.children[0].type === 'split' ? grid.children[0].ratios : []).toEqual([0.25, 0.25, 0.25, 0.25]);
   });
 });

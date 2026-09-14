@@ -19,7 +19,7 @@ const en: Record<string, string> = {
   term_select_copy_hint: 'Drag across terminal text; releasing the mouse copies it automatically',
   term_copied: 'Copied', term_copy_empty: 'Select terminal text first', term_copy_failed: 'Copy failed; use Ctrl+Shift+C',
   term_paste_empty: 'Clipboard is empty', term_paste_failed: 'Clipboard access was denied; allow it or use Ctrl+Shift+V',
-  term_split_h: 'Split Horizontal', term_split_v: 'Split Vertical', term_split_quad: 'Split Quadrant', term_split_eight: 'Split 8 (4 × 2)', term_close_pane: 'Close Pane',
+  term_split_h: 'Split Horizontal', term_split_v: 'Split Vertical', term_split_quad: 'Split Quadrant', term_split_eight: 'Split 8 (4 × 2)', term_layout_single: 'Layout preset: single Panel', term_layout_four_by_two: 'Layout preset: 4 × 2', term_close_pane: 'Close Pane',
   term_disconnected: 'Disconnected', term_reconnecting: 'Disconnected, reconnecting...',
   term_find_placeholder: 'Find...',
   term_history: 'History', term_history_title: 'Terminal / CLI history', term_history_close: 'Close history help',

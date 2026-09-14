@@ -142,7 +142,7 @@ func (h *WSTicketHandler) Issue(w http.ResponseWriter, r *http.Request) {
 func validWSTicketRequest(request wsTicketRequest) bool {
 	switch request.Endpoint {
 	case "ssh":
-		return request.ConnID > 0 && request.TerminalID != "" && len(request.TerminalID) <= 128 && request.ClientID == ""
+		return request.ConnID > 0 && request.TerminalID != "" && len(request.TerminalID) <= 128 && len(request.ClientID) <= 128
 	case "sftp", "db":
 		return request.ConnID > 0 && request.TerminalID == "" && request.ClientID == ""
 	case "layout":
@@ -174,6 +174,7 @@ func (h TicketWebSocketHandler) ServeHTTP(w http.ResponseWriter, r *http.Request
 	terminalID, clientID := "", ""
 	if h.Endpoint == "ssh" {
 		terminalID = r.URL.Query().Get("terminal_id")
+		clientID = r.URL.Query().Get("client_id")
 	}
 	if h.Endpoint == "layout" {
 		clientID = r.URL.Query().Get("client_id")

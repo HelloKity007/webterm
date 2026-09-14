@@ -45,6 +45,7 @@ type WSHandler struct {
 	// over the already authorized SSH transport.
 	RunTmuxPreflight  func(*sshmgr.Client) (string, error)
 	Registry          *WSRegistry
+	Presence          *PresenceRegistry
 	terminalSessions  persistentSessionRegistry
 	terminalLifecycle terminalLifecycle
 	terminalHistoryMu sync.Mutex
@@ -440,6 +441,8 @@ func (h *WSHandler) HandleSSH(conn *websocket.Conn) {
 		sendOutboundErr(outbound, "无法启动持久终端（远端必须安装 tmux）: "+friendlyErr(err))
 		return
 	}
+	releasePresence := h.Presence.Register(user.UserID, terminalID, conn.Request().URL.Query().Get("client_id"))
+	defer releasePresence()
 	logID, _ := h.Store.CreateSessionLog(&store.SessionLog{
 		UserID: user.UserID, ConnectionID: connID, Type: "ssh",
 	})

@@ -19,6 +19,7 @@ type LayoutHandler struct {
 	Store    *store.Store
 	Hub      *LayoutHub
 	Registry *WSRegistry
+	Presence *PresenceRegistry
 }
 
 // HandleEvents sends revision-only notifications. The browser fetches the
@@ -34,6 +35,11 @@ func (h *LayoutHandler) HandleEvents(conn *websocket.Conn) {
 	defer outbound.Close()
 	events, unsubscribe := h.Hub.Subscribe(user.UserID)
 	defer unsubscribe()
+	if h.Presence != nil {
+		if err := outbound.Send(ControlEvent{Type: "presence_snapshot", Terminals: h.Presence.Snapshot(user.UserID)}); err != nil {
+			return
+		}
+	}
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
@@ -55,8 +61,8 @@ func (h *LayoutHandler) HandleEvents(conn *websocket.Conn) {
 		select {
 		case <-done:
 			return
-		case revision, ok := <-events:
-			if !ok || outbound.Send(map[string]int64{"revision": revision}) != nil {
+		case event, ok := <-events:
+			if !ok || outbound.Send(event) != nil {
 				return
 			}
 		}
@@ -160,7 +166,9 @@ func (h *LayoutHandler) Save(w http.ResponseWriter, r *http.Request) {
 	}
 	revision, err := h.Store.SaveUserLayout(user.UserID, request.SchemaVersion, request.Revision, sharedLayout)
 	if errors.Is(err, store.ErrLayoutConflict) {
-		http.Error(w, `{"error":"layout revision conflict"}`, http.StatusConflict)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusConflict)
+		_, _ = w.Write([]byte(`{"error":"layout revision conflict","code":"LAYOUT_CONFLICT"}`))
 		return
 	}
 	if err != nil {
@@ -169,7 +177,7 @@ func (h *LayoutHandler) Save(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	if h.Hub != nil {
-		h.Hub.Publish(user.UserID, revision)
+		h.Hub.PublishLayout(user.UserID, revision)
 	}
 	json.NewEncoder(w).Encode(map[string]any{"revision": revision})
 }

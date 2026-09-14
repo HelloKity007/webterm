@@ -15,9 +15,10 @@ interface Props {
   onReorderTab?: (sourceId: string, targetId: string, after: boolean) => void;
   onAddTab?: () => void;
   filterType?: string;
+  onlineCounts?: Record<string, number>;
 }
 
-export default function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab, onRenameTab, onReceiveTab, onReorderTab, onAddTab, filterType }: Props) {
+export default function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab, onRenameTab, onReceiveTab, onReorderTab, onAddTab, filterType, onlineCounts }: Props) {
   const filtered = filterType ? tabs.filter((t) => t.type === filterType) : tabs;
   const [dragOverAdd, setDragOverAdd] = useState(false);
   const [dropTarget, setDropTarget] = useState<{ id: string; after: boolean } | null>(null);
@@ -139,7 +140,13 @@ export default function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab, onR
                 }}
                 style={{ width: 112, border: 'none', borderRadius: 3, padding: '1px 4px', fontSize: font.md, color: colors.text, background: colors.bgInput, userSelect: 'text' }}
               />
-            ) : `${tab.labelNumber ?? idx + 1}: ${tab.title}`}
+            ) : (onlineCounts?.[tab.id] || 0) > 0 ? <>
+              <span>{`${tab.labelNumber ?? idx + 1}: ${tab.title}`}</span>
+              <span data-presence-count={onlineCounts?.[tab.id]} title={`在线设备：${onlineCounts?.[tab.id]}`}
+                style={{ minWidth: 16, height: 16, padding: '0 4px', borderRadius: 8, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: font.sm, lineHeight: 1, color: activeTabId === tab.id ? colors.bg : colors.accent, background: activeTabId === tab.id ? 'rgba(31,35,53,0.25)' : colors.accentFaint }}>
+                {onlineCounts?.[tab.id]}
+              </span>
+            </> : `${tab.labelNumber ?? idx + 1}: ${tab.title}`}
             <TabCloseButton label={t('tab_close')} onClick={() => { if (window.confirm(t('tab_close_confirm'))) onCloseTab(tab.id); }} />
           </div>
         </React.Fragment>

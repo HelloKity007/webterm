@@ -89,6 +89,9 @@ func TestLayoutReturnsConflictForStaleRevision(t *testing.T) {
 		if attempt == 1 && res.Code != http.StatusConflict {
 			t.Fatalf("stale save status = %d, body = %s; want %d", res.Code, res.Body.String(), http.StatusConflict)
 		}
+		if attempt == 1 && !strings.Contains(res.Body.String(), `"code":"LAYOUT_CONFLICT"`) {
+			t.Fatalf("stale save body = %s; want stable conflict code", res.Body.String())
+		}
 	}
 }
 
@@ -110,9 +113,9 @@ func TestLayoutSavePublishesNewRevisionToSavingUser(t *testing.T) {
 		t.Fatalf("save status = %d, body = %s", res.Code, res.Body.String())
 	}
 	select {
-	case revision := <-events:
-		if revision != 1 {
-			t.Fatalf("published revision = %d, want 1", revision)
+	case event := <-events:
+		if event.Revision != 1 {
+			t.Fatalf("published revision = %d, want 1", event.Revision)
 		}
 	default:
 		t.Fatal("successful layout save did not publish a revision")
@@ -212,8 +215,8 @@ func TestLayoutSaveDoesNotPublishAnUnchangedSharedLayout(t *testing.T) {
 		t.Fatalf("repeat save response = %s, want existing revision 1", res.Body.String())
 	}
 	select {
-	case revision := <-events:
-		t.Fatalf("unchanged layout published revision %d", revision)
+	case event := <-events:
+		t.Fatalf("unchanged layout published revision %d", event.Revision)
 	default:
 	}
 }

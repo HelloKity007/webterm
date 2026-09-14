@@ -112,12 +112,15 @@ func main() {
 	wsRegistry := handler.NewWSRegistry()
 	connH := &handler.ConnectionHandler{Store: st, Pool: pool, AESCipher: aesCipher}
 	quickConnectH := &handler.QuickConnectHandler{Store: st}
-	layoutH := &handler.LayoutHandler{Store: st, Hub: handler.NewLayoutHub(), Registry: wsRegistry}
+	layoutHub := handler.NewLayoutHub()
+	presenceRegistry := handler.NewPresenceRegistry(layoutHub)
+	layoutH := &handler.LayoutHandler{Store: st, Hub: layoutHub, Registry: wsRegistry, Presence: presenceRegistry}
 	wsTickets := handler.NewWSTicketService()
 	wsTicketH := &handler.WSTicketHandler{Store: st, Tickets: wsTickets}
 	wsH := &handler.WSHandler{
 		Store: st, Pool: pool, AESCipher: aesCipher,
 		Registry:                 wsRegistry,
+		Presence:                 presenceRegistry,
 		PreserveTerminalSessions: *preserveTerminalSessions,
 		TmuxBinary:               *testTmuxBinary,
 		// Release-test gets a private tmux server. Its copied layout may use the
