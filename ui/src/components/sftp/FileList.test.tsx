@@ -1,5 +1,11 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import FileList from "./FileList";
 import type { SftpFile } from "./SftpPanel";
@@ -56,6 +62,22 @@ describe("FileList", () => {
     });
     expect(screen.getByText("item-00020.log")).toBeTruthy();
     expect(screen.queryByText("item-00001.log")).toBeNull();
+  });
+
+  it("reveals the filtered item after clearing the filter", async () => {
+    render(
+      <FileList
+        files={Array.from({ length: 100 }, (_, index) => file(index))}
+        loading={false}
+        currentPath="/"
+        {...handlers()}
+      />,
+    );
+    const filter = screen.getByRole("textbox", { name: "Filter files" });
+    fireEvent.change(filter, { target: { value: "00099" } });
+    fireEvent.click(screen.getByText("item-00099.log"));
+    fireEvent.click(screen.getByRole("button", { name: "Clear filter" }));
+    await waitFor(() => expect(screen.getByText("item-00099.log")).toBeTruthy());
   });
 
   it("supports additive selection and confirmed keyboard deletion", () => {

@@ -202,6 +202,12 @@ export default function FileList(p: Props) {
     setNotice(s);
     window.setTimeout(() => setNotice(null), 5000);
   }, []);
+  const clearQuery = useCallback(() => {
+    const selectedMatch = visible.find((file) => selected.has(file.path));
+    const reveal = selectedMatch || visible[0];
+    if (reveal) pendingReveal.current = reveal.path;
+    setQuery("");
+  }, [selected, visible]);
   const upload = useCallback(
     (items: FileList | File[]) => {
       if ((!connId && !localMode) || !items.length) return;
@@ -431,7 +437,7 @@ export default function FileList(p: Props) {
           {query && (
             <button
               aria-label={t("file_filter_clear")}
-              onClick={() => setQuery("")}
+              onClick={clearQuery}
             >
               <Icon name="x" size={12} />
             </button>
@@ -677,7 +683,7 @@ export default function FileList(p: Props) {
           <div className="sftp-state">
             <Icon name="search" size={25} />
             <strong>{t("file_no_matches")}</strong>
-            <button className="sftp-text-button" onClick={() => setQuery("")}>
+            <button className="sftp-text-button" onClick={clearQuery}>
               {t("file_filter_clear")}
             </button>
           </div>
