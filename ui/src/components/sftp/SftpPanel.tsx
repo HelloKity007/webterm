@@ -114,7 +114,9 @@ export default function SftpPanel({
     const socket = wsRef.current;
     if (!socket || socket.readyState !== WebSocket.OPEN) return;
     if (!force && dirPath === pathRef.current) return;
-    setLoading(true);
+    // Mutations refresh the current directory in the background. Keeping the
+    // existing rows mounted preserves the user's virtual-list scroll context.
+    if (!force) setLoading(true);
     setError("");
     socket.send(JSON.stringify({ action: "list", path: dirPath }));
   }, []);
@@ -612,7 +614,7 @@ export default function SftpPanel({
             onRename={handleRename}
             connId={connId}
             currentPath={path}
-            onUpload={() => fetchDir(path)}
+            onUpload={() => fetchDir(path, true)}
             onEdit={handleEditFile}
             onChmod={handleChmod}
             onMkdir={(name) => handleMkdir(name)}
@@ -635,7 +637,7 @@ export default function SftpPanel({
                 fileName={editFile.name}
                 ws={editorSocket}
                 onClose={() => setEditFile(null)}
-                onSaved={() => fetchDir(path)}
+                onSaved={() => fetchDir(path, true)}
               />
             </Suspense>
           )}
