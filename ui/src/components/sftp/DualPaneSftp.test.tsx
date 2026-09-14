@@ -45,6 +45,7 @@ describe("DualPaneSftp transfer", () => {
     expect(screen.queryByText("remote:7")).toBeNull();
     rerender(<DualPaneSftp connections={[{ id: 7, name: "server-7" }]} />);
     expect(await screen.findByText("remote:7")).toBeTruthy();
+    expect(screen.getByText("server-7")).toBeTruthy();
   });
 
   it("transfers selected remote files to the current local directory", async () => {

@@ -105,7 +105,7 @@ export default function DualPaneSftp({ connections }: Props) {
             style={{}}
           >
             {connections.map((c) => (
-              <option key={c.id} value={c.id}>
+              <option key={c.id} value={String(c.id)}>
                 {c.name}
               </option>
             ))}
@@ -167,7 +167,7 @@ export default function DualPaneSftp({ connections }: Props) {
           >
             <option value="local">{t("sftp_local_option")}</option>
             {connections.map((c) => (
-              <option key={c.id} value={c.id}>
+              <option key={c.id} value={String(c.id)}>
                 {c.name}
               </option>
             ))}
