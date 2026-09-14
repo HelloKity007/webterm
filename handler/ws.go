@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"log"
 	"net/http"
+	"path"
 	"strconv"
 	"strings"
 	"sync"
@@ -743,11 +744,14 @@ func (h *WSHandler) HandleSFTP(conn *websocket.Conn) {
 	defer h.Store.EndSessionLog(logID)
 
 	var msg struct {
-		Action  string `json:"action"`
-		Path    string `json:"path"`
-		NewPath string `json:"new_path"`
-		Content string `json:"content"`
-		Mode    string `json:"mode"`
+		Action      string   `json:"action"`
+		Path        string   `json:"path"`
+		NewPath     string   `json:"new_path"`
+		Content     string   `json:"content"`
+		Mode        string   `json:"mode"`
+		Paths       []string `json:"paths"`
+		Destination string   `json:"destination"`
+		RequestID   string   `json:"request_id"`
 	}
 	for {
 		if err := receiveWebSocketJSON(conn, &msg); err != nil {
@@ -791,6 +795,32 @@ func (h *WSHandler) HandleSFTP(conn *websocket.Conn) {
 			} else {
 				outbound.Send(map[string]interface{}{"type": "rename_done", "path": msg.Path, "new_path": msg.NewPath})
 			}
+		case "copy", "move":
+			paths := msg.Paths
+			if len(paths) == 0 && msg.Path != "" {
+				paths = []string{msg.Path}
+			}
+			destination := msg.Destination
+			if destination == "" {
+				destination = msg.NewPath
+			}
+			succeeded := make([]string, 0, len(paths))
+			failed := make([]fileOperationFailure, 0)
+			for _, source := range paths {
+				target := path.Join(destination, path.Base(source))
+				var err error
+				if msg.Action == "move" {
+					err = sftpClient.Move(source, target)
+				} else {
+					err = sftpClient.Copy(source, target)
+				}
+				if err != nil {
+					failed = append(failed, fileOperationFailure{Path: source, Error: err.Error()})
+				} else {
+					succeeded = append(succeeded, source)
+				}
+			}
+			outbound.Send(map[string]interface{}{"type": "operation_done", "action": msg.Action, "request_id": msg.RequestID, "succeeded": succeeded, "failed": failed})
 		case "mkdir":
 			err := sftpClient.Mkdir(msg.Path)
 			if err != nil {

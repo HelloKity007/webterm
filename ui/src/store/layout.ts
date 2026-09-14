@@ -1,6 +1,14 @@
 import { create } from 'zustand';
 
-export type ModuleType = 'ssh' | 'sftp' | 'database' | 'config';
+export type ModuleType = 'ssh' | 'files' | 'database' | 'config';
+export type PersistedModuleType = ModuleType | 'sftp';
+
+/** Keep layouts saved by releases that called the file workspace "sftp" usable. */
+export function normalizeModuleType(module: PersistedModuleType | string | null | undefined): ModuleType {
+  if (module === 'sftp') return 'files';
+  if (module === 'files' || module === 'database' || module === 'config') return module;
+  return 'ssh';
+}
 
 // Local UI chrome only: never persist or broadcast this preference as layout.
 export const useWorkspaceChromeStore = create<{
@@ -26,7 +34,7 @@ interface LayoutState {
   sftpCdPaths: Record<string, string>;
   focusedPaneId: string | null;
   removedTabQueue: string[];
-  setActiveModule: (m: ModuleType) => void;
+  setActiveModule: (m: PersistedModuleType) => void;
   requestTab: (tab: Tab) => void;
   drainTabQueue: (type?: Tab['type']) => Tab[];
   drainRemovedTabs: () => string[];
@@ -53,7 +61,7 @@ export const useLayoutStore = create<LayoutState>((set, get) => ({
       statusConn: null,
       setStatusConn: (info) => set({ statusConn: info }),
       signalSftpDisconnect: () => set((s) => ({ sftpDisconnectSignal: s.sftpDisconnectSignal + 1 })),
-      setActiveModule: (m) => set({ activeModule: m }),
+      setActiveModule: (m) => set({ activeModule: normalizeModuleType(m) }),
       requestTab: (tab) => set((s) => ({ newTabQueue: [...s.newTabQueue, tab] })),
       drainTabQueue: (type) => {
         const queue = get().newTabQueue;

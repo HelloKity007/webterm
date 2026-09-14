@@ -145,9 +145,13 @@ func main() {
 	mux.Handle("/ws/layout", handler.TicketWebSocketHandler{Store: st, Tickets: wsTickets, Endpoint: "layout", Next: websocket.Handler(layoutH.HandleEvents)})
 
 	sftpRestH := &handler.SftpHandler{Store: st, Pool: pool, AESCipher: aesCipher}
+	localFSRestH := handler.LocalFSHandler{}
 
 	mux.Handle("POST /api/sftp/upload", auth.Middleware(http.HandlerFunc(sftpRestH.Upload)))
-	mux.Handle("GET /api/sftp/download/{id}", auth.Middleware(http.HandlerFunc(sftpRestH.Download)))
+	mux.Handle("GET /api/sftp/download/{id}", handler.TicketHTTPHandler{Store: st, Tickets: wsTickets, Endpoint: "sftp-download", Next: http.HandlerFunc(sftpRestH.Download)})
+	mux.Handle("POST /api/local-files/upload", auth.Middleware(http.HandlerFunc(localFSRestH.Upload)))
+	mux.Handle("GET /api/local-files/download", handler.TicketHTTPHandler{Store: st, Tickets: wsTickets, Endpoint: "local-download", Next: http.HandlerFunc(localFSRestH.Download)})
+	mux.Handle("POST /api/files/transfer", auth.Middleware(http.HandlerFunc(sftpRestH.Transfer)))
 
 	dbConnH := &handler.DbConnHandler{Store: st, AESCipher: aesCipher}
 	groupH := &handler.GroupHandler{Store: st}

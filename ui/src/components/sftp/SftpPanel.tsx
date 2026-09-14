@@ -1,11 +1,20 @@
-import { lazy, Suspense, useEffect, useState, useCallback, useRef } from 'react';
-import FileList from './FileList';
-import { t } from '../../i18n';
-const FileEditor = lazy(() => import('../common/FileEditor'));
-import { useLayoutStore } from '../../store/layout';
-import Icon from '../common/Icon';
-import { colors, font } from '../../theme/tokens';
-import { websocketTicketURL, WebSocketAuthError } from '../../api/wsTicket';
+import {
+  lazy,
+  Suspense,
+  useEffect,
+  useState,
+  useCallback,
+  useRef,
+} from "react";
+import FileList, {
+  type FileClipboard,
+  type FileOperationState,
+} from "./FileList";
+import { t } from "../../i18n";
+const FileEditor = lazy(() => import("../common/FileEditor"));
+import { useLayoutStore } from "../../store/layout";
+import Icon from "../common/Icon";
+import { websocketTicketURL, WebSocketAuthError } from "../../api/wsTicket";
 
 export interface SftpFile {
   name: string;
@@ -25,22 +34,60 @@ interface Props {
   currentPath?: string;
   onPathChange?: (path: string) => void;
   style?: React.CSSProperties;
-
+  endpointId?: string;
+  clipboard?: FileClipboard | null;
+  onClipboardChange?: (clipboard: FileClipboard | null) => void;
+  onSelectionChange?: (paths: string[]) => void;
+  refreshNonce?: number;
 }
 
-export default function SftpPanel({ connId, tabId, localMode, currentPath, onPathChange, style }: Props) {
-  const defaultPath = currentPath || (localMode ? '/home' : '/');
+export default function SftpPanel({
+  connId,
+  tabId,
+  localMode,
+  currentPath,
+  onPathChange,
+  style,
+  endpointId: endpointIdProp,
+  clipboard: externalClipboard,
+  onClipboardChange,
+  onSelectionChange,
+  refreshNonce,
+}: Props) {
+  const defaultPath = currentPath || (localMode ? "/home" : "/");
   const [path, setPath] = useState(defaultPath);
   const [files, setFiles] = useState<SftpFile[]>([]);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
   const [disconnected, setDisconnected] = useState(false);
   const [followCd, setFollowCd] = useState(true);
-  const [editFile, setEditFile] = useState<{ path: string; name: string } | null>(null);
+  const [internalClipboard, setInternalClipboard] =
+    useState<FileClipboard | null>(null);
+  const [operation, setOperation] = useState<FileOperationState | null>(null);
+  const lastOperationRef = useRef<{
+    kind: "copy" | "move";
+    paths: string[];
+    destination: string;
+  } | null>(null);
+  const operationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const endpointId =
+    endpointIdProp || (localMode ? "local" : `remote:${connId}`);
+  const clipboard =
+    externalClipboard === undefined ? internalClipboard : externalClipboard;
+  const changeClipboard = onClipboardChange || setInternalClipboard;
+  const [editFile, setEditFile] = useState<{
+    path: string;
+    name: string;
+  } | null>(null);
   const sessionKey = tabId || String(connId);
-  const cacheRef = useRef<Map<string, { path: string; files: SftpFile[] }>>(new Map());
+  const cacheRef = useRef<Map<string, { path: string; files: SftpFile[] }>>(
+    new Map(),
+  );
   const navRef = useRef({ history: [defaultPath], index: 0 });
-  const [navState, setNavState] = useState({ history: [defaultPath], index: 0 });
+  const [navState, setNavState] = useState({
+    history: [defaultPath],
+    index: 0,
+  });
 
   const wsRef = useRef<WebSocket | null>(null);
   const [editorSocket, setEditorSocket] = useState<WebSocket | null>(null);
@@ -68,8 +115,8 @@ export default function SftpPanel({ connId, tabId, localMode, currentPath, onPat
     if (!socket || socket.readyState !== WebSocket.OPEN) return;
     if (!force && dirPath === pathRef.current) return;
     setLoading(true);
-    setError('');
-    socket.send(JSON.stringify({ action: 'list', path: dirPath }));
+    setError("");
+    socket.send(JSON.stringify({ action: "list", path: dirPath }));
   }, []);
 
   // Pool of SFTP sockets per connId — released only when SSH tabs for that connId are gone
@@ -78,7 +125,11 @@ export default function SftpPanel({ connId, tabId, localMode, currentPath, onPat
 
   // Helper: check if connId still has active SSH tabs
   const connIsAlive = (cId: number) => {
-    const cache = (window as unknown as { __paneTabsCache?: Map<string, import('../../store/layout').Tab[]> }).__paneTabsCache;
+    const cache = (
+      window as unknown as {
+        __paneTabsCache?: Map<string, import("../../store/layout").Tab[]>;
+      }
+    ).__paneTabsCache;
     if (!cache) return false;
     for (const tabs of cache.values()) {
       if (tabs.some((t) => t.connId === cId)) return true;
@@ -88,21 +139,28 @@ export default function SftpPanel({ connId, tabId, localMode, currentPath, onPat
 
   // Create or reuse WebSocket for current connId
   useEffect(() => {
-    if (connId == null) return;
+    if (connId == null && !localMode) return;
     let cancelled = false;
     let retryTimer: ReturnType<typeof setTimeout> | undefined;
     let heartbeat: ReturnType<typeof setInterval> | undefined;
     const prevId = connKeyRef.current;
-    connKeyRef.current = connId;
+    connKeyRef.current = connId ?? null;
     const retry = () => {
       if (cancelled || !navigator.onLine || retryTimer !== undefined) return;
-      const ceiling = Math.min(1000 * 2 ** Math.min(reconnectAttemptsRef.current++, 5), 30000);
-      retryTimer = setTimeout(() => setWsNonce((value) => value + 1), Math.random() * ceiling);
+      const ceiling = Math.min(
+        1000 * 2 ** Math.min(reconnectAttemptsRef.current++, 5),
+        30000,
+      );
+      retryTimer = setTimeout(
+        () => setWsNonce((value) => value + 1),
+        Math.random() * ceiling,
+      );
     };
     const startHeartbeat = (socket: WebSocket) => {
       clearInterval(heartbeat);
       heartbeat = setInterval(() => {
-        if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ action: 'ping' }));
+        if (socket.readyState === WebSocket.OPEN)
+          socket.send(JSON.stringify({ action: "ping" }));
       }, 20000);
     };
     const reconnectOnline = () => {
@@ -116,13 +174,13 @@ export default function SftpPanel({ connId, tabId, localMode, currentPath, onPat
       retryTimer = undefined;
       wsRef.current?.close();
     };
-    window.addEventListener('online', reconnectOnline);
-    window.addEventListener('offline', pauseOffline);
+    window.addEventListener("online", reconnectOnline);
+    window.addEventListener("offline", pauseOffline);
 
     // If we have a socket for the new connId, reuse it
-    const existing = poolRef.current.get(connId);
+    const existing = connId == null ? undefined : poolRef.current.get(connId);
     if (existing && existing.readyState !== WebSocket.OPEN) {
-      poolRef.current.delete(connId);
+      poolRef.current.delete(connId!);
     }
     if (existing && existing.readyState === WebSocket.OPEN) {
       wsRef.current = existing;
@@ -139,8 +197,8 @@ export default function SftpPanel({ connId, tabId, localMode, currentPath, onPat
       return () => {
         cancelled = true;
         clearInterval(heartbeat);
-        window.removeEventListener('online', reconnectOnline);
-        window.removeEventListener('offline', pauseOffline);
+        window.removeEventListener("online", reconnectOnline);
+        window.removeEventListener("offline", pauseOffline);
       };
     }
 
@@ -163,12 +221,15 @@ export default function SftpPanel({ connId, tabId, localMode, currentPath, onPat
     if (cached) setFiles(cached.files);
     setPath(initPath);
     setLoading(!cached);
-    setError('');
+    setError("");
 
     void (async () => {
       const wsUrl = localMode
-        ? await websocketTicketURL('/ws/local-fs', { endpoint: 'local-fs' })
-        : await websocketTicketURL(`/ws/sftp/${connId}`, { endpoint: 'sftp', connId });
+        ? await websocketTicketURL("/ws/local-fs", { endpoint: "local-fs" })
+        : await websocketTicketURL(`/ws/sftp/${connId!}`, {
+            endpoint: "sftp",
+            connId: connId!,
+          });
       if (cancelled) return;
       const socket = new WebSocket(wsUrl);
       wsRef.current = socket;
@@ -179,9 +240,9 @@ export default function SftpPanel({ connId, tabId, localMode, currentPath, onPat
         setDisconnected(false);
         startHeartbeat(socket);
         if (cached) {
-          socket.send(JSON.stringify({ action: 'list', path: initPath }));
+          socket.send(JSON.stringify({ action: "list", path: initPath }));
         } else {
-          socket.send(JSON.stringify({ action: 'getwd' }));
+          socket.send(JSON.stringify({ action: "getwd" }));
         }
       };
       socket.onclose = () => {
@@ -195,21 +256,60 @@ export default function SftpPanel({ connId, tabId, localMode, currentPath, onPat
       socket.onmessage = (event) => {
         try {
           const msg = JSON.parse(event.data);
-          if (msg.type === 'pong' || msg.type === 'ping') return;
-          if (msg.type === 'file_list') {
+          if (msg.type === "pong" || msg.type === "ping") return;
+          if (msg.type === "file_list") {
             setFiles(msg.files || []);
             setPath(msg.path || pathRef.current);
             setLoading(false);
-          } else if (msg.type === 'error') {
+          } else if (msg.type === "error") {
             setError(msg.error);
+            if (lastOperationRef.current) {
+              if (operationTimerRef.current)
+                clearTimeout(operationTimerRef.current);
+              setOperation({ status: "failed", message: msg.error });
+            }
             setLoading(false);
-          } else if (msg.type === 'pwd') {
+          } else if (msg.type === "pwd") {
             setPath(msg.path);
             fetchDir(msg.path);
-          } else if (msg.type === 'delete_done' || msg.type === 'mkdir_done' || msg.type === 'rename_done') {
+          } else if (
+            msg.type === "delete_done" ||
+            msg.type === "mkdir_done" ||
+            msg.type === "rename_done" ||
+            msg.type === "copy_done" ||
+            msg.type === "move_done" ||
+            msg.type === "operation_done"
+          ) {
+            if (
+              msg.type === "copy_done" ||
+              msg.type === "move_done" ||
+              msg.type === "operation_done"
+            ) {
+              if (operationTimerRef.current)
+                clearTimeout(operationTimerRef.current);
+              const failed = Array.isArray(msg.failed) ? msg.failed : [];
+              if (failed.length)
+                setOperation({
+                  status: "failed",
+                  message: failed
+                    .map(
+                      (item: { path?: string; error?: string }) =>
+                        `${item.path || ""}: ${item.error || ""}`,
+                    )
+                    .join("; "),
+                });
+              else {
+                setOperation(null);
+                if (lastOperationRef.current?.kind === "move")
+                  changeClipboard(null);
+                lastOperationRef.current = null;
+              }
+            }
             fetchDir(pathRef.current, true);
           }
-        } catch { /* ignore malformed SFTP responses */ }
+        } catch {
+          /* ignore malformed SFTP responses */
+        }
       };
     })().catch((ticketError) => {
       if (cancelled) return;
@@ -221,17 +321,29 @@ export default function SftpPanel({ connId, tabId, localMode, currentPath, onPat
       cancelled = true;
       clearTimeout(retryTimer);
       clearInterval(heartbeat);
-      window.removeEventListener('online', reconnectOnline);
-      window.removeEventListener('offline', pauseOffline);
+      window.removeEventListener("online", reconnectOnline);
+      window.removeEventListener("offline", pauseOffline);
     };
-  }, [connId, defaultPath, fetchDir, localMode, sessionKey, tabId, wsNonce]);
+  }, [
+    changeClipboard,
+    connId,
+    defaultPath,
+    fetchDir,
+    localMode,
+    sessionKey,
+    tabId,
+    wsNonce,
+  ]);
 
   // Prune a specific connId from the pool when all its SSH tabs are gone
   const sftpPruneConn = useLayoutStore((s) => s.sftpPruneConn);
   useEffect(() => {
     if (sftpPruneConn == null) return;
     const socket = poolRef.current.get(sftpPruneConn);
-    if (socket) { socket.close(); poolRef.current.delete(sftpPruneConn); }
+    if (socket) {
+      socket.close();
+      poolRef.current.delete(sftpPruneConn);
+    }
     // Also clear caches for this connId
     for (const [key] of cacheRef.current) {
       if (key.startsWith(String(sftpPruneConn))) cacheRef.current.delete(key);
@@ -242,7 +354,20 @@ export default function SftpPanel({ connId, tabId, localMode, currentPath, onPat
   useEffect(() => {
     const pool = poolRef.current;
     return () => {
-      pool.forEach((socket) => { try { socket.close(); } catch { /* already closed */ } });
+      if (operationTimerRef.current) clearTimeout(operationTimerRef.current);
+      try {
+        wsRef.current?.close();
+      } catch {
+        /* already closed */
+      }
+      wsRef.current = null;
+      pool.forEach((socket) => {
+        try {
+          socket.close();
+        } catch {
+          /* already closed */
+        }
+      });
       pool.clear();
     };
   }, []);
@@ -250,14 +375,17 @@ export default function SftpPanel({ connId, tabId, localMode, currentPath, onPat
   // When tabId changes within same connId, refresh without reconnecting
   const tabInitRef = useRef(false);
   useEffect(() => {
-    if (!tabInitRef.current) { tabInitRef.current = true; return; }
+    if (!tabInitRef.current) {
+      tabInitRef.current = true;
+      return;
+    }
     const socket = wsRef.current;
     if (!socket || socket.readyState !== WebSocket.OPEN) return;
     const cached = cacheRef.current.get(sessionKey);
     if (cached) {
       fetchDir(cached.path);
     } else {
-      socket.send(JSON.stringify({ action: 'getwd' }));
+      socket.send(JSON.stringify({ action: "getwd" }));
     }
   }, [fetchDir, sessionKey, tabId]);
 
@@ -276,102 +404,243 @@ export default function SftpPanel({ connId, tabId, localMode, currentPath, onPat
     return () => window.clearTimeout(timer);
   }, [cdPath, fetchDir, followCd, path]);
 
-  const navigateTo = useCallback((newPath: string, pushHistory = true) => {
-    setPath(newPath);
-    fetchDir(newPath);
-    onPathChange?.(newPath);
-    if (pushHistory) {
-      const nav = navRef.current;
-      const next = nav.history.slice(0, nav.index + 1);
-      if (next[next.length - 1] !== newPath) next.push(newPath);
-      nav.history = next;
-      nav.index = next.length - 1;
-      setNavState({ history: [...nav.history], index: nav.index });
-    }
-  }, [fetchDir, onPathChange, setNavState]);
+  const navigateTo = useCallback(
+    (newPath: string, pushHistory = true) => {
+      setPath(newPath);
+      fetchDir(newPath);
+      onPathChange?.(newPath);
+      if (pushHistory) {
+        const nav = navRef.current;
+        const next = nav.history.slice(0, nav.index + 1);
+        if (next[next.length - 1] !== newPath) next.push(newPath);
+        nav.history = next;
+        nav.index = next.length - 1;
+        setNavState({ history: [...nav.history], index: nav.index });
+      }
+    },
+    [fetchDir, onPathChange, setNavState],
+  );
 
-  const handleNavigate = useCallback((newPath: string) => navigateTo(newPath, true), [navigateTo]);
+  const handleNavigate = useCallback(
+    (newPath: string) => navigateTo(newPath, true),
+    [navigateTo],
+  );
 
   const handleBack = () => {
     const nav = navRef.current;
-    if (nav.index > 0) { nav.index--; navigateTo(nav.history[nav.index], false); }
+    if (nav.index > 0) {
+      nav.index--;
+      navigateTo(nav.history[nav.index], false);
+    }
   };
   const handleForward = () => {
     const nav = navRef.current;
-    if (nav.index < nav.history.length - 1) { nav.index++; navigateTo(nav.history[nav.index], false); }
+    if (nav.index < nav.history.length - 1) {
+      nav.index++;
+      navigateTo(nav.history[nav.index], false);
+    }
   };
   const handleHome = () => navigateTo(defaultPath, true);
   const handleGoParent = () => {
-    if (path === '/') return;
-    const parent = path.substring(0, path.lastIndexOf('/')) || '/';
+    if (path === "/") return;
+    const parent = path.substring(0, path.lastIndexOf("/")) || "/";
     navigateTo(parent, true);
   };
   const canGoBack = navState.index > 0;
   const canGoForward = navState.index < navState.history.length - 1;
 
   const handleDelete = (filePath: string) => {
-    wsRef.current?.send(JSON.stringify({ action: 'delete', path: filePath }));
+    wsRef.current?.send(JSON.stringify({ action: "delete", path: filePath }));
   };
   const handleRename = (filePath: string, newName: string) => {
-    const dir = filePath.substring(0, filePath.lastIndexOf('/') + 1);
-    wsRef.current?.send(JSON.stringify({ action: 'rename', path: filePath, new_path: dir + newName }));
+    const dir = filePath.substring(0, filePath.lastIndexOf("/") + 1);
+    wsRef.current?.send(
+      JSON.stringify({
+        action: "rename",
+        path: filePath,
+        new_path: dir + newName,
+      }),
+    );
   };
   const handleMkdir = (name: string) => {
-    wsRef.current?.send(JSON.stringify({ action: 'mkdir', path: path + '/' + name }));
+    wsRef.current?.send(
+      JSON.stringify({ action: "mkdir", path: path + "/" + name }),
+    );
   };
   const handleEditFile = (filePath: string, fileName: string) => {
     setEditFile({ path: filePath, name: fileName });
   };
   const handleChmod = (filePath: string, mode: string) => {
-    wsRef.current?.send(JSON.stringify({ action: 'chmod', path: filePath, mode }));
+    wsRef.current?.send(
+      JSON.stringify({ action: "chmod", path: filePath, mode }),
+    );
   };
+  const handleFileOperation = useCallback(
+    (kind: "copy" | "move", paths: string[], destination: string) => {
+      const socket = wsRef.current;
+      if (!socket || socket.readyState !== WebSocket.OPEN) {
+        setOperation({ status: "failed", message: t("sftp_disconnected") });
+        return;
+      }
+      lastOperationRef.current = { kind, paths, destination };
+      setOperation({ status: "running" });
+      socket.send(
+        JSON.stringify({
+          action: kind,
+          paths,
+          destination,
+          request_id: crypto.randomUUID?.() || String(Date.now()),
+        }),
+      );
+      if (operationTimerRef.current) clearTimeout(operationTimerRef.current);
+      operationTimerRef.current = setTimeout(
+        () =>
+          setOperation({
+            status: "failed",
+            message: t("file_operation_failed"),
+          }),
+        15000,
+      );
+    },
+    [],
+  );
+  const retryOperation = useCallback(() => {
+    const last = lastOperationRef.current;
+    if (last) handleFileOperation(last.kind, last.paths, last.destination);
+  }, [handleFileOperation]);
+  useEffect(() => {
+    if (refreshNonce) fetchDir(pathRef.current, true);
+  }, [fetchDir, refreshNonce]);
 
   return (
-    <div style={{ background: colors.bg, fontSize: font.sm, display: 'flex', flexDirection: 'column', height: '100%', ...style }}>
-      <div style={{ height: 36, padding: '0 4px', background: colors.bg, display: 'flex', gap: 2, alignItems: 'center', borderBottom: '1px solid var(--c-border)', flexShrink: 0 }}>
-        <button onClick={handleBack} title={t("sftp_back")}
-          style={{ background: 'none', border: 'none', color: canGoBack ? colors.textLight : colors.border, cursor: canGoBack ? 'pointer' : 'default', padding: '2px', display: 'flex', alignItems: 'center' }}><Icon name="chevron-left" size={14} /></button>
-        <button onClick={handleForward} title={t("sftp_forward")}
-          style={{ background: 'none', border: 'none', color: canGoForward ? colors.textLight : colors.border, cursor: canGoForward ? 'pointer' : 'default', padding: '2px', display: 'flex', alignItems: 'center' }}><Icon name="chevron-right" size={14} /></button>
-        <button onClick={handleGoParent} title={t("sftp_parent")}
-          style={{ background: 'none', border: 'none', color: colors.textLight, cursor: 'pointer', padding: '2px', display: 'flex', alignItems: 'center' }}><Icon name="corner-left-up" size={14} /></button>
-        <button onClick={handleHome} title={t("sftp_home")}
-          style={{ background: 'none', border: 'none', color: colors.textLight, cursor: 'pointer', padding: '2px', display: 'flex', alignItems: 'center' }}><Icon name="home" size={14} /></button>
-        <input value={path} onChange={(e) => setPath(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter') handleNavigate(path); }}
-          style={{ flex: 1, padding: '2px 6px', background: colors.bg, border: '1px solid var(--c-border)', borderRadius: 4, color: colors.white, fontSize: font.sm, fontFamily: 'Consolas, monospace', minWidth: 0 }} />
-
-
-      </div>
-      {error && <div style={{ padding: '4px 8px', color: colors.danger, fontSize: font.xs }}>{error}</div>}
-      {disconnected ? (
-        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 8, color: colors.textDim }}>
-          <div style={{ fontSize: font.xl5, opacity: 0.3 }}>◧</div>
-          <div style={{ fontSize: font.md }}>{t("sftp_disconnected")}</div>
-          <button onClick={() => { setError(''); setFiles([]); setDisconnected(false); setWsNonce((n) => n + 1); }} style={{
-            background: colors.accent, border: 'none', color: colors.bg, fontWeight: 600, padding: '4px 12px',
-            borderRadius: 4, cursor: 'pointer', fontSize: font.sm,
-          }}>{t("sftp_reconnect")}</button>
+    <div className="sftp-shell" style={style}>
+      <nav className="sftp-nav" aria-label={t("file_path")}>
+        <div className="sftp-nav-actions">
+          <button
+            className="sftp-icon-button"
+            onClick={handleBack}
+            title={t("sftp_back")}
+            aria-label={t("sftp_back")}
+            disabled={!canGoBack}
+          >
+            <Icon name="chevron-left" size={16} />
+          </button>
+          <button
+            className="sftp-icon-button"
+            onClick={handleForward}
+            title={t("sftp_forward")}
+            aria-label={t("sftp_forward")}
+            disabled={!canGoForward}
+          >
+            <Icon name="chevron-right" size={16} />
+          </button>
+          <button
+            className="sftp-icon-button"
+            onClick={handleGoParent}
+            title={t("sftp_parent")}
+            aria-label={t("sftp_parent")}
+            disabled={path === "/"}
+          >
+            <Icon name="corner-left-up" size={15} />
+          </button>
+          <button
+            className="sftp-icon-button"
+            onClick={handleHome}
+            title={t("sftp_home")}
+            aria-label={t("sftp_home")}
+          >
+            <Icon name="home" size={15} />
+          </button>
         </div>
-      ) : (<>
-        <FileList
-          files={files} loading={loading}
-          onNavigate={handleNavigate} onDelete={handleDelete}
-          onRename={handleRename} connId={connId} currentPath={path}
-          onUpload={() => fetchDir(path)} onEdit={handleEditFile} onChmod={handleChmod}
-          onMkdir={(name) => handleMkdir(name)} onGoParent={handleGoParent}
-          onToggleFollow={() => setFollowCd(!followCd)} followCd={followCd}
-        />
-        {editFile && (
-          <Suspense fallback={<div style={{ padding: 12, fontSize: font.md, color: colors.textMuted }}>Loading…</div>}>
-            <FileEditor
-              filePath={editFile.path} fileName={editFile.name}
-              ws={editorSocket}
-              onClose={() => setEditFile(null)} onSaved={() => fetchDir(path)}
-            />
-          </Suspense>
-        )}
-      </>)}
+        <label className="sftp-path-shell">
+          <span className="sftp-path-icon">
+            <Icon name="folder-open" size={14} />
+          </span>
+          <span className="sr-only">{t("file_path")}</span>
+          <input
+            className="sftp-path"
+            value={path}
+            onChange={(event) => setPath(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") handleNavigate(path);
+            }}
+            spellCheck={false}
+          />
+        </label>
+        <button
+          className="sftp-icon-button"
+          onClick={() => fetchDir(path, true)}
+          title={t("sftp_refresh")}
+          aria-label={t("sftp_refresh")}
+        >
+          <Icon name="refresh-cw" size={15} />
+        </button>
+      </nav>
+      {error && (
+        <div className="sftp-panel-error" role="alert">
+          <span>{error}</span>
+          <button onClick={() => fetchDir(path, true)}>
+            {t("sftp_refresh")}
+          </button>
+        </div>
+      )}
+      {disconnected ? (
+        <div className="sftp-disconnected">
+          <Icon name="link" size={30} />
+          <strong>{t("sftp_disconnected")}</strong>
+          <span>{t("file_connection_hint")}</span>
+          <button
+            className="sftp-action sftp-primary"
+            onClick={() => {
+              setError("");
+              setFiles([]);
+              setDisconnected(false);
+              setWsNonce((n) => n + 1);
+            }}
+          >
+            {t("sftp_reconnect")}
+          </button>
+        </div>
+      ) : (
+        <>
+          <FileList
+            key={path}
+            files={files}
+            loading={loading}
+            onNavigate={handleNavigate}
+            onDelete={handleDelete}
+            onRename={handleRename}
+            connId={connId}
+            currentPath={path}
+            onUpload={() => fetchDir(path)}
+            onEdit={handleEditFile}
+            onChmod={handleChmod}
+            onMkdir={(name) => handleMkdir(name)}
+            onGoParent={handleGoParent}
+            onToggleFollow={() => setFollowCd(!followCd)}
+            followCd={followCd}
+            localMode={localMode}
+            endpointId={endpointId}
+            clipboard={clipboard}
+            onClipboardChange={changeClipboard}
+            onFileOperation={handleFileOperation}
+            operation={operation}
+            onRetryOperation={retryOperation}
+            onSelectionChange={onSelectionChange}
+          />
+          {editFile && (
+            <Suspense fallback={<div className="sftp-state">Loading…</div>}>
+              <FileEditor
+                filePath={editFile.path}
+                fileName={editFile.name}
+                ws={editorSocket}
+                onClose={() => setEditFile(null)}
+                onSaved={() => fetchDir(path)}
+              />
+            </Suspense>
+          )}
+        </>
+      )}
     </div>
   );
 }

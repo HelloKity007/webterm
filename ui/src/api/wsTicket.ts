@@ -1,6 +1,6 @@
 import { apiFetch } from './client';
 
-export type WSEndpoint = 'ssh' | 'sftp' | 'db' | 'layout' | 'local-fs';
+export type WSEndpoint = 'ssh' | 'sftp' | 'db' | 'layout' | 'local-fs' | 'sftp-download' | 'local-download';
 export interface WSTicketScope {
   endpoint: WSEndpoint;
   connId?: number;
@@ -23,6 +23,15 @@ export function webSocketClientID(): string {
 }
 
 export async function websocketTicketURL(path: string, scope: WSTicketScope, query: Record<string, string> = {}): Promise<string> {
+  const ticket = await issueScopedTicket(scope);
+  const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const url = new URL(`${protocol}//${location.host}${path}`);
+  Object.entries(query).forEach(([key, value]) => url.searchParams.set(key, value));
+  url.searchParams.set('ticket', ticket);
+  return url.toString();
+}
+
+async function issueScopedTicket(scope: WSTicketScope): Promise<string> {
   const response = await apiFetch('/api/ws-tickets', {
     method: 'POST',
     body: JSON.stringify({
@@ -39,9 +48,13 @@ export async function websocketTicketURL(path: string, scope: WSTicketScope, que
   }
   const body = await response.json() as { ticket?: string };
   if (!body.ticket) throw new Error('websocket ticket response is invalid');
-  const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const url = new URL(`${protocol}//${location.host}${path}`);
+  return body.ticket;
+}
+
+export async function downloadTicketURL(path: string, scope: WSTicketScope, query: Record<string, string> = {}): Promise<string> {
+  const ticket = await issueScopedTicket(scope);
+  const url = new URL(path, location.origin);
   Object.entries(query).forEach(([key, value]) => url.searchParams.set(key, value));
-  url.searchParams.set('ticket', body.ticket);
-  return url.toString();
+  url.searchParams.set('ticket', ticket);
+  return `${url.pathname}${url.search}`;
 }

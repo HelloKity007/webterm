@@ -107,7 +107,7 @@ func (h *WSTicketHandler) Issue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch request.Endpoint {
-	case "ssh", "sftp":
+	case "ssh", "sftp", "sftp-download":
 		connection, err := h.Store.GetConnection(request.ConnID)
 		if err != nil {
 			http.Error(w, `{"error":"connection not found"}`, http.StatusNotFound)
@@ -143,15 +143,62 @@ func validWSTicketRequest(request wsTicketRequest) bool {
 	switch request.Endpoint {
 	case "ssh":
 		return request.ConnID > 0 && request.TerminalID != "" && len(request.TerminalID) <= 128 && len(request.ClientID) <= 128
-	case "sftp", "db":
+	case "sftp", "sftp-download", "db":
 		return request.ConnID > 0 && request.TerminalID == "" && request.ClientID == ""
 	case "layout":
 		return request.ConnID == 0 && request.TerminalID == "" && request.ClientID != "" && len(request.ClientID) <= 128
 	case "local-fs":
 		return request.ConnID == 0 && request.TerminalID == "" && request.ClientID == ""
+	case "local-download":
+		return request.ConnID == 0 && request.TerminalID == "" && request.ClientID == ""
 	default:
 		return false
 	}
+}
+
+// TicketHTTPHandler authorizes a single download without putting the user's
+// long-lived JWT in a URL. Tickets expire after wsTicketTTL and are consumed
+// even when an attempted scope check fails.
+type TicketHTTPHandler struct {
+	Store    *store.Store
+	Tickets  *WSTicketService
+	Endpoint string
+	Next     http.Handler
+}
+
+func (h TicketHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if h.Tickets == nil || h.Next == nil || h.Store == nil {
+		http.Error(w, `{"error":"download unavailable"}`, http.StatusServiceUnavailable)
+		return
+	}
+	connID, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	claims, err := h.Tickets.consume(r.URL.Query().Get("ticket"), h.Endpoint, connID, "", "")
+	if err != nil {
+		http.Error(w, `{"error":"invalid download ticket"}`, http.StatusUnauthorized)
+		return
+	}
+	storedUser, err := h.Store.GetUser(claims.UserID)
+	if err != nil || storedUser.Disabled {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+	claims.Username = storedUser.Username
+	claims.Role = storedUser.Role
+	if h.Endpoint == "sftp-download" {
+		connection, connectionErr := h.Store.GetConnection(connID)
+		if connectionErr != nil {
+			http.Error(w, `{"error":"connection not found"}`, http.StatusNotFound)
+			return
+		}
+		if !canUseConnection(claims, connection) {
+			http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden)
+			return
+		}
+	}
+	query := r.URL.Query()
+	query.Del("ticket")
+	r.URL.RawQuery = query.Encode()
+	h.Next.ServeHTTP(w, auth.WithUser(r, claims))
 }
 
 type TicketWebSocketHandler struct {

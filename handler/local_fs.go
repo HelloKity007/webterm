@@ -1,6 +1,12 @@
 package handler
 
 import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"mime/multipart"
+	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
@@ -32,10 +38,13 @@ func handleLocalFS(conn *websocket.Conn, registry *WSRegistry) {
 	outbound := newWSOutbound(conn, registry)
 	defer outbound.Close()
 	var msg struct {
-		Action  string `json:"action"`
-		Path    string `json:"path"`
-		Content string `json:"content"`
-		NewPath string `json:"new_path"`
+		Action      string   `json:"action"`
+		Path        string   `json:"path"`
+		Content     string   `json:"content"`
+		NewPath     string   `json:"new_path"`
+		Paths       []string `json:"paths"`
+		Destination string   `json:"destination"`
+		RequestID   string   `json:"request_id"`
 	}
 
 	for {
@@ -53,7 +62,11 @@ func handleLocalFS(conn *websocket.Conn, registry *WSRegistry) {
 				outbound.Send(map[string]interface{}{"type": "pwd", "path": wd})
 			}
 		case "list":
-			path := msg.Path
+			path, err := cleanLocalPath(msg.Path)
+			if err != nil {
+				outbound.Send(map[string]interface{}{"type": "error", "error": err.Error()})
+				continue
+			}
 			if path == "" {
 				path = "/"
 			}
@@ -92,44 +105,335 @@ func handleLocalFS(conn *websocket.Conn, registry *WSRegistry) {
 				"files": files,
 			})
 		case "read":
-			data, err := os.ReadFile(msg.Path)
+			cleanPath, err := cleanLocalPath(msg.Path)
+			if err == nil {
+				var data []byte
+				data, err = os.ReadFile(cleanPath)
+				if err == nil {
+					outbound.Send(map[string]interface{}{"type": "file_content", "path": cleanPath, "content": string(data)})
+					continue
+				}
+			}
 			if err != nil {
 				outbound.Send(map[string]interface{}{"type": "error", "error": err.Error()})
-			} else {
-				outbound.Send(map[string]interface{}{
-					"type":    "file_content",
-					"path":    msg.Path,
-					"content": string(data),
-				})
 			}
 		case "write":
-			err := os.WriteFile(msg.Path, []byte(msg.Content), 0644)
+			cleanPath, err := cleanLocalPath(msg.Path)
+			if err == nil {
+				err = os.WriteFile(cleanPath, []byte(msg.Content), 0644)
+			}
 			if err != nil {
 				outbound.Send(map[string]interface{}{"type": "error", "error": err.Error()})
 			} else {
 				outbound.Send(map[string]interface{}{"type": "write_done", "path": msg.Path})
 			}
 		case "delete":
-			err := os.Remove(msg.Path)
+			cleanPath, err := cleanLocalPath(msg.Path)
+			if err == nil {
+				err = removeLocalAll(cleanPath)
+			}
 			if err != nil {
 				outbound.Send(map[string]interface{}{"type": "error", "error": err.Error()})
 			} else {
 				outbound.Send(map[string]interface{}{"type": "delete_done", "path": msg.Path})
 			}
 		case "mkdir":
-			err := os.MkdirAll(msg.Path, 0755)
+			cleanPath, err := cleanLocalPath(msg.Path)
+			if err == nil {
+				err = os.MkdirAll(cleanPath, 0755)
+			}
 			if err != nil {
 				outbound.Send(map[string]interface{}{"type": "error", "error": err.Error()})
 			} else {
 				outbound.Send(map[string]interface{}{"type": "mkdir_done", "path": msg.Path})
 			}
 		case "rename":
-			err := os.Rename(msg.Path, msg.NewPath)
+			cleanPath, err := cleanLocalPath(msg.Path)
+			cleanNewPath, newErr := cleanLocalPath(msg.NewPath)
+			if err == nil {
+				err = newErr
+			}
+			if err == nil {
+				err = os.Rename(cleanPath, cleanNewPath)
+			}
 			if err != nil {
 				outbound.Send(map[string]interface{}{"type": "error", "error": err.Error()})
 			} else {
 				outbound.Send(map[string]interface{}{"type": "rename_done", "path": msg.Path, "new_path": msg.NewPath})
 			}
+		case "copy", "move":
+			paths := msg.Paths
+			if len(paths) == 0 && msg.Path != "" {
+				paths = []string{msg.Path}
+			}
+			destination := msg.Destination
+			if destination == "" {
+				destination = msg.NewPath
+			}
+			succeeded, failed := runLocalOperation(msg.Action, paths, destination)
+			outbound.Send(map[string]interface{}{"type": "operation_done", "action": msg.Action, "request_id": msg.RequestID, "succeeded": succeeded, "failed": failed})
 		}
 	}
+}
+
+type fileOperationFailure struct {
+	Path  string `json:"path"`
+	Error string `json:"error"`
+}
+
+func runLocalOperation(action string, sources []string, destination string) ([]string, []fileOperationFailure) {
+	succeeded := make([]string, 0, len(sources))
+	failed := make([]fileOperationFailure, 0)
+	destination, err := cleanLocalPath(destination)
+	if err != nil || destination == "" {
+		if err == nil {
+			err = errors.New("destination required")
+		}
+		for _, source := range sources {
+			failed = append(failed, fileOperationFailure{source, err.Error()})
+		}
+		return succeeded, failed
+	}
+	for _, source := range sources {
+		cleanSource, err := cleanLocalPath(source)
+		target := filepath.Join(destination, filepath.Base(cleanSource))
+		if err == nil {
+			if action == "move" {
+				err = moveLocal(cleanSource, target)
+			} else {
+				err = copyLocal(cleanSource, target)
+			}
+		}
+		if err != nil {
+			failed = append(failed, fileOperationFailure{source, err.Error()})
+		} else {
+			succeeded = append(succeeded, source)
+		}
+	}
+	return succeeded, failed
+}
+
+func copyLocal(source, destination string) error {
+	sourceAbs, err := filepath.Abs(source)
+	if err != nil {
+		return err
+	}
+	destinationAbs, err := filepath.Abs(destination)
+	if err != nil {
+		return err
+	}
+	if sourceAbs == destinationAbs {
+		return errors.New("source and destination are the same")
+	}
+	if isFilesystemRoot(sourceAbs) {
+		return errors.New("refusing to copy filesystem root")
+	}
+	if _, err := os.Lstat(destinationAbs); err == nil {
+		return errors.New("destination already exists")
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	info, err := os.Lstat(sourceAbs)
+	if err != nil {
+		return err
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return errors.New("copying symbolic links is not supported")
+	}
+	if info.IsDir() && localPathWithin(sourceAbs, destinationAbs) {
+		return errors.New("destination cannot be inside source directory")
+	}
+	if err := copyLocalAll(sourceAbs, destinationAbs, info); err != nil {
+		return cleanupLocalCopyFailure(destinationAbs, err)
+	}
+	return nil
+}
+
+func cleanupLocalCopyFailure(destination string, copyErr error) error {
+	cleanupErr := removeLocalAll(destination)
+	if cleanupErr == nil || os.IsNotExist(cleanupErr) {
+		return copyErr
+	}
+	return errors.Join(copyErr, fmt.Errorf("cleanup partial destination: %w", cleanupErr))
+}
+
+func copyLocalAll(source, destination string, info os.FileInfo) error {
+	if info.Mode()&os.ModeSymlink != 0 {
+		return errors.New("copying symbolic links is not supported")
+	}
+	if info.IsDir() {
+		if err := os.MkdirAll(destination, info.Mode().Perm()); err != nil {
+			return err
+		}
+		entries, err := os.ReadDir(source)
+		if err != nil {
+			return err
+		}
+		for _, entry := range entries {
+			entryInfo, err := entry.Info()
+			if err != nil {
+				return err
+			}
+			if err := copyLocalAll(filepath.Join(source, entry.Name()), filepath.Join(destination, entry.Name()), entryInfo); err != nil {
+				return err
+			}
+		}
+		return os.Chmod(destination, info.Mode().Perm())
+	}
+	src, err := os.Open(source)
+	if err != nil {
+		return err
+	}
+	defer src.Close()
+	dst, err := os.OpenFile(destination, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, info.Mode().Perm())
+	if err != nil {
+		return err
+	}
+	_, copyErr := io.Copy(dst, src)
+	closeErr := dst.Close()
+	if copyErr != nil {
+		return copyErr
+	}
+	return closeErr
+}
+
+func moveLocal(source, destination string) error {
+	sourceAbs, err := filepath.Abs(source)
+	if err != nil {
+		return err
+	}
+	destinationAbs, err := filepath.Abs(destination)
+	if err != nil {
+		return err
+	}
+	if sourceAbs == destinationAbs {
+		return errors.New("source and destination are the same")
+	}
+	if isFilesystemRoot(sourceAbs) {
+		return errors.New("refusing to move filesystem root")
+	}
+	if _, err := os.Lstat(destinationAbs); err == nil {
+		return errors.New("destination already exists")
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	info, err := os.Lstat(sourceAbs)
+	if err != nil {
+		return err
+	}
+	if info.IsDir() && info.Mode()&os.ModeSymlink == 0 && localPathWithin(sourceAbs, destinationAbs) {
+		return errors.New("destination cannot be inside source directory")
+	}
+	return os.Rename(sourceAbs, destinationAbs)
+}
+
+func localPathWithin(parent, candidate string) bool {
+	rel, err := filepath.Rel(filepath.Clean(parent), filepath.Clean(candidate))
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(os.PathSeparator))
+}
+
+func isFilesystemRoot(name string) bool {
+	clean := filepath.Clean(name)
+	volume := filepath.VolumeName(clean)
+	return clean == filepath.Clean(volume+string(os.PathSeparator))
+}
+
+type LocalFSHandler struct{}
+
+func (LocalFSHandler) Upload(w http.ResponseWriter, r *http.Request) {
+	reader, err := r.MultipartReader()
+	if err != nil {
+		http.Error(w, `{"error":"invalid multipart request"}`, http.StatusBadRequest)
+		return
+	}
+	tmp, err := os.CreateTemp("", "webterm-local-upload-*")
+	if err != nil {
+		http.Error(w, `{"error":"cannot stage upload"}`, http.StatusInternalServerError)
+		return
+	}
+	defer os.Remove(tmp.Name())
+	defer tmp.Close()
+	fields, found, err := stageLocalMultipart(reader, tmp)
+	if err != nil || !found {
+		http.Error(w, `{"error":"invalid upload"}`, http.StatusBadRequest)
+		return
+	}
+	target, err := cleanLocalPath(fields["path"])
+	if err != nil || target == "" {
+		http.Error(w, `{"error":"path required"}`, http.StatusBadRequest)
+		return
+	}
+	if _, err = tmp.Seek(0, io.SeekStart); err == nil {
+		var dst *os.File
+		dst, err = os.Create(target)
+		if err == nil {
+			_, err = io.Copy(dst, tmp)
+			closeErr := dst.Close()
+			if err == nil {
+				err = closeErr
+			}
+		}
+	}
+	if err != nil {
+		http.Error(w, `{"error":"upload failed"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok", "path": target})
+}
+
+func stageLocalMultipart(reader *multipart.Reader, destination io.Writer) (map[string]string, bool, error) {
+	return stageMultipartUpload(reader, destination)
+}
+
+func (LocalFSHandler) Download(w http.ResponseWriter, r *http.Request) {
+	name, err := cleanLocalPath(r.URL.Query().Get("path"))
+	if err != nil || name == "" {
+		http.Error(w, `{"error":"path required"}`, http.StatusBadRequest)
+		return
+	}
+	file, err := os.Open(name)
+	if err != nil {
+		http.Error(w, `{"error":"read failed"}`, http.StatusNotFound)
+		return
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil || !info.Mode().IsRegular() {
+		http.Error(w, `{"error":"not a regular file"}`, http.StatusBadRequest)
+		return
+	}
+	w.Header().Set("Content-Disposition", contentDisposition(filepath.Base(name)))
+	http.ServeContent(w, r, info.Name(), info.ModTime(), file)
+}
+
+// cleanLocalPath provides a single validation point without narrowing the
+// existing filesystem scope. A configurable root can be enforced here later.
+func cleanLocalPath(name string) (string, error) {
+	if strings.IndexByte(name, 0) >= 0 {
+		return "", errors.New("invalid path")
+	}
+	if name == "" {
+		return "", nil
+	}
+	return filepath.Clean(name), nil
+}
+
+func removeLocalAll(name string) error {
+	abs, err := filepath.Abs(name)
+	if err != nil {
+		return err
+	}
+	volume := filepath.VolumeName(abs)
+	if filepath.Clean(abs) == filepath.Clean(volume+string(os.PathSeparator)) {
+		return errors.New("refusing to remove filesystem root")
+	}
+	info, err := os.Lstat(abs)
+	if err != nil {
+		return err
+	}
+	if info.IsDir() && info.Mode()&os.ModeSymlink == 0 {
+		return os.RemoveAll(abs)
+	}
+	return os.Remove(abs)
 }
