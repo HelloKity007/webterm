@@ -15,6 +15,9 @@ interface Props {
   filePath: string;
   fileName: string;
   ws: WebSocket | null;
+  revision?: string;
+  refreshMode: 'auto' | 'manual' | null;
+  onRefreshModeChange: (mode: 'auto' | 'manual') => void;
   onClose: () => void;
   onSaved: () => void;
 }
@@ -36,7 +39,7 @@ function detectLanguage(fileName: string): Extension | Extension[] {
   }
 }
 
-export default function FileEditor({ filePath, fileName, ws, onClose, onSaved }: Props) {
+export default function FileEditor({ filePath, fileName, ws, revision, refreshMode, onRefreshModeChange, onClose, onSaved }: Props) {
   const editorRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const [content, setContent] = useState('');
@@ -44,8 +47,11 @@ export default function FileEditor({ filePath, fileName, ws, onClose, onSaved }:
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [backup, setBackup] = useState(true);
+  const [reloadNonce, setReloadNonce] = useState(0);
+  const [externalChange, setExternalChange] = useState(false);
   const origContentRef = useRef('');
   const saveHandlerRef = useRef<() => void>(() => {});
+  const lastRevisionRef = useRef(revision);
 
   // Read file from remote
   useEffect(() => {
@@ -57,6 +63,7 @@ export default function FileEditor({ filePath, fileName, ws, onClose, onSaved }:
       if (msg.type === 'file_content' && msg.path === filePath) {
         setContent(msg.content || '');
         origContentRef.current = msg.content || '';
+        setExternalChange(false);
         setLoading(false);
         ws.removeEventListener('message', handler);
       } else if (msg.type === 'error') {
@@ -68,7 +75,35 @@ export default function FileEditor({ filePath, fileName, ws, onClose, onSaved }:
     ws.addEventListener('message', handler);
 
     return () => ws.removeEventListener('message', handler);
-  }, [filePath, ws]);
+  }, [filePath, reloadNonce, ws]);
+
+  useEffect(() => {
+    if (!revision || revision === lastRevisionRef.current) return;
+    lastRevisionRef.current = revision;
+    if (loading) return;
+    const dirty = viewRef.current?.state.doc.toString() !== origContentRef.current;
+    if (dirty || refreshMode !== 'auto') {
+      setExternalChange(true);
+    } else {
+      setLoading(true);
+      setReloadNonce((value) => value + 1);
+    }
+  }, [loading, refreshMode, revision]);
+
+  const reloadExternalChange = useCallback(() => {
+    setExternalChange(false);
+    setLoading(true);
+    setReloadNonce((value) => value + 1);
+  }, []);
+  const requestManualReload = useCallback(() => {
+    const dirty = viewRef.current?.state.doc.toString() !== origContentRef.current;
+    if (dirty) {
+      setExternalChange(true);
+    } else {
+      setLoading(true);
+      setReloadNonce((value) => value + 1);
+    }
+  }, []);
 
   // Create CodeMirror editor
   useEffect(() => {
@@ -149,6 +184,20 @@ export default function FileEditor({ filePath, fileName, ws, onClose, onSaved }:
         {error && (
           <div style={{ padding: '6px 12px', color: colors.danger, background: colors.bgError, fontSize: font.md }}>{error}</div>
         )}
+        {externalChange && (
+          <div style={{ padding: '6px 12px', color: colors.text, background: colors.dangerSoft, fontSize: font.md }} role="alert">
+            <span>{t('file_external_change')}</span>
+            <button onClick={reloadExternalChange}>{t('file_reload')}</button>
+            <button onClick={() => setExternalChange(false)}>{t('file_keep_draft')}</button>
+          </div>
+        )}
+        {refreshMode === null && !loading && (
+          <div style={{ padding: '6px 12px', color: colors.text, background: colors.bgBar, fontSize: font.md }} role="status">
+            <span>{t('file_refresh_mode_prompt')}</span>
+            <button onClick={() => onRefreshModeChange('auto')}>{t('file_auto_refresh')}</button>
+            <button onClick={() => onRefreshModeChange('manual')}>{t('file_manual_refresh')}</button>
+          </div>
+        )}
         <div ref={editorRef} style={{ flex: 1, minHeight: 0 }} />
         <div style={{
           padding: '8px 16px', background: colors.bgBar, display: 'flex',
@@ -160,6 +209,14 @@ export default function FileEditor({ filePath, fileName, ws, onClose, onSaved }:
               <input type="checkbox" checked={backup} onChange={(e) => setBackup(e.target.checked)} />
               {t('file_bak')}
             </label>
+            {refreshMode === 'auto' ? (
+              <button onClick={() => onRefreshModeChange('manual')}>{t('file_pause_auto_refresh')}</button>
+            ) : refreshMode === 'manual' ? (
+              <>
+                <button onClick={requestManualReload}>{t('file_reload')}</button>
+                <button onClick={() => onRefreshModeChange('auto')}>{t('file_auto_refresh')}</button>
+              </>
+            ) : null}
           </span>
           <button onClick={handleSave} disabled={saving} style={{
             background: saving ? colors.border : colors.info, border: 'none',

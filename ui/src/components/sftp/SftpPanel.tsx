@@ -78,6 +78,8 @@ export default function SftpPanel({
   const [editFile, setEditFile] = useState<{
     path: string;
     name: string;
+    revision?: string;
+    refreshMode: "auto" | "manual" | null;
   } | null>(null);
   const sessionKey = tabId || String(connId);
   const cacheRef = useRef<Map<string, { path: string; files: SftpFile[] }>>(
@@ -296,6 +298,14 @@ export default function SftpPanel({
             }
             setFiles([...listingFilesRef.current]);
             setLoading(false);
+          } else if (msg.type === "file_stat") {
+            setEditFile((current) => {
+              if (!current || current.path !== msg.path) return current;
+              return {
+                ...current,
+                revision: `${msg.mod_time || ""}:${msg.size ?? ""}`,
+              };
+            });
           } else if (msg.type === "error") {
             setError(msg.error);
             if (lastOperationRef.current) {
@@ -509,7 +519,13 @@ export default function SftpPanel({
     );
   };
   const handleEditFile = (filePath: string, fileName: string) => {
-    setEditFile({ path: filePath, name: fileName });
+    const file = filesRef.current.find((entry) => entry.path === filePath);
+    setEditFile({
+      path: filePath,
+      name: fileName,
+      revision: file ? `${file.mod_time}:${file.size}` : undefined,
+      refreshMode: null,
+    });
   };
   const handleChmod = (filePath: string, mode: string) => {
     wsRef.current?.send(
@@ -549,6 +565,15 @@ export default function SftpPanel({
     const last = lastOperationRef.current;
     if (last) handleFileOperation(last.kind, last.paths, last.destination);
   }, [handleFileOperation]);
+  useEffect(() => {
+    if (editFile?.refreshMode !== "auto" || !editorSocket || editorSocket.readyState !== WebSocket.OPEN)
+      return;
+    const stat = () =>
+      editorSocket.send(JSON.stringify({ action: "stat", path: editFile.path }));
+    stat();
+    const interval = window.setInterval(stat, 5000);
+    return () => window.clearInterval(interval);
+  }, [editFile?.path, editFile?.refreshMode, editorSocket]);
   useEffect(() => {
     if (refreshNonce) fetchDir(pathRef.current, true);
   }, [fetchDir, refreshNonce]);
@@ -674,6 +699,13 @@ export default function SftpPanel({
               <FileEditor
                 filePath={editFile.path}
                 fileName={editFile.name}
+                revision={editFile.revision}
+                refreshMode={editFile.refreshMode}
+                onRefreshModeChange={(refreshMode) =>
+                  setEditFile((current) =>
+                    current ? { ...current, refreshMode } : current,
+                  )
+                }
                 ws={editorSocket}
                 onClose={() => setEditFile(null)}
                 onSaved={() => fetchDir(path, true)}

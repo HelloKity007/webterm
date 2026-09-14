@@ -127,6 +127,21 @@ func handleLocalFS(conn *websocket.Conn, registry *WSRegistry) {
 			if err := sendChunkedFileList(outbound, path, files); err != nil {
 				return
 			}
+		case "stat":
+			path, err := cleanLocalPath(msg.Path)
+			if err == nil {
+				var info os.FileInfo
+				info, err = os.Stat(path)
+				if err == nil {
+					err = outbound.Send(map[string]interface{}{
+						"type": "file_stat", "path": path, "size": info.Size(),
+						"mod_time": info.ModTime().Format("2006-01-02 15:04:05"),
+					})
+				}
+			}
+			if err != nil {
+				outbound.Send(map[string]interface{}{"type": "error", "error": err.Error()})
+			}
 		case "read":
 			cleanPath, err := cleanLocalPath(msg.Path)
 			if err == nil {

@@ -18,8 +18,9 @@ const runID = `${Date.now()}-${randomUUID().slice(0, 8)}`;
 const localName = `webterm-file-qa-${runID}`;
 const renamedName = `${localName}-renamed`;
 const secondName = `${localName}-second`;
+const editorName = `${localName}-editor.txt`;
 const localRoot = '/tmp';
-const localPaths = [`${localRoot}/${localName}`, `${localRoot}/${renamedName}`, `${localRoot}/${secondName}`];
+const localPaths = [`${localRoot}/${localName}`, `${localRoot}/${renamedName}`, `${localRoot}/${secondName}`, `${localRoot}/${editorName}`];
 const remoteConnectionID = process.env.WEBTERM_QA_REMOTE_CONNECTION_ID
   ? Number(process.env.WEBTERM_QA_REMOTE_CONNECTION_ID) : null;
 const remoteConnectionName = process.env.WEBTERM_QA_REMOTE_CONNECTION_NAME || '';
@@ -89,6 +90,37 @@ async function cleanupLocalFixtures() {
       report.diagnostics.cleanup.push({ path, error: redact(error.message) });
     });
   }
+}
+
+async function localFileContent(path, content) {
+  assert(path.startsWith('/tmp/webterm-file-qa-'), `unsafe local fixture path: ${path}`);
+  return page.evaluate(async ({ path, content }) => {
+    const ticketResponse = await fetch('/api/ws-tickets', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token') || ''}` },
+      body: JSON.stringify({ endpoint: 'local-fs', conn_id: 0, terminal_id: '', client_id: '' }),
+    });
+    if (!ticketResponse.ok) throw new Error(`fixture ticket failed: ${ticketResponse.status}`);
+    const { ticket } = await ticketResponse.json();
+    const url = new URL(`${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws/local-fs`);
+    url.searchParams.set('ticket', ticket);
+    return new Promise((resolvePromise, rejectPromise) => {
+      const socket = new WebSocket(url);
+      const timer = setTimeout(() => { socket.close(); rejectPromise(new Error('fixture operation timed out')); }, 10000);
+      socket.onopen = () => socket.send(JSON.stringify({ action: content === undefined ? 'read' : 'write', path, ...(content === undefined ? {} : { content }) }));
+      socket.onerror = () => { clearTimeout(timer); rejectPromise(new Error('fixture socket failed')); };
+      socket.onmessage = (event) => {
+        const message = JSON.parse(event.data);
+        if (message.type === 'file_content' && content === undefined) {
+          clearTimeout(timer); socket.close(); resolvePromise(message.content || '');
+        } else if (message.type === 'write_done' && content !== undefined && message.path === path) {
+          clearTimeout(timer); socket.close(); resolvePromise(true);
+        } else if (message.type === 'error') {
+          clearTimeout(timer); socket.close(); rejectPromise(new Error(message.error));
+        }
+      };
+    });
+  }, { path, content });
 }
 
 async function remoteSocketAction(action, path) {
@@ -252,6 +284,37 @@ try {
     assert.equal(await localPane.locator('[data-file-row]').filter({ hasText: secondName }).count(), 0);
     await localPane.getByRole('button', { name: /清除筛选|Clear filter/ }).click();
     pass('File-name filter narrows rows and its explicit clear action restores the list', { query: renamedName });
+
+    const editorPath = `${localRoot}/${editorName}`;
+    await localFileContent(editorPath, 'initial content\n');
+    await localPane.getByRole('button', { name: /刷新|Refresh/ }).click();
+    const editorRow = await namedRow(localPane, editorName);
+    await editorRow.dblclick();
+    const editorModal = page.locator('.modal-card');
+    await editorModal.waitFor();
+    const editorContent = editorModal.locator('.cm-content');
+    await editorContent.waitFor();
+    await editorModal.getByRole('button', { name: /使用手动刷新|Use manual refresh/ }).click();
+    await editorContent.click();
+    await page.keyboard.press('Control+A');
+    await page.keyboard.type('unsaved draft');
+    await page.waitForTimeout(1100);
+    await localFileContent(editorPath, 'external version\n');
+    await editorModal.getByRole('button', { name: /重新加载|Reload/ }).click();
+    await editorModal.getByRole('alert').waitFor();
+    await editorModal.getByRole('button', { name: /保留草稿|Keep draft/ }).click();
+    assert((await editorContent.innerText()).includes('unsaved draft'), 'manual refresh overwrote an unsaved draft');
+    await editorModal.getByRole('button', { name: /重新加载|Reload/ }).click();
+    await editorModal.getByRole('alert').getByRole('button', { name: /重新加载|Reload/ }).click();
+    await page.waitForFunction(() => document.querySelector('.modal-card .cm-content')?.textContent?.includes('external version'));
+    await editorContent.click();
+    await page.keyboard.press('Control+A');
+    await page.keyboard.type('saved version');
+    await editorModal.getByRole('button', { name: /保存|Save/ }).click();
+    await editorModal.waitFor({ state: 'detached', timeout: 10000 });
+    assert.equal(await localFileContent(editorPath), 'saved version');
+    await localSocketAction('delete', editorPath);
+    pass('Editor save persists bytes; manual refresh preserves drafts until the user confirms reload', { path: editorPath });
 
     page.once('dialog', (dialog) => dialog.accept());
     firstRow = await namedRow(localPane, renamedName);

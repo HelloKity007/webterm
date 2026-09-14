@@ -44,6 +44,8 @@ const zh: Record<string, string> = {
   file_rename: '重命名', file_refresh: '刷新', file_upload: '上传',
   file_upload_failed: '上传失败', file_upload_error: '网络错误，上传失败',
   file_download_failed: '下载失败', file_loading: '加载中...', file_folder_name: '文件夹名', file_bak: '保存前备份 .bak',
+  file_external_change: '文件已在编辑器外发生变化，是否重新加载？', file_reload: '重新加载', file_keep_draft: '保留草稿',
+  file_refresh_mode_prompt: '请选择当前打开文件的刷新方式。', file_auto_refresh: '开启自动刷新', file_manual_refresh: '使用手动刷新', file_pause_auto_refresh: '暂停自动刷新',
   file_browser: '文件浏览器', file_filter: '筛选文件', file_filter_clear: '清除筛选',
   file_empty: '此目录为空', file_empty_hint: '可上传文件或新建文件夹', file_no_matches: '没有匹配的文件',
   file_selected_count: '项已选择', file_item_count: '项', file_hidden_count: '项已隐藏',
