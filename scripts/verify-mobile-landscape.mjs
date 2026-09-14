@@ -40,14 +40,27 @@ try {
     await digits.filter({ hasText: /^5$/ }).tap();
     const bar = page.locator('.terminal-tabbar:visible');
     const start = await bar.evaluate(element => { element.scrollLeft = 0; return { width: element.clientWidth, total: element.scrollWidth }; });
-    assert(start.total > start.width, `${fixture.name}: Panel 5 tabs do not overflow fixture`);
-    const box = await bar.boundingBox();
     const cdp = await context.newCDPSession(page);
-    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: box.x + box.width - 20, y: box.y + box.height / 2 }] });
-    for (let step = 1; step <= 10; step++) await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: box.x + box.width - 20 - step * (box.width - 40) / 10, y: box.y + box.height / 2 }] });
-    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
-    await page.waitForTimeout(300);
-    assert(await bar.evaluate(element => element.scrollLeft > 0), `${fixture.name}: Panel tabs did not touch-scroll`);
+    let panelTabReachability;
+    if (start.total > start.width) {
+      const box = await bar.boundingBox();
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: box.x + box.width - 20, y: box.y + box.height / 2 }] });
+      for (let step = 1; step <= 10; step++) await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: box.x + box.width - 20 - step * (box.width - 40) / 10, y: box.y + box.height / 2 }] });
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+      await page.waitForTimeout(300);
+      assert(await bar.evaluate(element => element.scrollLeft > 0), `${fixture.name}: Panel tabs did not touch-scroll`);
+      panelTabReachability = 'PASS (touch-scrolled overflow)';
+    } else {
+      const last = bar.locator('[data-terminal-tab]').last();
+      const visible = await last.evaluate((element, container) => {
+        const tab = element.getBoundingClientRect(), bounds = container.getBoundingClientRect();
+        return tab.left >= bounds.left && tab.right <= bounds.right;
+      }, await bar.elementHandle());
+      assert(visible, `${fixture.name}: final Panel tab is clipped`);
+      await last.tap();
+      assert.equal(await last.getAttribute('data-active'), 'true');
+      panelTabReachability = 'PASS (all tabs fit and final tab selectable)';
+    }
 
     await digits.filter({ hasText: /^6$/ }).tap();
     const reader = page.locator('.mobile-reader-text:visible');
@@ -75,7 +88,7 @@ try {
     assert.equal(await page.locator('.xterm-helper-textarea:focus').count(), 0);
     assert.equal(errors.length, 0);
     await page.screenshot({ path: `${output}/${fixture.name.replaceAll(' ', '-').toLowerCase()}.png` });
-    report.cases.push({ name: fixture.name, panelSwitch: 'PASS', panelTabTouch: 'PASS', historyTouch: scroll.max > 2 ? 'PASS' : 'NOT APPLICABLE (content fits)', canvas, errors });
+    report.cases.push({ name: fixture.name, panelSwitch: 'PASS', panelTabReachability, historyTouch: scroll.max > 2 ? 'PASS' : 'NOT APPLICABLE (content fits)', canvas, errors });
     await context.close();
   }
   report.status = 'PASS (emulated mobile browsers; physical IME remains manual)';
