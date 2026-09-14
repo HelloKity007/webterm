@@ -14,9 +14,16 @@ export default function MainArea() {
   // snapshot cannot restore into an empty workspace before migration runs.
   const activeModule = normalizeModuleType(useLayoutStore((s) => s.activeModule));
   const connections = useConnectionStore((s) => s.connections);
+  const fetchConnections = useConnectionStore((s) => s.fetchConnections);
   const drainTabQueue = useLayoutStore((s) => s.drainTabQueue);
   const [dbTabs, setDbTabs] = useState<Tab[]>([]);
   const [dbActiveTabId, setDbActiveTabId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (activeModule === 'files' && connections.length === 0) {
+      void fetchConnections();
+    }
+  }, [activeModule, connections.length, fetchConnections]);
 
   useEffect(() => {
     const interval = setInterval(() => {
