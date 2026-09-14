@@ -95,12 +95,17 @@ export default function SftpPanel({
   const reconnectAttemptsRef = useRef(0);
   const pathRef = useRef(path);
   const prevKeyRef = useRef(sessionKey);
+  const filesRef = useRef(files);
   const listingFilesRef = useRef<SftpFile[]>([]);
+  const listingHadFilesRef = useRef(false);
   const listingFrameRef = useRef<number | null>(null);
 
   useEffect(() => {
     pathRef.current = path;
   }, [path]);
+  useEffect(() => {
+    filesRef.current = files;
+  }, [files]);
 
   // Save cache for old session before switching to new one.
   useEffect(() => {
@@ -272,12 +277,13 @@ export default function SftpPanel({
               listingFrameRef.current = null;
             }
             listingFilesRef.current = [];
-            setFiles([]);
+            listingHadFilesRef.current = filesRef.current.length > 0;
+            if (!listingHadFilesRef.current) setFiles([]);
             setPath(msg.path || pathRef.current);
-            setLoading(true);
+            setLoading(!listingHadFilesRef.current);
           } else if (msg.type === "file_list_chunk") {
             listingFilesRef.current.push(...(msg.files || []));
-            if (listingFrameRef.current === null) {
+            if (!listingHadFilesRef.current && listingFrameRef.current === null) {
               listingFrameRef.current = requestAnimationFrame(() => {
                 listingFrameRef.current = null;
                 setFiles([...listingFilesRef.current]);
