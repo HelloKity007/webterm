@@ -112,14 +112,15 @@ try {
 
   const contextLoss = await clientA.page.evaluate(() => {
     const surface = document.querySelector('.terminal-surface[data-renderer="webgl"]');
-    const canvas = surface?.querySelector('canvas');
-    if (!surface || !canvas) return { supported: false };
-    canvas.dispatchEvent(new Event('webglcontextlost', { cancelable: true }));
-    return { supported: true };
+    const canvases = surface?.querySelectorAll('canvas');
+    if (!surface || !canvases?.length) return { supported: false };
+    canvases.forEach(canvas => canvas.dispatchEvent(new Event('webglcontextlost', { cancelable: true })));
+    return { supported: true, canvases: canvases.length };
   });
   if (contextLoss.supported) {
-    await clientA.page.waitForFunction(() => document.querySelector('.terminal-surface')?.dataset.contextLosses === '1');
-    assert.equal(await clientA.page.locator('.terminal-surface').first().getAttribute('data-renderer'), 'dom');
+    await clientA.page.waitForFunction(() => [...document.querySelectorAll('.terminal-surface')].some(surface => surface.dataset.contextLosses === '1'));
+    const fallback = clientA.page.locator('.terminal-surface[data-context-losses="1"]');
+    assert.equal(await fallback.getAttribute('data-renderer'), 'dom');
     report.checks.push('synthetic WebGL context loss falls back to DOM without remounting the terminal');
   } else {
     report.checks.push('browser started in DOM fallback; WebGL context-loss injection not applicable');
