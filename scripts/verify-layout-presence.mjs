@@ -102,6 +102,28 @@ try {
   assert.equal(conflicts.find(result => result.status === 409).body.code, 'LAYOUT_CONFLICT');
   report.checks.push('simultaneous layout writes produce one success and one stable LAYOUT_CONFLICT');
 
+  const keyboardBefore = await clientA.page.locator('.terminal-grid-cell:visible').first().boundingBox();
+  await clientA.page.locator('[data-layout-divider="root:0"]').focus();
+  await clientA.page.keyboard.press('ArrowLeft');
+  await clientA.page.waitForTimeout(800);
+  const keyboardAfter = await clientA.page.locator('.terminal-grid-cell:visible').first().boundingBox();
+  assert(Math.abs(keyboardAfter.width - keyboardBefore.width) > 20, 'keyboard divider adjustment did not change panel width');
+  report.checks.push('divider is keyboard focusable and arrow-adjustable');
+
+  const contextLoss = await clientA.page.evaluate(() => {
+    const surface = document.querySelector('.terminal-surface[data-renderer="webgl"]');
+    const canvas = surface?.querySelector('canvas');
+    if (!surface || !canvas) return { supported: false };
+    canvas.dispatchEvent(new Event('webglcontextlost', { cancelable: true }));
+    return { supported: true };
+  });
+  if (contextLoss.supported) {
+    await clientA.page.waitForFunction(() => document.querySelector('.terminal-surface')?.dataset.contextLosses === '1');
+    assert.equal(await clientA.page.locator('.terminal-surface').first().getAttribute('data-renderer'), 'dom');
+    report.checks.push('synthetic WebGL context loss falls back to DOM without remounting the terminal');
+  } else {
+    report.checks.push('browser started in DOM fallback; WebGL context-loss injection not applicable');
+  }
   const renderer = await clientA.page.evaluate(() => window.__webtermRendererMetrics);
   assert(renderer && renderer.webglActive + renderer.domActive === 2 && renderer.mounts >= 2);
   report.renderer = renderer;

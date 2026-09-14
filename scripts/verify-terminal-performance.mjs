@@ -99,6 +99,9 @@ try {
   }
   await page.waitForTimeout(outputSeconds * 1000 + 3000);
   const intervals = await page.evaluate(() => { window.__webtermFrameRunning = false; return window.__webtermFrameIntervals; });
+  report.renderer = await page.evaluate(() => window.__webtermRendererMetrics);
+  report.environment = await page.evaluate(() => ({ userAgent: navigator.userAgent, hardwareConcurrency: navigator.hardwareConcurrency,
+    viewport: [innerWidth, innerHeight], devicePixelRatio, renderer: document.querySelector('.terminal-surface')?.dataset.renderer }));
   const frameP95 = percentile(intervals, 0.95);
   report.frames = { samples: intervals.length, p50Ms: percentile(intervals, 0.5), p95Ms: frameP95, maxMs: Math.max(...intervals) };
   assert(frameP95 <= 22.2, `p95 frame interval ${frameP95.toFixed(2)}ms exceeds 22.2ms`);
@@ -138,7 +141,6 @@ try {
   } else {
     report.checks.push('short performance rehearsal completed; 30-minute memory assertion not claimed');
   }
-  report.renderer = await page.evaluate(() => window.__webtermRendererMetrics);
   assert(report.renderer && report.renderer.webglActive + report.renderer.domActive === 8);
   await page.screenshot({ path: `${output}/performance-final.png` });
   report.status = 'PASS';

@@ -22,6 +22,7 @@ import MobileTerminalReader from './MobileTerminalReader';
 import { terminalModeAfterPrivateControl } from './terminalMode';
 import { localViewportFont, localViewportScroll, localViewportRevealRow } from './localViewport';
 import { observeTerminalRenderer } from './terminalRendererMetrics';
+import { takeTerminalOutput } from './terminalOutputQueue';
 import {
   createTerminalWheelState,
   createLatestTerminalWheelSender,
@@ -131,6 +132,8 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
   const pendingUploadRef = useRef<ZSession | null>(null);
   const outputQueueRef = useRef<Uint8Array[]>([]);
   const outputFrameRef = useRef<number | null>(null);
+  const outputWritePendingRef = useRef(false);
+  const outputPumpRef = useRef<() => void>(() => {});
   const sendRef = useRef<(data: string) => void>(() => {});
   const requestedGridRef = useRef<TerminalGrid | null>(null);
   const inputViewportFollowedRef = useRef(false);
@@ -145,25 +148,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
 
   const enqueueTerminalOutput = useCallback((bytes: Uint8Array) => {
     outputQueueRef.current.push(bytes);
-    if (outputFrameRef.current !== null) return;
-    outputFrameRef.current = requestAnimationFrame(() => {
-      outputFrameRef.current = null;
-      const term = termRef.current;
-      const queue = outputQueueRef.current.splice(0);
-      if (!term || queue.length === 0) return;
-      const total = queue.reduce((size, chunk) => size + chunk.byteLength, 0);
-      const merged = new Uint8Array(total);
-      let offset = 0;
-      for (const chunk of queue) {
-        merged.set(chunk, offset);
-        offset += chunk.byteLength;
-      }
-      try {
-        deliverTerminalBytes(term, zsentryRef.current, merged);
-      } catch (error) {
-        console.warn('terminal output delivery:', error);
-      }
-    });
+    outputPumpRef.current();
   }, []);
 
   useEffect(() => {
@@ -977,6 +962,32 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
         term.element.style.backgroundColor = themeConfig.background;
       }
       termRef.current = term;
+      const pumpTerminalOutput = () => {
+        if (outputFrameRef.current !== null || outputWritePendingRef.current || outputQueueRef.current.length === 0) return;
+        outputFrameRef.current = requestAnimationFrame(() => {
+          outputFrameRef.current = null;
+          const merged = takeTerminalOutput(outputQueueRef.current, 16 * 1024);
+          if (merged.byteLength === 0) return;
+          try {
+            if (zsentryRef.current) {
+              deliverTerminalBytes(term, zsentryRef.current, merged);
+              pumpTerminalOutput();
+            } else {
+              outputWritePendingRef.current = true;
+              term.write(merged, () => {
+                outputWritePendingRef.current = false;
+                pumpTerminalOutput();
+              });
+            }
+          } catch (error) {
+            outputWritePendingRef.current = false;
+            console.warn('terminal output delivery:', error);
+            pumpTerminalOutput();
+          }
+        });
+      };
+      outputPumpRef.current = pumpTerminalOutput;
+      pumpTerminalOutput();
       setTermKey((k) => k + 1);
 
       requestAnimationFrame(() => {
@@ -1009,6 +1020,8 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       if (widthFitFrame !== null) cancelAnimationFrame(widthFitFrame);
       if (outputFrameRef.current !== null) cancelAnimationFrame(outputFrameRef.current);
       outputFrameRef.current = null;
+      outputWritePendingRef.current = false;
+      outputPumpRef.current = () => {};
       outputQueueRef.current = [];
       titleDisposable.dispose();
       modeDisposables.forEach(disposable => disposable.dispose());
