@@ -1,8 +1,8 @@
 # WebTerm 深化开发规格说明书（Spec v1.2）
 
-> 状态：**dev-1.0.4 迭代；移动端基线已由用户确认，剩余 P0 未整体验收**
-> 创建日期：2026-09-04；最近同步：2026-09-11
-> 已验收生产基线：`HelloKity007/webterm`，`rb-1.0.3` / `2df868a`；开发分支：`dev-1.0.4`
+> 状态：**dev-1.0.5 候选；M5–M7 已实现，M8 自动化验收执行中**
+> 创建日期：2026-09-04；最近同步：2026-09-13
+> 已验收生产基线：`HelloKity007/webterm`，`rb-1.0.4` / `157373e`；开发分支：`dev-1.0.5`
 > 取代：`2026-09-04-WebTerm-Dev-Spec-v1.1.md` 作为后续实施与验收依据
 > 实施计划：[2026-09-04-webterm-deep-development.md](../../exec-plans/active/2026-09-04-webterm-deep-development.md)
 
@@ -10,7 +10,7 @@
 
 2026-09-13 工作区关闭补充（用户批准）：顶部工作区 Tab 与 Panel 使用相同关闭图标/样式；关闭前显示名称、下属 Panel 数量及不可撤销的进程终止警告。确认后关闭所有下属标签（包括未激活标签），终止对应 SSH/tmux 程序；最后一个工作区关闭后创建全新身份的空工作区。取消不变更状态；部分远端关闭失败时保留工作区、明确提示可重试及已终止程序不可恢复。测试环境仅在私有 tmux socket 上允许显式终止，不解除普通关闭的会话保留策略；不得影响其他工作区/账号或生产。测试需覆盖双端同步、失败重试、刷新持久化与会话不被旧连接重建。
 
-2026-09-13 动态视觉补充：输入时仅将越界光标移入本地可视区，不得无条件滚到共享画布底部而隐藏 Bash 开头几行；后台光标变化不得抢走用户正在查看的历史。小屏字号保持本地宽度预算独立，大屏客户端加入不得缩小本地字号。移动设备横屏仍必须显示单 Panel 切换条、名称标签和换行阅读层，不能以宽度超过 700px 退回不可操作状态。控制连接反复建立/断开还必须保持实际 tmux server/pane 身份；测试依赖已隔离为 3.7c，禁止用同名新建会话冒充会话保留。测试候选 `157373e` 已完成 fresh/normal/hard 共 33 项动态矩阵，桌面三宽度、双屏、移动横竖屏和工作区关闭全部通过；生产仍为 `2df868a`。
+2026-09-13 动态视觉补充：输入时仅将越界光标移入本地可视区，不得无条件滚到共享画布底部而隐藏 Bash 开头几行；后台光标变化不得抢走用户正在查看的历史。小屏字号保持本地宽度预算独立，大屏客户端加入不得缩小本地字号。移动设备横屏仍必须显示单 Panel 切换条、名称标签和换行阅读层，不能以宽度超过 700px 退回不可操作状态。控制连接反复建立/断开还必须保持实际 tmux server/pane 身份；测试依赖已隔离为 3.7c，禁止用同名新建会话冒充会话保留。测试候选 `157373e` 已完成 fresh/normal/hard 共 33 项动态矩阵，桌面三宽度、双屏、移动横竖屏和工作区关闭全部通过，随后经用户批准成为 `rb-1.0.4` 生产基线。
 
 v1.1 的产品方向成立：WebTerm 的近期核心仍是“同一账号、多个浏览器、同一套布局、同一批 tmux 会话”。但 v1.1 不能直接实施，原因是它把已完成能力、待强化能力和未完成架构混在一起，并包含数个不可同时满足的承诺。
 
@@ -71,7 +71,7 @@ v1.1 的产品方向成立：WebTerm 的近期核心仍是“同一账号、多�
 
 ## 3. 当前代码基线
 
-下表为持续更新的实现快照。2026-09-11 增量：`2df868a` 已生产发布且用户确认；`9284830` 已在 `dev-1.0.4` 的 9444 发布测试环境实现并验证 WS ticket/握手前授权、单写者、tmux/SSH 保活和无限重连。presence、布局增强与性能门禁仍未因此自动完成。后续按主计划的增量审计记录执行，不能把单个阶段通过改写为整个 P0 验收。
+下表为持续更新的实现快照。`157373e` 已经用户确认并作为 `rb-1.0.4` 部署生产；`9284830` 起完成 WS ticket/握手前授权、单写者、tmux/SSH 保活和无限重连。dev-1.0.5 继续完成 divider/CAS UX、presence、renderer fallback 与性能门禁；最终状态以对应 QA evidence 的 PASS/FAIL/NOT RUN 分母为准。
 
 | 能力 | 事实状态 | 代码依据 | P0 动作 |
 |---|---|---|---|
@@ -82,15 +82,15 @@ v1.1 的产品方向成立：WebTerm 的近期核心仍是“同一账号、多�
 | 显式关闭会话 | 已完成 | `DELETE /api/terminal-sessions/{conn_id}` | 保持立即 kill 和幂等 |
 | 连接容量 | 已完成并有证据 | SSH transport 分片；1,000 pane 实测 | 固化 24 路 P0 门禁 |
 | 一屏 8 pane | 已完成并验收 | `layoutPresets.ts`、Split 8；`87ec38e` | 保持回归；4×2、1×1 和 divider 作为后续布局增强 |
-| 拖动比例 | 未完成 | 树有 ratios，UI 无 divider drag | 实现拖动结束提交 |
+| 拖动比例 | dev-1.0.5 已实现 | `LayoutDividerOverlay.tsx`、`layoutDividers.ts` | 保持 pointer/keyboard、单次保存和双端收敛回归 |
 | pane 内会话 Tab | 已完成基础并验收 | `TabBar.tsx`、`layoutPersistence.ts`、`labelNumber`；`9dcb110` | 作为既有能力保留，不等同于下一阶段工作区 Tab |
 | 工作区 Tab | 已完成并通过发布测试验收 | `workspaceLayout.ts`、`WorkspaceTabBar.tsx`、schema v2 handler；`f812186`、`e8f2eef` | 转为回归门禁；M3 WS 安全成为下一阶段 |
 | 跨 Panel 广播 | 产品取消 | 2026-09-11 用户确认多端同会话输入默认共享，不保留广播按钮 | 删除按钮、状态和跨 Panel 转发；不同 Panel 保持独立 |
 | SFTP 跟随 cd | 已完成基础 | OSC 7 → `sftpCdPaths` | 移出新增功能，保留回归 |
 | 自动重连 | M4 已实现，候选已验证 | full-jitter 1–30 秒、无限生命周期、offline/online 感知；`9284830` | 保留 30 秒/5 分钟断链和服务重启回归 |
 | 心跳 | M4 已实现，候选已验证 | 浏览器 20 秒 ping、服务端 45 秒 activity deadline、SSH keepalive；`9284830` | 保留 idle/中间设备断链回归 |
-| presence | 未完成 | 无 registry | 新增短生命周期 registry |
-| WebGL | 未完成 | xterm 6 默认 renderer，无 addon | 加 WebGL + context-loss 回退 |
+| presence | dev-1.0.5 已实现 | `handler/presence.go`、typed control events、Tab 在线设备数 | 保持 grace、跨用户隔离和 ghost 清理回归 |
+| WebGL | dev-1.0.5 已完成可观测与回退门禁 | WebglAddon、renderer metrics、context-loss DOM fallback | 保持 8 pane 性能与生命周期回归 |
 | WS 安全 | M3 已实现，候选已验证 | 30 秒单次 ticket、upgrade 前授权、严格 Origin、单写者；`9284830` | 保留非法握手、race 和凭据泄漏回归 |
 | Codex/Claude CLI 历史与复制 | 已完成并验收 | `955d265`–`e14aacf`；CLI evidence | 转为回归门禁 |
 | 跨尺寸共享终端 | 已完成并验收 | `d1ef4ab`；`terminalScaling.ts`、受控 grid title | 保持“大屏铺满、小屏完整缩放”回归 |
@@ -510,6 +510,7 @@ JWT signing secret 必须来自稳定的生产配置/环境变量，使服务重
 
 ## 13. 变更记录
 
+- v1.2（2026-09-13 / dev-1.0.5）：生产基线同步为 `rb-1.0.4` / `157373e`；完成 M5 布局 divider/CAS、M6 presence 和 M7 renderer/output 稳定性实现，并把 24 shell、真实 Chrome 性能、30 分钟内存和逐版动态视觉矩阵固化为 M8 交付门禁。
 - v1.2（2026-09-11 / dev-1.0.4）：生产基线推进至 `2df868a`；归并 MOB-01–08，修正旧完整 grid 缩放承诺和移动端 P2 分类；取消容易误解且有误操作风险的跨 Panel 广播按钮，同一 terminalID 多端输入继续默认共享。
 - v1.2（2026-09-11 / M3–M4）：`9284830` 在 9444 候选环境完成短期单次 WS ticket、严格 Origin、单写者/背压、稳定 JWT key、tmux 预检、SSH/application keepalive、无限重连与优雅停机；30 秒、5 分钟断链、服务重启及默认多端同会话输入均有浏览器证据。生产 9443 未改动。
 

@@ -1,11 +1,11 @@
 # WebTerm 深化开发分阶段实施计划（Spec v1.2）
 
-> Status: 🟡 dev-1.0.4 — M3 已完成，M4 实现及断链门禁已完成；剩余 P0 分阶段执行，未整体验收
-> Created: 2026-09-04；Last synced: 2026-09-11
+> Status: 🟡 dev-1.0.5 — M3–M7 已实现；M8 自动化验收与证据收口中
+> Created: 2026-09-04；Last synced: 2026-09-13
 > Source spec: `docs/superpowers/specs/2026-09-04-WebTerm-Dev-Spec-v1.2.md`
-> Target branch: `dev-1.0.4`（主仓库开发，不使用 worktree）
-> Accepted production HEAD: `2df868a` / `rb-1.0.3`；用户确认“ok了”
-> 本轮发布目标：9444 release-test；不自动推进生产或 rb-1.0.4
+> Target branch: `dev-1.0.5`（主仓库开发，不使用 worktree）
+> Accepted production HEAD: `157373e` / `rb-1.0.4`；用户已确认并完成生产发布
+> 本轮发布目标：9444 release-test；不自动推进生产或 rb-1.0.5
 
 ## 1. 目标
 
@@ -53,7 +53,7 @@
 - [x] dev-1.0.4 `f52b6ec`部署9444并执行浏览器回归，6组smoke断言通过；详情见`docs/qa/2026-09-11-mobile-1.0.4.md`。后续仅证据文档提交仍需重新部署并复跑smoke。
 - [x] 真机 IME/横竖屏/长历史压力等未跑项目已单列；此项完成指完成记录，不是测试通过。
 
-本轮已继续完成 M3/M4；M5–M8 仍按阶段出口独立实施和验收，不擅自删减主计划剩余需求或宣称整个 P0 完成。
+dev-1.0.4 已完成 M3/M4；dev-1.0.5 已实现 M5–M7。M8 仍按自动化、真实浏览器、模拟移动端和物理设备分别记录，不把未运行项写成 PASS。
 
 ### M-COMPACT — dev-1.0.4 紧凑桌面收敛切片
 
@@ -61,7 +61,7 @@
 
 - [x] 同会话跨屏字号回归已关闭：`157373e` 的 fresh/normal/hard 双屏逐帧记录在相同本地几何下均为 0 次字号变化，包含另一端未刷新的同/不同会话切换。
 
-- [ ] 2026-09-13 第二轮回归：已复现切换销毁终端 FAIL；改为保留已访问标签实例，布局同步更新数据而非整组重挂载；几何变化重新申请客户端尺寸。必须执行新增逐版动态视觉矩阵，尤其双屏同/不同会话、拖动、跨行重复输入、字号稳定和铺满，不以单测/最终无裁切替代用户视觉验收。
+- [x] 2026-09-13 第二轮回归：切换销毁终端的 FAIL 已修复为保留已访问标签实例，布局同步更新数据而非整组重挂载；`157373e` 完成 fresh/normal/hard 三轮 33 项动态视觉矩阵并由用户验收，后续候选继续逐版复跑，不沿用旧 PASS。
 
 - [x] 2026-09-13：修复下方 CLI 滚入视野的试字号抖动、桌面 Bash 服务端/浏览器列宽不一致；同组 Panel 标签鼠标拖动排序并保留编号、活动会话及跨组移动代码。测试候选 `416e28f`：115 项单测、三档桌面 CLI 回归、两档实际重复键输入、同组拖动及移动端 smoke 通过；证据见 `docs/qa/2026-09-13-terminal-grid-and-tab-order.md`。手机长按排序未实现，原横向滑动已回归；跨组拖动/刷新持久化及物理设备验收未重测，不宣称全量验收。
 
@@ -108,12 +108,12 @@
 | M2 | 工作区 Tab | 已验收 8 pane 基线 | ✅ 上层多 Tab、固定编号、重命名、v1→v2、真实浏览器多端验收通过 |
 | M3 | WS 安全与单写者 | M2 | ✅ upgrade 前授权、Origin、ticket、无 race；`9284830` |
 | M4 | tmux/SSH 保活与自动重连 | M3 | ✅ 实现、30 秒/5 分钟断链和服务重启恢复；30 分钟 idle 作为持续回归 |
-| M5 | 布局增强、divider 与冲突 UX | M2、M4 | 保持已验收 8 pane，补 1×1/4×2、拖动同步、CAS 收敛 |
-| M6 | presence 与多端会话状态 | M5 | distinct client presence、同 terminalID 默认共享输入且不同会话不串扰 |
-| M7 | WebGL fallback 与性能稳定 | M4、M5 | 受控负载达到门槛、context loss 可恢复 |
+| M5 | 布局增强、divider 与冲突 UX | M2、M4 | ✅ 1×1/4×2、pointer/keyboard divider、单次保存、CAS 冲突收敛 |
+| M6 | presence 与多端会话状态 | M5 | ✅ distinct client + 15 秒 grace；同 terminalID 默认共享且不同会话不串扰 |
+| M7 | WebGL fallback 与性能稳定 | M4、M5 | ✅ renderer/output 可观测、context-loss DOM 回退；性能长稳门禁见本轮 evidence |
 | M8 | 三端系统验收与 P0 发布 | M1–M7 | 全门禁、证据包；复用已验收双环境提升/回滚链路 |
 
-M6 和 M7 在 M5 契约稳定后可并行开发，但合并前分别在最新共同基线上复验。M2 已完成，下一阶段按依赖进入 M3；pane 内现有会话 Tab、已验收的一屏 8 pane 和 M1 不重复开发。
+M5 契约稳定后，M6 presence 与 M7 renderer/performance 已在 dev-1.0.5 的共同基线上实现并复验。pane 内现有会话 Tab、已验收的一屏 8 pane 和 M1 继续作为回归基线，不重复开发。
 
 ## 4. M0 — 基线冻结与测试夹具
 
@@ -467,6 +467,7 @@ git diff --check
 
 ## 15. Progress Notes
 
+- [2026-09-13] dev-1.0.5 完成 M5–M7：布局模板/divider/CAS 收敛、distinct-client presence、renderer lifecycle/context-loss fallback 和有界输出解析。真实 Chrome 8 pane × 64KiB/s × 60 秒 p95 16.8ms，100 次真实回车输入 p95 30.8ms，30 分钟内存门禁通过；24 shell 与 400 次 tmux churn 通过。最终 9444 动态视觉矩阵及物理设备边界见 `docs/qa/2026-09-13-dev-1.0.5-m5-m8.md`。
 - [2026-09-13] 工作区 Tab 关闭需求已实现并仅部署测试 9444，候选 `729b196`：同 Panel 的 14px 关闭按钮、确认提示、隐藏子会话级联终止、失败重试、多端新增保护、最后 Tab 留新空工作区。桌面/移动模拟/并发/普通与强制刷新关闭专项通过。整体视觉门禁仍未验收：普通刷新 Claude 行数偶发变化与 2860 宽度留白仍待解决；复跑通过不撤销原 FAIL。详见 `docs/qa/2026-09-13-workspace-close-acceptance.md`；生产未动。
 - [2026-09-11] `2df868a`生产版本用户确认；创建dev-1.0.4。主Spec追加MOB-01–08，归并横滑标签、换行、触摸历史、去白线、统一字号和键盘视口恢复；同步主/补充计划，不将剩余P0自动视为验收。
 - [2026-09-11] 用户取消跨 Panel 广播入口；删除按钮、前端广播 store 和转发逻辑，同一 terminalID 的多设备 tmux attach 输入默认共享保持不变。
