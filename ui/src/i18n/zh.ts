@@ -67,7 +67,7 @@ const zh: Record<string, string> = {
   multi_selected: '已选', multi_items: '项', multi_delete: '删除',
   multi_move: '移动到...', multi_cancel: '取消', multi_mode: '多选模式',
   login_title: 'webterm', login_username: '用户名', login_password: '密码',
-  login_remember: '记住密码', login_submit: '登录', login_error: '用户名或密码错误', not_logged_in: '未登录',
+  login_remember: '记住用户名', login_submit: '登录', login_error: '用户名或密码错误', not_logged_in: '未登录',
   status_connected: '已连接', status_disconnected: '未连接', status_not_login: '登录',
   batch_label: '标签:',
   config_users: '用户管理', config_ssh: 'SSH 连接', config_database: '数据库连接',

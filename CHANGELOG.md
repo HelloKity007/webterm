@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.0.6] - Unreleased
+
+### Security
+
+- 登录界面不再把用户名作为 HTML 注入，消除登录前 DOM XSS 路径。
+- “记住密码”改为只记住用户名，并在客户端启动时删除旧版遗留的明文密码。
+- 升级 React Router，修复依赖审计报告的高危与中危漏洞。
+- 最低 Go 工具链提升到 1.26.6，并升级 `golang.org/x/crypto`，修复 SSH
+  调用链与标准库漏洞扫描结果。
+
+### Reliability
+
+- 在真实 SSH + lrzsz 端到端门禁完成前，明确拒绝 ZMODEM `rz` 上传并提示使用 SFTP，避免会话卡死；`sz` 下载路径暂时保留。
+- 新增 push、pull request 与 tag 发布共用的前端、Go race/vet 和依赖漏洞 CI 门禁。
+
+### Release boundary
+
+- 本节描述开发候选，不代表已经完成测试环境动态视觉验收或获得生产发布批准。
+
 ## [0.1.0] - 2026-05-24
 
 WebTerm 首个版本，基于 React + Go 的 Web 运维工具箱。

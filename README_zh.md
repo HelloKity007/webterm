@@ -11,8 +11,11 @@
 - **数据库查询** — SQL 高亮、结果表格
 - **连接管理** — 分组、标签、颜色标记、搜索、多选批量操作
 - **OneKey** — 预设密钥键值对，一键填充认证
-- **广播** — 发送输入到分屏内或全局所有终端
+- **共享会话** — 多台设备可连接同一终端，并显示在线设备数
 - **主题** — 多种终端配色方案、高亮规则
+
+在真实 SSH + lrzsz 发布门禁完成前，ZMODEM `rz` 上传暂时禁用，请使用
+SFTP 文件管理器上传；`sz` 下载路径暂时保留。
 
 ## 快速开始
 
@@ -48,18 +51,18 @@ make build          # 构建前端 + Go 二进制
 
 发布测试数据库是生产库的一致性快照，因此既有 terminal ID 会连接到相同的远端 tmux 会话，但测试布局和用户数据修改不会写入生产库。测试环境关闭标签页也不会杀掉共享 tmux 会话。
 
-默认管理员：`admin` / `admin`
+默认管理员：`admin` / `admin`。新数据库首次登录后必须立即修改密码；该密码仅用于初始化引导。
 
 ## 技术栈
 
 | 层级 | 技术 |
 |------|------|
-| 后端 | Go 1.22+, net/http |
+| 后端 | Go 1.26.6+, net/http |
 | 前端 | React 19, TypeScript, Vite |
-| 终端 | xterm.js 5.x, @xterm/addon-fit, @xterm/addon-search |
+| 终端 | xterm.js 6.x, @xterm/addon-fit, @xterm/addon-search |
 | SSH | golang.org/x/crypto/ssh |
 | SFTP | github.com/pkg/sftp |
-| 数据库 | SQLite (mattn/go-sqlite3) |
+| 数据库 | SQLite (modernc.org/sqlite) |
 | 状态管理 | Zustand |
 | 认证 | JWT (golang-jwt/jwt) |
 
@@ -69,7 +72,7 @@ make build          # 构建前端 + Go 二进制
 - [x/crypto/ssh](https://pkg.go.dev/golang.org/x/crypto/ssh) — BSD-3
 - [pkg/sftp](https://github.com/pkg/sftp) — BSD-2
 - [zustand](https://github.com/pmndrs/zustand) — MIT
-- [go-sqlite3](https://github.com/mattn/go-sqlite3) — MIT
+- [modernc SQLite](https://pkg.go.dev/modernc.org/sqlite) — BSD-3
 - [golang-jwt](https://github.com/golang-jwt/jwt) — MIT
 - [Vite](https://vitejs.dev/) — MIT
 - [React](https://react.dev/) — MIT

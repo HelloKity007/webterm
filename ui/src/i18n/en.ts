@@ -67,7 +67,7 @@ const en: Record<string, string> = {
   multi_selected: 'Selected', multi_items: 'items', multi_delete: 'Delete',
   multi_move: 'Move to...', multi_cancel: 'Cancel', multi_mode: 'Multi-select',
   login_title: 'webterm', login_username: 'Username', login_password: 'Password',
-  login_remember: 'Remember', login_submit: 'Login', login_error: 'Invalid username or password', not_logged_in: 'Not signed in',
+  login_remember: 'Remember username', login_submit: 'Login', login_error: 'Invalid username or password', not_logged_in: 'Not signed in',
   status_connected: 'Connected', status_disconnected: 'Disconnected', status_not_login: 'Login',
   batch_label: 'Tag:',
   config_users: 'Users', config_ssh: 'SSH Connections', config_database: 'Database Connections',

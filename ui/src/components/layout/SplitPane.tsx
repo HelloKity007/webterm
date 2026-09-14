@@ -35,6 +35,7 @@ import { isMobileBrowserEnvironment } from './mobileLayout';
 import { smallViewportWidth } from '../terminal/terminalScaling';
 import { buildCompactPanelGrid, compactPanelRowTemplate, shouldUseCompactDesktopGrid } from './responsivePanelGrid';
 import LayoutDividerOverlay from './LayoutDividerOverlay';
+import { loadRememberedUsername, saveRememberedUsername } from '../../auth/rememberedLogin';
 
 // Grid cell — computed from the tree
 interface GridCell {
@@ -845,33 +846,28 @@ function SessionWelcome() {
   const setAuth = useAuthStore((s) => s.setAuth);
   const requestTab = useLayoutStore((s) => s.requestTab);
   const [step, setStep] = useState<'user' | 'pass' | 'done'>('user');
-  const [username, setUsername] = useState(localStorage.getItem('webterm-rm-user') || '');
+  const [username, setUsername] = useState(loadRememberedUsername);
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
-  const [lines, setLines] = useState<string[]>([]);
+  const [lines, setLines] = useState<Array<{ label: string; value?: string; color: string }>>([]);
   const [remember, setRemember] = useState(!!localStorage.getItem('webterm-rm-user'));
   const [quickConnectError, setQuickConnectError] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
-  const savedPwd = localStorage.getItem('webterm-rm-pwd') || '';
-
-  const append = (text: string) => setLines((l) => [...l, text]);
+  const append = (label: string, value = '') => setLines((lines) => [
+    ...lines,
+    { label, value, color: colors.accent },
+  ]);
 
   const handleLogin = async (user: string, pass: string) => {
     setError('');
     try {
       const data = await apiPost('/api/auth/login', { username: user, password: pass });
-      if (remember) {
-        localStorage.setItem('webterm-rm-user', user);
-        localStorage.setItem('webterm-rm-pwd', pass);
-      } else {
-        localStorage.removeItem('webterm-rm-user');
-        localStorage.removeItem('webterm-rm-pwd');
-      }
+      saveRememberedUsername(user, remember);
       setStep('done');
       setLines([
-        `<span style="color:var(--c-accent)">login:</span> ${user}`,
-        `<span style="color:var(--c-accent)">password:</span>`,
-        `<span style="color:#9ece6a">Welcome, ${data.user.username}!</span>`,
+        { label: 'login:', value: user, color: colors.accent },
+        { label: 'password:', color: colors.accent },
+        { label: `Welcome, ${data.user.username}!`, color: '#9ece6a' },
       ]);
       setTimeout(() => {
         // Clear all connection state before setting new auth
@@ -883,9 +879,9 @@ function SessionWelcome() {
     } catch {
       setStep('done');
       setLines([
-        `<span style="color:var(--c-accent)">login:</span> ${user}`,
-        `<span style="color:var(--c-accent)">password:</span>`,
-        `<span style="color:var(--c-danger-bright)">${t('login_error')}</span>`,
+        { label: 'login:', value: user, color: colors.accent },
+        { label: 'password:', color: colors.accent },
+        { label: t('login_error'), color: colors.dangerBright },
       ]);
       setTimeout(() => { setLines([]); setStep('user'); setUsername(''); setPassword(''); }, 1000);
     }
@@ -897,11 +893,7 @@ function SessionWelcome() {
     if (step === 'user') {
       const u = username.trim();
       if (!u) return;
-      append(`<span style="color:var(--c-accent)">login:</span> ${u}`);
-      if (remember && savedPwd && u === localStorage.getItem('webterm-rm-user')) {
-        handleLogin(u, savedPwd);
-        return;
-      }
+      append('login:', u);
       setStep('pass');
     } else {
       handleLogin(username.trim(), password);
@@ -957,8 +949,10 @@ function SessionWelcome() {
               fontSize: font.xl, color: colors.text, width: 320, zIndex: 1,
               padding: '16px 20px', cursor: 'text',
             }}>
-            {lines.map((l, i) => (
-              <div key={i} style={{ lineHeight: 1.8 }} dangerouslySetInnerHTML={{ __html: l }} />
+            {lines.map((line, i) => (
+              <div key={i} style={{ lineHeight: 1.8, color: line.color }}>
+                <span>{line.label}</span>{line.value ? ` ${line.value}` : ''}
+              </div>
             ))}
             {error && <div style={{ color: colors.dangerBright, lineHeight: 1.8 }}>{error}</div>}
             {step !== 'done' && (

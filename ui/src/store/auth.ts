@@ -1,4 +1,7 @@
 import { create } from 'zustand';
+import { clearLegacyRememberedPassword } from '../auth/rememberedLogin';
+
+clearLegacyRememberedPassword();
 
 interface User {
   id: number;

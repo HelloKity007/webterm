@@ -129,7 +129,6 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
   const zsentryRef = useRef<ZSentry | null>(null);
   const zsessionRef = useRef<ZSession | null>(null);
   const zmodemActiveRef = useRef(false);
-  const pendingUploadRef = useRef<ZSession | null>(null);
   const outputQueueRef = useRef<Uint8Array[]>([]);
   const outputFrameRef = useRef<number | null>(null);
   const outputWritePendingRef = useRef(false);
@@ -1225,16 +1224,15 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
             zsessionRef.current = session;
             zmodemActiveRef.current = true;
             if (session.type === 'send') {
-              // Remote ran rz: browsers require a user gesture to open a file picker,
-              // so ask the user to press Enter first.
-              pendingUploadRef.current = session;
-              termRef.current?.write('\r\n\x1b[33m[ZMODEM] 按 Enter 选择要上传的文件 / press Enter to choose files\x1b[0m\r\n');
+              // Upload is deliberately unavailable until the rz path has a real
+              // SSH+lrzsz end-to-end gate. Abort instead of leaving rz hung.
               session.on('session_end', () => {
                 zmodemActiveRef.current = false;
                 zsessionRef.current = null;
-                pendingUploadRef.current = null;
                 zsentryRef.current = makeSentry();
               });
+              termRef.current?.write('\r\n\x1b[33m[ZMODEM] 上传暂不可用，请使用 SFTP / upload unavailable; use SFTP\x1b[0m\r\n');
+              session.abort();
             } else {
               // Remote ran sz: download offered files
               session.on('offer', (transfer) => {
@@ -1278,29 +1276,6 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
     const term = termRef.current;
     if (!term) return;
     const disposable = term.onData((data) => {
-      if (pendingUploadRef.current && (data === '\r' || data === '\n')) {
-        const session = pendingUploadRef.current;
-        pendingUploadRef.current = null;
-        const input = document.createElement('input');
-        input.type = 'file';
-        input.multiple = true;
-        input.onchange = async () => {
-          const files = input.files ? Array.from(input.files) : [];
-          try {
-            if (files.length) {
-              await Zmodem.Browser.send_files(session, files);
-            } else {
-              try { session.abort(); } catch { /* session already closed */ }
-            }
-          } catch (e) {
-            termRef.current?.write(`\r\n\x1b[31mZMODEM: ${e}\x1b[0m\r\n`);
-          }
-          zmodemActiveRef.current = false;
-          zsessionRef.current = null;
-        };
-        input.click();
-        return;
-      }
       if (zmodemActiveRef.current) {
         sendTextAsBinary(data);
         return;

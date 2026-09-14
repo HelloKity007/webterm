@@ -11,8 +11,12 @@ Web-based SSH/SFTP/Database terminal manager. Single binary, Go backend + React 
 - **Database Query Editor** — SQL highlighting, result table
 - **Connection Manager** — groups, tags, color labels, search, multi-select batch ops
 - **OneKey** — preset credential key-value pairs for quick auth
-- **Broadcast** — send input to all terminals in a pane or globally
+- **Shared sessions** — multiple devices can attach to the same terminal, with presence indicators
 - **Theme** — multiple terminal color schemes, highlight rules
+
+ZMODEM `rz` upload is temporarily disabled until its real SSH+lrzsz release
+gate is complete; use the SFTP file manager for uploads. The `sz` download path
+remains available.
 
 ## Quick Start
 
@@ -48,18 +52,19 @@ Rollback replaces only the production binary:
 
 The release-test database is a private snapshot of production data. Existing terminal IDs therefore attach to the same remote tmux sessions, while test layout/user changes stay outside the production database. Closing a tab in release-test never kills its shared tmux session.
 
-Default admin: `admin` / `admin`
+Default admin: `admin` / `admin`. Change this password immediately after the
+first login; the default is only a bootstrap credential for a new database.
 
 ## Tech Stack
 
 | Layer | Technology |
 |-------|-----------|
-| Backend | Go 1.22+, net/http |
+| Backend | Go 1.26.6+, net/http |
 | Frontend | React 19, TypeScript, Vite |
-| Terminal | xterm.js 5.x, @xterm/addon-fit, @xterm/addon-search |
+| Terminal | xterm.js 6.x, @xterm/addon-fit, @xterm/addon-search |
 | SSH | golang.org/x/crypto/ssh |
 | SFTP | github.com/pkg/sftp |
-| Database | SQLite (mattn/go-sqlite3) |
+| Database | SQLite (modernc.org/sqlite) |
 | State | Zustand |
 | Auth | JWT (golang-jwt/jwt) |
 
@@ -69,7 +74,7 @@ Default admin: `admin` / `admin`
 - [x/crypto/ssh](https://pkg.go.dev/golang.org/x/crypto/ssh) — BSD-3
 - [pkg/sftp](https://github.com/pkg/sftp) — BSD-2
 - [zustand](https://github.com/pmndrs/zustand) — MIT
-- [go-sqlite3](https://github.com/mattn/go-sqlite3) — MIT
+- [modernc SQLite](https://pkg.go.dev/modernc.org/sqlite) — BSD-3
 - [golang-jwt](https://github.com/golang-jwt/jwt) — MIT
 - [Vite](https://vitejs.dev/) — MIT
 - [React](https://react.dev/) — MIT

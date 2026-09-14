@@ -6,10 +6,11 @@ import { t, getLang, setLang } from '../../i18n';
 import MatrixRain from '../common/MatrixRain';
 import Icon from '../common/Icon';
 import { colors, font } from '../../theme/tokens';
+import { loadRememberedUsername, saveRememberedUsername } from '../../auth/rememberedLogin';
 
 export default function LoginPage() {
-  const [username, setUsername] = useState(localStorage.getItem('webterm-rm-user') || '');
-  const [password, setPassword] = useState(localStorage.getItem('webterm-rm-pwd') || '');
+  const [username, setUsername] = useState(loadRememberedUsername);
+  const [password, setPassword] = useState('');
   const [showPwd, setShowPwd] = useState(false);
   const [remember, setRemember] = useState(!!localStorage.getItem('webterm-rm-user'));
   const [error, setError] = useState('');
@@ -22,13 +23,7 @@ export default function LoginPage() {
     setError('');
     try {
       const data = await apiPost('/api/auth/login', { username, password });
-      if (remember) {
-        localStorage.setItem('webterm-rm-user', username);
-        localStorage.setItem('webterm-rm-pwd', password);
-      } else {
-        localStorage.removeItem('webterm-rm-user');
-        localStorage.removeItem('webterm-rm-pwd');
-      }
+      saveRememberedUsername(username, remember);
       setAuth(data.user, data.token);
       navigate('/');
     } catch {
