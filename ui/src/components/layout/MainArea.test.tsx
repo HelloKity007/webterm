@@ -10,6 +10,7 @@ const layoutState: { activeModule: 'ssh' | 'files' | 'sftp'; drainTabQueue: () =
 vi.mock('../../store/layout', async (importOriginal) => ({ ...await importOriginal<typeof import('../../store/layout')>(), useLayoutStore: (selector: (state: typeof layoutState) => unknown) => selector(layoutState) }));
 const { fetchConnections } = vi.hoisted(() => ({ fetchConnections: vi.fn().mockResolvedValue(undefined) }));
 vi.mock('../../store/connections', () => ({ useConnectionStore: (selector: (state: { connections: never[]; fetchConnections: typeof fetchConnections }) => unknown) => selector({ connections: [], fetchConnections }) }));
+vi.mock('../../store/auth', () => ({ useAuthStore: (selector: (state: { token: string }) => unknown) => selector({ token: 'test-token' }) }));
 vi.mock('./SplitPane', () => ({ default: () => <div data-testid="terminal-workspace" /> }));
 vi.mock('../sftp/DualPaneSftp', () => ({ default: () => <div data-testid="dual-pane-files" /> }));
 vi.mock('../config/ConfigPage', () => ({ default: () => <div /> }));

@@ -2,6 +2,7 @@ import { lazy, Suspense, useState, useEffect } from 'react';
 import { normalizeModuleType, useLayoutStore } from '../../store/layout';
 import type { Tab } from '../../store/layout';
 import { useConnectionStore } from '../../store/connections';
+import { useAuthStore } from '../../store/auth';
 import SplitPane from './SplitPane';
 import DualPaneSftp from '../sftp/DualPaneSftp';
 import ConfigPage from '../config/ConfigPage';
@@ -13,6 +14,7 @@ export default function MainArea() {
   // Normalize at the rendering boundary too so a legacy persisted `sftp`
   // snapshot cannot restore into an empty workspace before migration runs.
   const activeModule = normalizeModuleType(useLayoutStore((s) => s.activeModule));
+  const token = useAuthStore((s) => s.token);
   const connections = useConnectionStore((s) => s.connections);
   const fetchConnections = useConnectionStore((s) => s.fetchConnections);
   const drainTabQueue = useLayoutStore((s) => s.drainTabQueue);
@@ -20,10 +22,10 @@ export default function MainArea() {
   const [dbActiveTabId, setDbActiveTabId] = useState<string | null>(null);
 
   useEffect(() => {
-    if (activeModule === 'files' && connections.length === 0) {
+    if (token && activeModule === 'files' && connections.length === 0) {
       void fetchConnections();
     }
-  }, [activeModule, connections.length, fetchConnections]);
+  }, [activeModule, connections.length, fetchConnections, token]);
 
   useEffect(() => {
     const interval = setInterval(() => {
