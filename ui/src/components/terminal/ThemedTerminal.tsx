@@ -505,7 +505,9 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
     const wheelSender = createLatestTerminalWheelSender((data) => sendRef.current(JSON.stringify({ data })));
     let initialOutputFollow = true;
     let initialOutputFollowTimer: ReturnType<typeof setTimeout> | null = null;
+    let userOwnsViewport = false;
     const handleTerminalWheel = (event: WheelEvent) => {
+      userOwnsViewport = true;
       initialOutputFollow = false;
       if (initialOutputFollowTimer) clearTimeout(initialOutputFollowTimer);
       initialOutputFollowTimer = null;
@@ -715,7 +717,9 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
           // Re-entering the viewport or receiving the same title is not a
           // geometry change. Keep the already painted metrics untouched.
           if (key === fittedGridKey) return;
-          const following = !viewportInitialized || (terminalModeRef.current === 'cli' && fittedTerminalMode !== 'cli') || ref.current.scrollHeight - ref.current.clientHeight - ref.current.scrollTop < 2;
+          const following = !userOwnsViewport || !viewportInitialized ||
+            (terminalModeRef.current === 'cli' && fittedTerminalMode !== 'cli') ||
+            ref.current.scrollHeight - ref.current.clientHeight - ref.current.scrollTop < 2;
           term.resize(exactGrid.cols, exactGrid.rows);
           term.options.fontSize = fittedFont;
           term.options.letterSpacing = 0;
