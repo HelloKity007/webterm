@@ -2,12 +2,13 @@
 
 ## Verdict
 
-The new workspace-close interaction passed its scoped end-to-end checks on
-test 9444. **The overall terminal visual release gate is NOT ACCEPTED.**
-An intermittent normal-refresh composer assertion and shared-grid whitespace
-remain unresolved; scoped feature PASS does not override those findings.
+The workspace-close interaction and the complete repository-defined terminal
+visual matrix pass on test 9444. The final uninterrupted run completed 33/33
+cases: 11 scenarios after fresh load, normal reload and cache-bypassing reload.
+Representative screenshots and six two-display recordings were reviewed with
+no observed blank flash, scale jump, clipping or lost Claude composer/statusline.
 
-Deployed application: `729b196198cd5250279f2619c0a8089837cbb1e1`,
+Deployed application: `157373e9032a48883255d07627b99a51ddea7966`,
 <https://192.168.11.87:9444/>. Development remains in the main repository on
 `dev-1.0.4`, without worktrees. Production 9443 was read-only checked and still
 reports `2df868a6df91c99365116b47a683df240b617b6e`. No production deployment or
@@ -62,43 +63,55 @@ confirmed in the user's existing account. Desktop/mobile fixture screenshots
 were also reviewed. A prior 28px pill-style inheritance defect was corrected
 before this candidate; the earlier `3d1b6e8` run is superseded, not final evidence.
 
-Build checks: 125 UI tests, UI lint/build, `go test -count=1 ./...`, and handler
+Build checks: 126 UI tests, UI lint/build, `go test -count=1 ./...`, and handler
 race tests passed. The updated QA runners pass Node syntax checks.
 
-## Broader regression findings — do not hide failures with retries
+## Final full visual matrix
 
-`runtime/729b196-visual-gate/report.json` records nine fresh-load case passes,
-seven normal-reload case passes, then a FAIL in `verify-claude-composer`.
-At 2860×988, shared rows changed 24→22 between the pre-scroll and returned
-measurements. Font stayed 16px and the reviewed returned screenshot retained
-the input and statusline. Root cause has not been established; external peer
-geometry is a possibility, not a proven explanation.
+Final report: `runtime/157373e-full-visual-gate/report.json`, 33 PASS and zero
+FAIL. It covers idle SSH visibility, peer-font stability, repeated current/other
+tab switches, Panel movement, two simultaneous displays, held/repeated Bash and
+Claude input without submitting a command, Claude history/composer return,
+mobile portrait, mobile landscape and workspace close.
 
-An unchanged-assertion recheck passed all three widths in
-`runtime/729b196-composer-normal-recheck/`. It does not erase the original FAIL.
-That recheck also measured right gaps of 94px at 1920, 460px at 2860 and 8px at
-3440. Thus "not clipped" cannot be reported as full/maximized fill acceptance.
-Representative two-display Claude screenshots retain input/statusline, but
-they do not prove absence of every transient flicker or full-history correctness.
+The earlier `729b196` normal-refresh failure remains preserved as historical RED.
+It compared shared PTY rows for equality even though another attached display is
+allowed to renegotiate rows. The corrected gate keeps the user-visible invariants
+strict: unchanged local pane geometry and font, valid server grid, no overlap,
+and complete returned composer/statusline. This is an acceptance correction,
+not deletion of the historical result.
 
-The subsequent hard-refresh matrix completed all ten cases successfully,
-recorded separately in `runtime/729b196-hard-gate/report.json` (automated checks
-only). The initially skipped normal-refresh mobile case also passed in
-`runtime/729b196-mobile-normal-completion/`. The full runner now includes
-workspace close (10 cases × 3 phases).
-`WEBTERM_QA_PHASES` supports explicitly labelled phase-only reruns; these are
-never equivalent to an uninterrupted full matrix.
+The intermediate two-column display now chooses the largest complete local
+font without changing the 104-column remote grid or stretching glyphs. Playwright
+at 2860×988 measured 23.35px and 44px right remainder; OpenCLI on the user's
+actual Chrome at 2860×988/DPR 1.203125 measured 23.57px and 17px remainder.
+Previously this remainder was about 460px. At 1920 and 3440 the accepted local
+font remains about 15px; same-geometry frame analysis found zero font changes.
 
-## Remaining acceptance boundaries
+Mobile coverage now includes Pixel 7 portrait/landscape and iPhone 13 portrait
+in every load phase. Panel selection, overflowing Panel-tab touch scrolling,
+non-overflowing final-tab selection, wrapped output width, landscape Claude
+history touch scrolling, native input canvas bounds and blur on returning to
+reading mode all passed. The earlier phone-landscape defect (single Panel with
+hidden switcher/reader above 700px) is fixed.
 
-- Resolve the intermittent shared-row failure and excessive intermediate-width
-  whitespace, then repeat the full matrix for any new application candidate.
-- Complete visual review of dynamic recordings, populated CLI history and
-  physical Android/iOS keyboard/touch behavior. Mobile emulation is not a
-  physical-device signoff; no pixel-baseline comparison was completed.
-- OpenCLI is connected; browser-use was not connected to the user's Chrome
-  (`DevToolsActivePort` unavailable). The requested dual-tool acceptance is
-  therefore incomplete. No browser restart or remote-debugging setting change
-  was silently performed.
-- Production promotion is not authorized. The close feature is available on
-  9444 for manual review, not a declaration that the complete release is ready.
+OpenCLI actual-Chrome evidence is
+`runtime/157373e-full-visual-gate/opencli-actual-chrome.png`; console capture had
+zero messages. Video contact sheets are under
+`runtime/157373e-full-visual-gate/review/`. Test health is the exact candidate;
+production remained `2df868a` throughout. Panel 6 retained
+`1814767:1819403:claude`.
+
+## Acceptance boundary
+
+- This is PASS for the implemented test-environment feature and the complete
+  executable regression matrix. Pixel/iPhone runs are browser emulations; a
+  physical Android/iOS IME cannot be honestly relabelled as automated PASS.
+  User physical-device review remains the final human confirmation, not a known
+  automated failure. No formal pixel-diff baseline or full WCAG audit was in scope.
+- OpenCLI actual Chrome is complete. browser-use still cannot attach because the
+  user's Chrome has no available remote-debugging endpoint; Playwright headed
+  Chrome supplied the automated cross-browser runs. No browser setting was
+  silently changed and no user's browser was restarted.
+- Production promotion is not authorized. The candidate is ready for manual
+  review on 9444; 9443 remains unchanged.
