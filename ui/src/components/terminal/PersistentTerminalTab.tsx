@@ -1,9 +1,7 @@
 import { useLayoutEffect, useRef, type ComponentProps } from 'react';
-import { createRoot, type Root } from 'react-dom/client';
+import { createRoot } from 'react-dom/client';
 import TerminalTab from './TerminalTab';
-
-type Entry = { host: HTMLDivElement; root: Root; owners: number };
-const terminals = new Map<string, Entry>();
+import { disposePersistentTerminal, getPersistentTerminal, setPersistentTerminal } from './persistentTerminalStore';
 
 // Moving a tab between panes reparents its host, not its terminal React root.
 // Identity is the persisted terminal ID, never pane index or tab order.
@@ -12,30 +10,29 @@ export default function PersistentTerminalTab(props: ComponentProps<typeof Termi
   const id = props.myTabId;
   useLayoutEffect(() => {
     if (!id || !slot.current) return;
-    let entry = terminals.get(id);
+    let entry = getPersistentTerminal(id);
     if (!entry) {
       const host = document.createElement('div');
       Object.assign(host.style, { display: 'flex', flex: '1', minWidth: '0', minHeight: '0', overflow: 'hidden' });
-      entry = { host, root: createRoot(host), owners: 0 };
-      terminals.set(id, entry);
+      entry = { host, root: createRoot(host), owners: 0, disposeWhenUnowned: false };
+      setPersistentTerminal(id, entry);
     }
     entry.owners++;
     slot.current.appendChild(entry.host);
     const mounted = entry;
     return () => {
       mounted.owners--;
-      // A move mounts the destination during this commit. Only a genuine
-      // removal with no remaining owner disposes the renderer/socket.
+      // A move or a workspace switch mounts the destination during this
+      // commit. The renderer remains alive while merely hidden; explicit
+      // close paths mark it for disposal via discardPersistentTerminal().
       queueMicrotask(() => {
-        if (mounted.owners !== 0 || terminals.get(id) !== mounted) return;
-        mounted.root.unmount();
-        mounted.host.remove();
-        terminals.delete(id);
+        if (mounted.owners !== 0 || !mounted.disposeWhenUnowned) return;
+        disposePersistentTerminal(id, mounted);
       });
     };
   }, [id]);
   useLayoutEffect(() => {
-    if (id) terminals.get(id)?.root.render(<TerminalTab {...props} />);
+    if (id) getPersistentTerminal(id)?.root.render(<TerminalTab {...props} />);
   });
   return id ? <div ref={slot} style={{ display: 'flex', flex: 1, minWidth: 0, minHeight: 0, overflow: 'hidden' }} /> : <TerminalTab {...props} />;
 }

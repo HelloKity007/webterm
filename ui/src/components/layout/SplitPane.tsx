@@ -20,6 +20,7 @@ import { panelGrid, presetDestinationID, replaceLeafWithEightPaneGrid } from './
 import { closeTerminalSession } from '../../api/terminalSessions';
 import WorkspaceTabBar from './WorkspaceTabBar';
 import { getSharedTerminalGrid, setSharedTerminalGrid } from '../terminal/terminalGridCache';
+import { discardPersistentTerminal } from '../terminal/persistentTerminalStore';
 import {
   createWorkspaceTab,
   emptyPersistedWorkspace,
@@ -174,6 +175,7 @@ async function closeWorkspace(workspaceID: string) {
     try {
       const result = await closeTerminalSession(connId, tabId, workspace.index, panelNumber, true) as { status?: string };
       if (result?.status !== 'ok') throw new Error('Remote session was not terminated');
+      discardPersistentTerminal(tabId);
       return true;
     } catch (error) {
       console.error('Failed to close workspace terminal session; keeping workspace open:', error);
@@ -610,6 +612,7 @@ function LeafPane({ nodeId, restoreVersion, onActiveSshChange, isInSplit, worksp
         console.error('Failed to close persistent terminal session; keeping tab open:', error);
         return;
       }
+      discardPersistentTerminal(id);
     }
     setTabs((prev) => {
       const next = prev.filter((t) => t.id !== id);
