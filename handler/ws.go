@@ -41,6 +41,10 @@ type WSHandler struct {
 	TmuxBinary string
 	// RunTerminalCommand is overridden by handler tests to replace remote SSH I/O.
 	RunTerminalCommand func(*store.Connection, string) error
+	// CaptureTerminalOutput is overridden by handler tests. Production captures
+	// an explicitly requested tmux history over the already-authorized SSH
+	// connection; ordinary terminal attachment never uses this path.
+	CaptureTerminalOutput func(*store.Connection, string) ([]byte, error)
 	// RunTmuxPreflight is overridden by unit tests; production executes tmux -V
 	// over the already authorized SSH transport.
 	RunTmuxPreflight  func(*sshmgr.Client) (string, error)
@@ -144,6 +148,50 @@ func (h *WSHandler) runTerminalCommand(connection *store.Connection, command str
 	}
 	defer session.Close()
 	return session.Run(command)
+}
+
+func (h *WSHandler) captureTerminalOutput(connection *store.Connection, command string) ([]byte, error) {
+	if h.CaptureTerminalOutput != nil {
+		return h.CaptureTerminalOutput(connection, command)
+	}
+	var password, privateKey, passphrase string
+	if connection.PasswordEncrypted != "" {
+		password, _ = h.AESCipher.Decrypt(connection.PasswordEncrypted)
+	}
+	if connection.PrivateKeyEncrypted != "" {
+		privateKey, _ = h.AESCipher.Decrypt(connection.PrivateKeyEncrypted)
+	}
+	if connection.PrivateKeyPassphraseEncrypted != "" {
+		passphrase, _ = h.AESCipher.Decrypt(connection.PrivateKeyPassphraseEncrypted)
+	}
+	client, err := sshmgr.NewClient(connection.Host, connection.Port, connection.Username, password, privateKey, passphrase)
+	if err != nil {
+		return nil, err
+	}
+	defer client.Close()
+	for attempt := 1; attempt <= 3; attempt++ {
+		err = client.Connect()
+		if err == nil {
+			break
+		}
+		if attempt < 3 {
+			time.Sleep(time.Duration(attempt) * time.Second)
+		}
+	}
+	if err != nil {
+		return nil, err
+	}
+	session, err := client.NewSession()
+	if err != nil {
+		return nil, err
+	}
+	defer session.Close()
+	output := newTerminalHistory(terminalHistoryMaxBytes)
+	session.Stdout = output
+	if err := session.Run(command); err != nil {
+		return nil, err
+	}
+	return output.snapshot(), nil
 }
 
 func (h *WSHandler) CloseTerminalSession(w http.ResponseWriter, r *http.Request) {

@@ -35,6 +35,14 @@ func (h *terminalHistory) appendBytes(data []byte) {
 	h.data = append(h.data, data...)
 }
 
+// Write lets a terminalHistory act as a bounded SSH stdout sink. Keeping the
+// newest bytes is important for an explicit tmux capture: the useful prompt
+// and current viewport are at the end of a very long scrollback.
+func (h *terminalHistory) Write(data []byte) (int, error) {
+	h.appendBytes(data)
+	return len(data), nil
+}
+
 func (h *terminalHistory) snapshot() []byte {
 	if h == nil {
 		return nil

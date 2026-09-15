@@ -138,6 +138,9 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
   const requestedGridRef = useRef<TerminalGrid | null>(null);
   const inputViewportFollowedRef = useRef(false);
   const pendingCursorRevealRef = useRef(false);
+  const shellHistoryLoadedRef = useRef(false);
+  const shellHistoryLoadingRef = useRef(false);
+  const pendingShellHistoryScrollRef = useRef(0);
   const onStatusRef = useRef(onStatus);
   const onResizeDimRef = useRef(onResizeDim);
   const themeName = usePreferencesStore((s) => s.themeName);
@@ -440,8 +443,60 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
     sendRef.current(JSON.stringify({ data: btoa(bin), b64: true }));
   }, []);
 
+  const terminalID = myTabId || '';
+  const loadShellHistoryForScroll = useCallback((lines: number) => {
+    const term = termRef.current;
+    if (!term) return;
+    // A buffer with a scrollback base is already complete for this client.
+    // Do not make a control-plane request on every ordinary wheel event.
+    if (shellHistoryLoadedRef.current || term.buffer.active.baseY > 0) {
+      term.scrollLines(lines);
+      return;
+    }
+    pendingShellHistoryScrollRef.current += lines;
+    if (shellHistoryLoadingRef.current || !terminalID) return;
+    shellHistoryLoadingRef.current = true;
+    const query = new URLSearchParams({ terminal_id: terminalID });
+    if (workspaceIndex && panelNumber) {
+      query.set('workspace_index', String(workspaceIndex));
+      query.set('panel_number', String(panelNumber));
+    }
+    void (async () => {
+      try {
+        const response = await fetch(`/api/terminal-history/${encodeURIComponent(connId)}?${query.toString()}`, {
+          headers: { Authorization: `Bearer ${localStorage.getItem('token') || ''}` },
+        });
+        if (!response.ok) throw new Error(`history capture failed (${response.status})`);
+        const payload = await response.json() as { data?: string };
+        if (!payload.data) return;
+        const binary = atob(payload.data);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+        // This path follows an intentional wheel-up. It is never called by a
+        // tab switch, so even a busy 20,000-line pane cannot visually replay
+        // while the user is merely changing tabs.
+        term.reset();
+        await new Promise<void>((resolve) => term.write(bytes, resolve));
+        shellHistoryLoadedRef.current = true;
+        term.scrollToBottom();
+        term.scrollLines(pendingShellHistoryScrollRef.current);
+      } catch (error) {
+        console.warn('terminal history capture:', error);
+      } finally {
+        pendingShellHistoryScrollRef.current = 0;
+        shellHistoryLoadingRef.current = false;
+      }
+    })();
+  }, [connId, panelNumber, terminalID, workspaceIndex]);
+
   useEffect(() => {
     const themeConfig = getTheme(themeName || 'XTerminal Green');
+    // A recreated xterm starts from the visible remote screen again. Treat
+    // that as a fresh client viewport so a later wheel can request tmux
+    // history instead of assuming a discarded local buffer still exists.
+    shellHistoryLoadedRef.current = false;
+    shellHistoryLoadingRef.current = false;
+    pendingShellHistoryScrollRef.current = 0;
     const term = new Terminal({
       cursorBlink: true, fontSize: isMobileBrowserEnvironment() ? Math.max(11, fontSize - 4) : fontSize, fontFamily: '"JetBrains Mono", "JetBrains Maple Mono", Consolas, monospace',
       scrollback: terminalScrollbackLines,
@@ -530,7 +585,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
             // tail — using it for a Bash wheel scroll hides the local prompt.
             // Shell history belongs to xterm's normal buffer and its native
             // right-side scrollbar, never to the peer-grid overflow wrapper.
-            term.scrollLines(lines);
+            loadShellHistoryForScroll(lines);
             return;
           }
           // Each report is a native mouse notch, not one text line. Repeating
@@ -609,7 +664,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
             bubbles: true, cancelable: true, deltaY: direction * 120,
           }));
         } else {
-          term.scrollLines(direction * 3);
+          loadShellHistoryForScroll(direction * 3);
         }
       }
     };
@@ -1138,9 +1193,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       window.removeEventListener('resize', handleResize);
       window.removeEventListener('webterm-layout-drag-end', handleResize);
     };
-  }, [copyCurrentSelection, fontSize, myTabId, pasteFromClipboard, setSftpCdPath, themeName]);
-
-  const terminalID = myTabId || '';
+  }, [copyCurrentSelection, fontSize, loadShellHistoryForScroll, myTabId, pasteFromClipboard, setSftpCdPath, themeName]);
   // Control Mode remains an opt-in diagnostic until the remote tmux stream is
   // proven to emit a complete redraw on every supported SSH implementation.
   // Control Mode provides per-client viewport state and deterministic replay

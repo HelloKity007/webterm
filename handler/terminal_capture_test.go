@@ -1,8 +1,14 @@
 package handler
 
 import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/xufanchn/webterm/auth"
+	"github.com/xufanchn/webterm/store"
 )
 
 func TestTerminalSnapshotRestoresGridScreenAndCursor(t *testing.T) {
@@ -51,5 +57,64 @@ func TestInitialTerminalScreenCaptureNeverRequestsScrollback(t *testing.T) {
 	}
 	if !strings.Contains(got, "capture-pane -p -e -t wt01-01-05-example") {
 		t.Fatalf("initial capture must target its visible pane: %q", got)
+	}
+}
+
+func TestTerminalHistoryCaptureTargetsOnlyTheRequestedPanel(t *testing.T) {
+	target, err := terminalHistoryCaptureTarget(1, 22, "ssh-2-panel-5", "1", "5")
+	if err != nil {
+		t.Fatal(err)
+	}
+	command := terminalHistoryCaptureCommand(target, "release-test", "/opt/tmux")
+	if !strings.Contains(command, "/opt/tmux -L release-test capture-pane -p -e -S -20000 -t wt01-01-05-") {
+		t.Fatalf("history capture command = %q", command)
+	}
+	if _, err := terminalHistoryCaptureTarget(1, 22, "shell", "one", "5"); err == nil {
+		t.Fatal("non-numeric workspace must be rejected")
+	}
+}
+
+func TestReplayTerminalHistoryCapturesTmuxOnlyOnExplicitRequest(t *testing.T) {
+	st := newQuickConnectTestStore(t)
+	userID, err := st.CreateUser("history-owner", "hash", "user")
+	if err != nil {
+		t.Fatal(err)
+	}
+	connectionID, err := st.CreateConnection(&store.Connection{
+		Name: "terminal host", Host: "127.0.0.1", Port: 22, Username: "tester",
+		AuthMethod: "password", CreatedBy: userID, MaxSessions: 30,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var gotConnection int64
+	var gotCommand string
+	h := &WSHandler{
+		Store: st, TmuxSocket: "release-test", TmuxBinary: "/opt/tmux",
+		CaptureTerminalOutput: func(connection *store.Connection, command string) ([]byte, error) {
+			gotConnection, gotCommand = connection.ID, command
+			return []byte("older\ncurrent\n"), nil
+		},
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/terminal-history/1?terminal_id=ssh-2-panel-5&workspace_index=1&panel_number=5", nil)
+	req.SetPathValue("conn_id", "1")
+	req = auth.WithUser(req, &auth.Claims{UserID: userID, Role: "user"})
+	res := httptest.NewRecorder()
+	h.ReplayTerminalHistory(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", res.Code, res.Body.String())
+	}
+	if gotConnection != connectionID || !strings.Contains(gotCommand, "capture-pane -p -e -S -20000 -t wt01-01-05-") {
+		t.Fatalf("capture target connection=%d command=%q", gotConnection, gotCommand)
+	}
+	var payload struct {
+		Bytes int    `json:"bytes"`
+		Data  string `json:"data"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Bytes != len("older\ncurrent\n") || payload.Data == "" {
+		t.Fatalf("unexpected payload=%+v", payload)
 	}
 }
