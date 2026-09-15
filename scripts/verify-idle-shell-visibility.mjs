@@ -40,16 +40,53 @@ try {
         const screen = surface.querySelector('.xterm-screen').getBoundingClientRect();
         const cell = screen.height / Number(surface.dataset.sharedRows);
         const viewport = surface.querySelector('.xterm-viewport');
-        return { scrollTop: surface.scrollTop, height: surface.clientHeight, cursorTop: row * cell,
-          cursorBottom: (row + 1) * cell, font: surface.dataset.fittedFontSize,
+        const scrollbar = surface.querySelector('.xterm .scrollbar.vertical');
+        const describe = (element) => {
+          if (!element) return null;
+          const rect = element.getBoundingClientRect();
+          const style = getComputedStyle(element);
+          return {
+            className: element.className,
+            clientHeight: element.clientHeight,
+            scrollHeight: element.scrollHeight,
+            offsetHeight: element.offsetHeight,
+            rectHeight: rect.height,
+            inlineHeight: element.style.height,
+            inlineMinHeight: element.style.minHeight,
+            position: style.position,
+            display: style.display,
+            overflow: style.overflow,
+            flex: style.flex,
+            minHeight: style.minHeight,
+          };
+        };
+        const xterm = surface.querySelector('.xterm');
+        const clientCursorRow = Number(surface.dataset.cursorRow);
+        const scrollbarStyle = scrollbar ? getComputedStyle(scrollbar) : null;
+        const scrollbarBounds = scrollbar?.getBoundingClientRect();
+        return { scrollTop: surface.scrollTop, height: surface.clientHeight,
+          serverCursorRow: row, clientCursorRow, cursorBuffer: surface.dataset.cursorBuffer,
+          cursorTop: clientCursorRow * cell, cursorBottom: (clientCursorRow + 1) * cell, font: surface.dataset.fittedFontSize,
           sharedRows: surface.dataset.sharedRows, screenHeight: screen.height,
           xtermViewportScrollTop: viewport?.scrollTop, xtermViewportScrollHeight: viewport?.scrollHeight,
-          xtermViewportHeight: viewport?.clientHeight };
+          xtermViewportHeight: viewport?.clientHeight,
+          shellScrollbar: { display: scrollbarStyle?.display, width: scrollbarBounds?.width, height: scrollbarBounds?.height },
+          layout: {
+            surface: describe(surface),
+            xterm: describe(xterm),
+            viewport: describe(viewport),
+            screen: describe(surface.querySelector('.xterm-screen')),
+            terminalRoot: describe(surface.parentElement),
+          } };
       }, Number(actual[1]));
       await pane.screenshot({ path: `${output}/${width}-peer-${index}.png` });
       results.push({ width, peer: index, ...metrics });
       if (fonts.has(index)) assert(Math.abs(Number(metrics.font) - fonts.get(index)) < 0.05, 'Peer changed local idle-shell font');
       else fonts.set(index, Number(metrics.font));
+      assert(Number.isInteger(metrics.clientCursorRow) && metrics.clientCursorRow >= 0, 'Client xterm cursor was not published');
+      assert.equal(metrics.cursorBuffer, 'normal', 'Idle Bash must use xterm normal buffer');
+      assert(metrics.shellScrollbar.display !== 'none' && (metrics.shellScrollbar.width || 0) > 0,
+        'Bash native history scrollbar is hidden');
       assert(metrics.cursorTop >= metrics.scrollTop - 1, 'Idle prompt hidden above local viewport');
       assert(metrics.cursorBottom <= metrics.scrollTop + metrics.height + 1, 'Idle prompt hidden below local viewport');
     }

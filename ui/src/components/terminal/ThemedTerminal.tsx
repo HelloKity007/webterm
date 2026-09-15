@@ -1347,7 +1347,18 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
     const term = termRef.current;
     if (!term) return;
     let frame: number | undefined;
+    const publishCursor = () => {
+      const surface = ref.current;
+      if (!surface) return;
+      // A shared tmux grid can include tail rows that this client has not
+      // painted yet. Publish xterm's own cursor for visual acceptance, rather
+      // than conflating that server coordinate with the locally rendered one.
+      surface.dataset.cursorRow = String(term.buffer.active.cursorY);
+      surface.dataset.cursorBuffer = term.buffer.active.type;
+    };
+    publishCursor();
     const listener = term.onCursorMove(() => {
+      publishCursor();
       if (!pendingCursorRevealRef.current || document.activeElement !== term.textarea || frame !== undefined) return;
       frame = requestAnimationFrame(() => {
         frame = undefined;
