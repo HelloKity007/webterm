@@ -1005,6 +1005,11 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
               const screenRect = screen?.getBoundingClientRect();
               const scrollbar = term.element?.querySelector<HTMLElement>('.scrollbar.vertical')?.getBoundingClientRect();
               if (!screenRect || !scrollbar || !screenRect.width || !scrollbar.width) return;
+              // The shared grid can be narrower than its panel by design.
+              // Keep the xterm history thumb immediately after the final
+              // rendered column instead of marooning it at the panel edge.
+              const screenOffsetLeft = screen?.offsetLeft || 0;
+              term.element?.style.setProperty('--webterm-scrollbar-left', `${Math.round(screenOffsetLeft + screenRect.width + 2)}px`);
               // xterm suspends painting offscreen panes. Their rectangle may
               // describe an old grid even though term.cols already changed.
               if (screenRect.top >= window.innerHeight || screenRect.bottom <= 0) return;
