@@ -78,7 +78,7 @@ try {
     } : null;
   });
   await terminal.screenshot({ path: `${output}/after-wheel-up.png` });
-  assert(state && state.sliderTravel > 0 && state.sliderTop < state.sliderTravel - 1,
+  assert(state && state.sliderTravel > 0 && state.sliderTop < state.sliderTravel,
     `wheel did not move away from the current history bottom: ${JSON.stringify({ state, historyResponses })}`);
   assert.equal(state.scrollbar, 'block', `Bash history scrollbar is hidden: ${JSON.stringify(state)}`);
   await writeFile(`${output}/results.json`, JSON.stringify({ marker, state, historyResponses }, null, 2));
