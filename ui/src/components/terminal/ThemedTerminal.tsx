@@ -486,9 +486,13 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
     term.loadAddon(searchAddon);
     // Protocol beats printed words: a Claude response may contain shell
     // prompts, "bash", "context" or even an entire shell script.
+    const applyTerminalMode = (mode: 'unknown' | 'shell' | 'cli') => {
+      terminalModeRef.current = mode;
+      if (ref.current) ref.current.dataset.terminalMode = mode;
+    };
     const modeDisposables = (['h', 'l'] as const).map(final =>
       term.parser.registerCsiHandler({ prefix: '?', final }, params => {
-        terminalModeRef.current = terminalModeAfterPrivateControl(terminalModeRef.current, params, final === 'h');
+        applyTerminalMode(terminalModeAfterPrivateControl(terminalModeRef.current, params, final === 'h'));
         if (params.some(value => typeof value === 'number' && [47, 1047, 1049].includes(value))) {
           alternateScreenRef.current = final === 'h';
           if (final === 'h' && !mobileBrowser && announcedGrid) {
@@ -1120,6 +1124,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
         const msg = JSON.parse(data);
         if (msg.type === 'terminal_mode' && ['shell', 'cli', 'unknown'].includes(msg.mode)) {
           terminalModeRef.current = msg.mode;
+          if (ref.current) ref.current.dataset.terminalMode = msg.mode;
           alternateScreenRef.current = msg.mode === 'cli';
         }
         if (msg.data) {

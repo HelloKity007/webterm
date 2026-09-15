@@ -137,7 +137,9 @@ select:focus, input:focus, textarea:focus, button:focus-visible, [role="button"]
 .terminal-surface.desktop-local-viewport { scrollbar-width: auto; scrollbar-color: auto; scrollbar-gutter: stable; overscroll-behavior: contain; padding-left: 4px !important; }
 .terminal-surface.desktop-local-viewport::-webkit-scrollbar { width: 5px; height: 5px; }
 .terminal-surface.desktop-local-viewport::-webkit-scrollbar-thumb { background: #76a78088; border-radius: 3px; }
-.terminal-surface.desktop-local-viewport .xterm .scrollbar.vertical { display: none !important; }
+/* Claude owns history in its alternate screen, so xterm's buffer scrollbar is
+   misleading there. Bash keeps local xterm scrollback and must retain it. */
+.terminal-surface.desktop-local-viewport[data-terminal-mode="cli"] .xterm .scrollbar.vertical { display: none !important; }
 .terminal-mobile-shell { background: #1f211f; }
 .mobile-panel-switcher { display: none; }
 .terminal-mobile-shell > .mobile-panel-switcher { display: flex; flex: 0 0 38px; align-items: center; gap: 6px; padding: 4px 8px; overflow-x: auto; background: #b9dcb9; border-bottom: 1px solid #80ad82; }
