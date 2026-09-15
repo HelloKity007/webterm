@@ -508,9 +508,12 @@ func (h *WSHandler) HandleSSH(conn *websocket.Conn) {
 				}
 				_ = paneSession.Close()
 			}
-			if len(paneState) == 7 && paneState[6] == "0" {
-				captureCommand = scopeTmuxCommand("tmux capture-pane -p -e -S -20000 -t "+targetName, h.TmuxSocket, h.TmuxBinary)
-			}
+			// A reconnect needs the current screen, not the entire shell
+			// scrollback. Sending 20,000 static lines makes an inactive tab look
+			// as though it is printing history again when selected (and can be
+			// several megabytes for a busy pane). Local xterm scrollback remains
+			// available for an already-open tab; a newly attached client starts
+			// from the same visible remote screen as a native tmux attach.
 			if captureErr = captureSession.Run(captureCommand); captureErr == nil && captured.Len() > 0 {
 				snapshot := terminalScreenSnapshot(captured.Bytes(), paneState)
 				_ = controlOutput.snapshot(snapshot)
