@@ -672,6 +672,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
     let viewportInitialized = false;
     let fittedTerminalMode: 'unknown' | 'shell' | 'cli' = 'unknown';
     let viewportFollowFrame: number | null = null;
+    let viewportFollowTimer: ReturnType<typeof setTimeout> | null = null;
     const fontMeasure = document.createElement('canvas').getContext('2d');
 
     term.onResize(({ cols, rows }) => {
@@ -753,6 +754,15 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
               viewportFollowFrame = null;
               follow();
             });
+            // xterm commits the resized screen and its scroll height after the
+            // resize callback. A peer display can increase this pane's shared
+            // row count, so repeat after that commit before declaring an idle
+            // Bash prompt visible in the local viewport.
+            if (viewportFollowTimer !== null) clearTimeout(viewportFollowTimer);
+            viewportFollowTimer = setTimeout(() => {
+              viewportFollowTimer = null;
+              follow();
+            }, 80);
           }
           sharedGrid = exactGrid;
           if (myTabId) setSharedTerminalGrid(myTabId, sharedGrid);
@@ -899,6 +909,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       if (document.documentElement.dataset.layoutDragging === 'true') return;
       if (pendingFitFrame !== null) cancelAnimationFrame(pendingFitFrame);
       if (widthFitFrame !== null) cancelAnimationFrame(widthFitFrame);
+      if (viewportFollowTimer !== null) clearTimeout(viewportFollowTimer);
       pendingFitFrame = requestAnimationFrame(() => {
         pendingFitFrame = null;
         fitWhenVisible();
@@ -1071,6 +1082,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
     return () => {
       if (pendingFitFrame !== null) cancelAnimationFrame(pendingFitFrame);
       if (viewportFollowFrame !== null) cancelAnimationFrame(viewportFollowFrame);
+      if (viewportFollowTimer !== null) clearTimeout(viewportFollowTimer);
       if (widthFitFrame !== null) cancelAnimationFrame(widthFitFrame);
       if (outputFrameRef.current !== null) cancelAnimationFrame(outputFrameRef.current);
       if (outputTimerRef.current !== null) clearTimeout(outputTimerRef.current);
