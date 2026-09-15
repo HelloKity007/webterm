@@ -112,8 +112,13 @@ try {
         `Terminal input cursor is clipped after wheel round-trip: ${JSON.stringify(fill)}`);
       if (number === 2) {
         assert.equal(fill.cursorBuffer, 'normal', 'Bash must remain in xterm normal buffer');
-        assert(fill.outerScrollTop < 1,
-          `Bash wheel round-trip scrolled into peer-grid blank tail: ${JSON.stringify(fill)}`);
+        // A taller peer grid may require the outer surface to reveal Bash's
+        // actual bottom prompt after returning from local xterm history. It
+        // may reach the final content row, but must never pass it into a
+        // blank peer-grid tail.
+        const shellContentOverflow = Math.max(0, fill.rows * fill.cellHeight - fill.height);
+        assert(fill.outerScrollTop <= shellContentOverflow + 1,
+          `Bash wheel round-trip scrolled past its final content row: ${JSON.stringify(fill)}`);
       }
       if (index === 1) {
         assert(fill.rightGap <= fill.cellWidth + 3, `Large screen is not filled horizontally: ${JSON.stringify(fill)}`);
