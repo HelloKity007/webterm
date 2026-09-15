@@ -9,7 +9,11 @@ import (
 	"github.com/xufanchn/webterm/auth"
 )
 
-const terminalHistoryReplayLines = 20_000
+// Keep a first wheel-up fast even for terminals that retain hundreds of
+// thousands of tmux lines. This is a viewport bootstrap, not a full export;
+// it deliberately contains many screens of recent context without recreating
+// the multi-megabyte tab-switch replay this endpoint replaces.
+const terminalHistoryReplayLines = 2_000
 
 // ReplayTerminalHistory captures history only after a user explicitly asks to
 // browse it. This keeps tab attachment cheap while allowing a newly attached

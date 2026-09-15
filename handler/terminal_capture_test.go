@@ -66,7 +66,7 @@ func TestTerminalHistoryCaptureTargetsOnlyTheRequestedPanel(t *testing.T) {
 		t.Fatal(err)
 	}
 	command := terminalHistoryCaptureCommand(target, "release-test", "/opt/tmux")
-	if !strings.Contains(command, "/opt/tmux -L release-test capture-pane -p -e -S -20000 -t wt01-01-05-") {
+	if !strings.Contains(command, "/opt/tmux -L release-test capture-pane -p -e -S -2000 -t wt01-01-05-") {
 		t.Fatalf("history capture command = %q", command)
 	}
 	if _, err := terminalHistoryCaptureTarget(1, 22, "shell", "one", "5"); err == nil {
@@ -104,7 +104,7 @@ func TestReplayTerminalHistoryCapturesTmuxOnlyOnExplicitRequest(t *testing.T) {
 	if res.Code != http.StatusOK {
 		t.Fatalf("status=%d body=%s", res.Code, res.Body.String())
 	}
-	if gotConnection != connectionID || !strings.Contains(gotCommand, "capture-pane -p -e -S -20000 -t wt01-01-05-") {
+	if gotConnection != connectionID || !strings.Contains(gotCommand, "capture-pane -p -e -S -2000 -t wt01-01-05-") {
 		t.Fatalf("capture target connection=%d command=%q", gotConnection, gotCommand)
 	}
 	var payload struct {
