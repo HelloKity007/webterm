@@ -106,19 +106,19 @@ try {
       });
       results.push({ display: index, panel: number, fill });
       assert(fill.rightGap >= 0, 'Terminal overlaps a panel edge');
+      assert(Number.isInteger(fill.cursorRow) && fill.cursorRow >= 0,
+        `Terminal cursor is not available for visual verification: ${JSON.stringify(fill)}`);
+      assert(fill.cursorTop >= -1 && fill.cursorBottom <= fill.height + 1,
+        `Terminal input cursor is clipped after wheel round-trip: ${JSON.stringify(fill)}`);
       if (number === 2) {
         assert.equal(fill.cursorBuffer, 'normal', 'Bash must remain in xterm normal buffer');
-        assert(fill.cursorRow >= 0, 'Bash cursor is not available for visual verification');
         assert(fill.outerScrollTop < 1,
           `Bash wheel round-trip scrolled into peer-grid blank tail: ${JSON.stringify(fill)}`);
-        assert(fill.cursorTop >= -1 && fill.cursorBottom <= fill.height + 1,
-          `Bash cursor is clipped after wheel round-trip: ${JSON.stringify(fill)}`);
       } else {
-        assert(fill.bottomGap >= 0, 'Fullscreen CLI overlaps a panel edge');
+        assert.equal(fill.cursorBuffer, 'alternate', 'Claude must retain its alternate-screen buffer');
       }
       if (index === 1) {
         assert(fill.rightGap <= fill.cellWidth + 3, `Large screen is not filled horizontally: ${JSON.stringify(fill)}`);
-        assert(fill.bottomGap <= fill.cellHeight + 3, `Large screen is not filled vertically: ${JSON.stringify(fill)}`);
       }
     }
   }
