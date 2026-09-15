@@ -47,7 +47,12 @@ func (h *WSHandler) ReplayTerminalHistory(w http.ResponseWriter, r *http.Request
 	}
 	command := terminalHistoryCaptureCommand(target, h.TmuxSocket, h.TmuxBinary)
 	snapshot, err := h.captureTerminalOutput(connection, command)
-	if err != nil {
+	if err == nil {
+		// capture-pane is line-oriented, unlike the live PTY stream. Convert
+		// LF to CRLF before returning it to xterm so every replayed history row
+		// returns to column zero and contributes to normal-buffer scrollback.
+		snapshot = terminalCaptureBytes(snapshot)
+	} else {
 		// A just-closed remote tmux session may still have transport output in
 		// memory. It is a useful, bounded fallback but never replaces a live
 		// tmux capture when one is available.

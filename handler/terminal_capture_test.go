@@ -114,7 +114,7 @@ func TestReplayTerminalHistoryCapturesTmuxOnlyOnExplicitRequest(t *testing.T) {
 	if err := json.NewDecoder(res.Body).Decode(&payload); err != nil {
 		t.Fatal(err)
 	}
-	if payload.Bytes != len("older\ncurrent\n") || payload.Data == "" {
+	if payload.Bytes != len("older\r\ncurrent\r\n") || payload.Data == "" {
 		t.Fatalf("unexpected payload=%+v", payload)
 	}
 }
