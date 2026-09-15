@@ -245,55 +245,55 @@ export default function FileEditor({ filePath, fileName, ws, revision, refreshMo
 
   const editor = (
       <div className={embedded ? 'file-editor-workbench' : undefined} style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-        {loading && <div style={{ padding: 16, color: colors.textDim }}>{t("file_loading")}</div>}
+        {loading && <div className="file-editor-loading">{t("file_loading")}</div>}
         {error && (
-          <div style={{ padding: '6px 12px', color: colors.danger, background: colors.bgError, fontSize: font.md }}>{error}</div>
+          <div className="file-editor-notice is-error" role="alert">{error}</div>
         )}
         {externalChange && (
-          <div style={{ padding: '6px 12px', color: colors.text, background: colors.dangerSoft, fontSize: font.md }} role="alert">
+          <div className="file-editor-notice is-warning" role="alert">
             <span>{t('file_external_change')}</span>
-            <button onClick={reloadExternalChange}>{t('file_reload')}</button>
-            <button onClick={() => setExternalChange(false)}>{t('file_keep_draft')}</button>
+            <div className="file-editor-notice-actions">
+              <button className="file-editor-button is-primary" onClick={reloadExternalChange}>{t('file_reload')}</button>
+              <button className="file-editor-button" onClick={() => setExternalChange(false)}>{t('file_keep_draft')}</button>
+            </div>
           </div>
         )}
         {saveConflict && (
-          <div style={{ padding: '6px 12px', color: colors.text, background: colors.dangerSoft, fontSize: font.md }} role="alert">
+          <div className="file-editor-notice is-warning" role="alert">
             <span>{t('file_save_conflict')}</span>
-            <button onClick={() => setSaveConflict(false)}>{t('file_cancel_save')}</button>
-            <button onClick={() => handleSave(true)}>{t('file_force_save')}</button>
+            <div className="file-editor-notice-actions">
+              <button className="file-editor-button" onClick={() => setSaveConflict(false)}>{t('file_cancel_save')}</button>
+              <button className="file-editor-button is-danger" onClick={() => handleSave(true)}>{t('file_force_save')}</button>
+            </div>
           </div>
         )}
         {refreshMode === null && !loading && (
-          <div style={{ padding: '6px 12px', color: colors.text, background: colors.bgBar, fontSize: font.md }} role="status">
+          <div className="file-editor-notice is-info" role="status">
             <span>{t('file_refresh_mode_prompt')}</span>
-            <button onClick={() => onRefreshModeChange('auto')}>{t('file_auto_refresh')}</button>
-            <button onClick={() => onRefreshModeChange('manual')}>{t('file_manual_refresh')}</button>
+            <div className="file-editor-notice-actions">
+              <button className="file-editor-button is-primary" onClick={() => onRefreshModeChange('auto')}>{t('file_auto_refresh')}</button>
+              <button className="file-editor-button" onClick={() => onRefreshModeChange('manual')}>{t('file_manual_refresh')}</button>
+            </div>
           </div>
         )}
         <div ref={editorRef} style={{ flex: 1, minHeight: 0 }} />
-        <div style={{
-          padding: '8px 16px', background: colors.bgBar, display: 'flex',
-          justifyContent: 'space-between', alignItems: 'center',
-        }}>
-          <span style={{ color: colors.textDim, fontSize: font.sm, display: 'flex', alignItems: 'center', gap: 10 }}>
+        <div className="file-editor-footer">
+          <span className="file-editor-meta">
             <span>{filePath} · Ctrl+S {t("conn_save")}</span>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
+            <label className="file-editor-backup">
               <input type="checkbox" checked={backup} onChange={(e) => setBackup(e.target.checked)} />
               {t('file_bak')}
             </label>
             {refreshMode === 'auto' ? (
-              <button onClick={() => onRefreshModeChange('manual')}>{t('file_pause_auto_refresh')}</button>
+              <button className="file-editor-button" onClick={() => onRefreshModeChange('manual')}>{t('file_pause_auto_refresh')}</button>
             ) : refreshMode === 'manual' ? (
               <>
-                <button onClick={requestManualReload}>{t('file_reload')}</button>
-                <button onClick={() => onRefreshModeChange('auto')}>{t('file_auto_refresh')}</button>
+                <button className="file-editor-button" onClick={requestManualReload}>{t('file_reload')}</button>
+                <button className="file-editor-button" onClick={() => onRefreshModeChange('auto')}>{t('file_auto_refresh')}</button>
               </>
             ) : null}
           </span>
-          <button onClick={() => handleSave()} disabled={saving} style={{
-            background: saving ? colors.border : colors.info, border: 'none',
-            color: colors.white, padding: '6px 16px', borderRadius: 4, cursor: 'pointer', fontSize: font.md,
-          }}>
+          <button className="file-editor-button is-primary file-editor-save" onClick={() => handleSave()} disabled={saving}>
             {saving ? t('conn_saving') : t('conn_save')}
           </button>
         </div>
