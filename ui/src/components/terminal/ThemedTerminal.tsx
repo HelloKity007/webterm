@@ -705,7 +705,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
             return { width: metric.width, height: metric.fontBoundingBoxAscent + metric.fontBoundingBoxDescent };
           };
           const geometryKey = [width, height, dpr, fontSize, term.options.fontFamily, !!webglAddon, window.innerWidth].join(':');
-          let fittedFont = localViewportFont(fontSize, width, dpr, measure, !!webglAddon);
+          const fittedFont = localViewportFont(fontSize, width, dpr, measure, !!webglAddon);
           if (geometryKey !== requestedGeometryKey) {
             const metric = measure(fittedFont);
             const cellWidth = (webglAddon ? Math.floor(metric.width * dpr) : metric.width * dpr) / dpr;
@@ -718,16 +718,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
           }
           const exactGrid = announcedGrid || requestedGridRef.current;
           if (!exactGrid) return;
-          // A peer may grow the authoritative tmux grid beyond the rows this
-          // local panel requested. Width-only fitting then leaves a clipped
-          // prompt below the panel. Bound the glyph by the actual row budget
-          // before xterm paints the received grid.
-          const fittedMetric = measure(fittedFont);
-          const fittedCellHeight = Math.ceil(fittedMetric.height * dpr) / dpr;
-          if (fittedCellHeight > 0 && fittedCellHeight * exactGrid.rows > height) {
-            fittedFont = Math.max(4, fittedFont * height / (fittedCellHeight * exactGrid.rows) * 0.995);
-          }
-          const key = [width, height, dpr, exactGrid.cols, exactGrid.rows, fittedFont.toFixed(3), term.options.fontFamily, !!webglAddon, terminalModeRef.current, window.innerWidth < smallViewportWidth].join(':');
+          const key = [width, height, dpr, exactGrid.cols, exactGrid.rows, term.options.fontFamily, !!webglAddon, terminalModeRef.current, window.innerWidth < smallViewportWidth].join(':');
           // Re-entering the viewport or receiving the same title is not a
           // geometry change. Keep the already painted metrics untouched.
           if (key === fittedGridKey) return;
@@ -744,7 +735,13 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
           ref.current.classList.add('desktop-local-viewport');
           ref.current.style.overflow = 'auto';
           if (term.element) {
-            term.element.style.height = `${Math.max(height, contentHeight)}px`;
+            const scrollableShell = terminalModeRef.current !== 'cli';
+            term.element.style.height = `${scrollableShell ? Math.max(height, contentHeight) : height}px`;
+            // xterm's internal viewport is absolutely positioned, so a height
+            // alone can fail to contribute to the surface's scroll height.
+            // Keep a Bash grid enlarged by a peer in the local scroll flow;
+            // that preserves this display's font and exposes its history bar.
+            term.element.style.minHeight = scrollableShell ? `${contentHeight}px` : '';
             term.element.style.width = `${Math.max(width, contentWidth)}px`;
           }
           viewportInitialized = true;
