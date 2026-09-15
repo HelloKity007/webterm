@@ -39,8 +39,12 @@ try {
       const metrics = await pane.evaluate((surface, row) => {
         const screen = surface.querySelector('.xterm-screen').getBoundingClientRect();
         const cell = screen.height / Number(surface.dataset.sharedRows);
+        const viewport = surface.querySelector('.xterm-viewport');
         return { scrollTop: surface.scrollTop, height: surface.clientHeight, cursorTop: row * cell,
-          cursorBottom: (row + 1) * cell, font: surface.dataset.fittedFontSize };
+          cursorBottom: (row + 1) * cell, font: surface.dataset.fittedFontSize,
+          sharedRows: surface.dataset.sharedRows, screenHeight: screen.height,
+          xtermViewportScrollTop: viewport?.scrollTop, xtermViewportScrollHeight: viewport?.scrollHeight,
+          xtermViewportHeight: viewport?.clientHeight };
       }, Number(actual[1]));
       await pane.screenshot({ path: `${output}/${width}-peer-${index}.png` });
       results.push({ width, peer: index, ...metrics });
