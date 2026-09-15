@@ -1,219 +1,116 @@
-import { useState } from "react";
-import SftpPanel from "./SftpPanel";
+import { lazy, Suspense, useCallback, useMemo, useState } from "react";
+import SftpPanel, { type OpenRemoteFile } from "./SftpPanel";
 import CustomSelect from "../common/CustomSelect";
 import Icon from "../common/Icon";
 import { t } from "../../i18n";
-import type { FileClipboard } from "./FileList";
+import "./sftp.css";
+
+const FileEditor = lazy(() => import("../common/FileEditor"));
 
 interface Props {
   connections: Array<{ id: number; name: string }>;
 }
 
-export default function DualPaneSftp({ connections }: Props) {
-  const [selectedLeftConnId, setLeftConnId] = useState<number | null>(
-    connections[0]?.id || null,
-  );
-  const [selectedRightConnId, setRightConnId] = useState<number | null>(null);
-  const [clipboard, setClipboard] = useState<FileClipboard | null>(null);
-  const [leftPath, setLeftPath] = useState("/");
-  const [rightPath, setRightPath] = useState("/home");
-  const [leftSelection, setLeftSelection] = useState<string[]>([]);
-  const [rightSelection, setRightSelection] = useState<string[]>([]);
-  const [transfer, setTransfer] = useState<{
-    status: "running" | "failed";
-    message?: string;
-  } | null>(null);
-  const [refreshNonce, setRefreshNonce] = useState(0);
-  const [retry, setRetry] = useState<{
-    from: "left" | "right";
-    paths: string[];
-  } | null>(null);
-  const leftConnId = connections.some(
-    (connection) => connection.id === selectedLeftConnId,
-  )
-    ? selectedLeftConnId
-    : connections[0]?.id || null;
-  const rightConnId = connections.some(
-    (connection) => connection.id === selectedRightConnId,
-  )
-    ? selectedRightConnId
-    : null;
-  const leftEndpoint = `remote:${leftConnId ?? "none"}`;
-  const rightEndpoint = rightConnId == null ? "local" : `remote:${rightConnId}`;
+type EditorGroup = "primary" | "secondary";
+type EditorTab = OpenRemoteFile & {
+  id: string;
+  group: EditorGroup;
+  refreshMode: "auto" | "manual" | null;
+  dirty: boolean;
+};
 
-  const endpoint = (side: "left" | "right", path: string) =>
-    side === "left"
-      ? { kind: "sftp", conn_id: leftConnId, path }
-      : rightConnId == null
-        ? { kind: "local", path }
-        : { kind: "sftp", conn_id: rightConnId, path };
-  const transferFiles = async (from: "left" | "right", paths: string[]) => {
-    if (!paths.length) return;
-    setRetry({ from, paths });
-    setTransfer({ status: "running" });
-    const to = from === "left" ? "right" : "left";
-    const destinationDir = to === "left" ? leftPath : rightPath;
-    const token = localStorage.getItem("token") || "";
-    const failures: string[] = [];
-    for (const sourcePath of paths) {
-      const name = sourcePath.split("/").filter(Boolean).at(-1) || "item";
-      const destinationPath = `${destinationDir.replace(/\/$/, "")}/${name}`;
-      try {
-        const response = await fetch("/api/files/transfer", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({
-            source: endpoint(from, sourcePath),
-            destination: endpoint(to, destinationPath),
-            move: false,
-            request_id: `ui-${Date.now()}-${name}`,
-          }),
-        });
-        const result = await response.json();
-        if (!response.ok || result.failed?.length)
-          failures.push(
-            ...(result.failed?.map(
-              (item: { path: string; error: string }) =>
-                `${item.path}: ${item.error}`,
-            ) || [result.error || String(response.status)]),
-          );
-      } catch (error) {
-        failures.push(error instanceof Error ? error.message : String(error));
-      }
-    }
-    if (failures.length)
-      setTransfer({ status: "failed", message: failures.join("; ") });
-    else {
-      setTransfer(null);
-      setRefreshNonce((value) => value + 1);
-    }
+const tabIdFor = (path: string) => `file:${path}`;
+
+/** One remote endpoint and a durable editor workbench. */
+export default function DualPaneSftp({ connections }: Props) {
+  const [selectedConnId, setSelectedConnId] = useState<number | null>(connections[0]?.id || null);
+  const [socket, setSocket] = useState<WebSocket | null>(null);
+  const [tabs, setTabs] = useState<EditorTab[]>([]);
+  const [active, setActive] = useState<Record<EditorGroup, string | null>>({ primary: null, secondary: null });
+  const [focusedGroup, setFocusedGroup] = useState<EditorGroup>("primary");
+  const [split, setSplit] = useState(false);
+  const [refreshNonce, setRefreshNonce] = useState(0);
+
+  const connId = connections.some((connection) => connection.id === selectedConnId)
+    ? selectedConnId : connections[0]?.id || null;
+
+  const openFile = useCallback((file: OpenRemoteFile) => {
+    const id = tabIdFor(file.path);
+    setTabs((current) => {
+      const existing = current.find((tab) => tab.id === id);
+      if (existing) return current.map((tab) => tab.id === id ? { ...tab, group: focusedGroup, revision: file.revision || tab.revision } : tab);
+      return [...current, { ...file, id, group: focusedGroup, refreshMode: null, dirty: false }];
+    });
+    setActive((current) => ({ ...current, [focusedGroup]: id }));
+  }, [focusedGroup]);
+
+  const closeTab = useCallback((id: string) => {
+    setTabs((current) => {
+      const target = current.find((tab) => tab.id === id);
+      if (!target || (target.dirty && !window.confirm(t("file_close_unsaved")))) return current;
+      const remaining = current.filter((tab) => tab.id !== id);
+      setActive((selected) => selected[target.group] === id
+        ? { ...selected, [target.group]: remaining.filter((tab) => tab.group === target.group).at(-1)?.id || null }
+        : selected);
+      return remaining;
+    });
+  }, []);
+
+  const mergeSplit = () => {
+    setTabs((current) => current.map((tab) => tab.group === "secondary" ? { ...tab, group: "primary" } : tab));
+    setActive((current) => ({ primary: current.primary || current.secondary, secondary: null }));
+    setFocusedGroup("primary");
+    setSplit(false);
   };
 
+  const renderGroup = (group: EditorGroup) => {
+    const groupTabs = tabs.filter((tab) => tab.group === group);
+    const activeId = active[group];
+    return (
+      <section className="file-editor-group" data-editor-group={group} onMouseDown={() => setFocusedGroup(group)}>
+        <div className="file-editor-tabs" role="tablist" aria-label={t("file_open_files")}>
+          {groupTabs.map((tab) => (
+            <div key={tab.id} className={`file-editor-tab${tab.id === activeId ? " is-active" : ""}`}>
+              <button role="tab" aria-selected={tab.id === activeId} onClick={() => setActive((current) => ({ ...current, [group]: tab.id }))}>
+                <Icon name="file" size={14} /><span>{tab.name}</span>{tab.dirty && <i aria-label={t("file_unsaved")} />}
+              </button>
+              <button className="file-editor-tab-close" aria-label={`${t("tab_close")} ${tab.name}`} onClick={() => closeTab(tab.id)}><Icon name="x" size={13} /></button>
+            </div>
+          ))}
+          {group === "primary" && <button className="file-editor-split" title={split ? t("file_close_split") : t("file_split_editor")} aria-label={split ? t("file_close_split") : t("file_split_editor")} onClick={() => split ? mergeSplit() : setSplit(true)}><Icon name={split ? "panel-left-close" : "table"} size={15} /></button>}
+        </div>
+        <div className="file-editor-stack">
+          {!groupTabs.length && <div className="file-editor-empty"><Icon name="file" size={30} /><strong>{t("file_editor_empty_title")}</strong><span>{t("file_editor_empty_hint")}</span></div>}
+          {groupTabs.map((tab) => (
+            <div key={tab.id} className="file-editor-page" hidden={tab.id !== activeId}>
+              <Suspense fallback={<div className="sftp-state">Loading…</div>}>
+                <FileEditor embedded filePath={tab.path} fileName={tab.name} revision={tab.revision} ws={socket} refreshMode={tab.refreshMode}
+                  onRefreshModeChange={(refreshMode) => setTabs((current) => current.map((item) => item.id === tab.id ? { ...item, refreshMode } : item))}
+                  onDirtyChange={(dirty) => setTabs((current) => current.map((item) => item.id === tab.id ? { ...item, dirty } : item))}
+                  onClose={() => closeTab(tab.id)} onSaved={() => setRefreshNonce((value) => value + 1)} />
+              </Suspense>
+            </div>
+          ))}
+        </div>
+      </section>
+    );
+  };
+
+  const selectedConnectionName = useMemo(() => connections.find((connection) => connection.id === connId)?.name || "", [connId, connections]);
+
   return (
-    <div className="sftp-shell sftp-dual">
-      {/* Left pane: Remote */}
-      <div className="sftp-endpoint">
-        <div className="sftp-endpoint-head">
-          <Icon name="monitor" size={15} />
-          <span className="sftp-endpoint-label">{t("sftp_remote")}</span>
-          <CustomSelect
-            value={String(leftConnId || "")}
-            onChange={(v) => setLeftConnId(Number(v) || null)}
-            style={{}}
-          >
-            {connections.map((c) => (
-              <option key={c.id} value={String(c.id)}>
-                {c.name}
-              </option>
-            ))}
+    <div className={`file-workbench${split ? " is-split" : ""}`}>
+      <aside className="file-explorer" aria-label={t("file_browser")}>
+        <div className="file-explorer-head"><Icon name="monitor" size={15} /><span>{t("file_remote_files")}</span>
+          <CustomSelect value={String(connId || "")} onChange={(value) => setSelectedConnId(Number(value) || null)}>
+            {connections.map((connection) => <option key={connection.id} value={String(connection.id)}>{connection.name}</option>)}
           </CustomSelect>
         </div>
-        <div style={{ flex: 1, minHeight: 0 }}>
-          {leftConnId ? (
-            <SftpPanel
-              connId={leftConnId}
-              endpointId={leftEndpoint}
-              clipboard={clipboard}
-              onClipboardChange={setClipboard}
-              onPathChange={setLeftPath}
-              onSelectionChange={setLeftSelection}
-              refreshNonce={refreshNonce}
-            />
-          ) : (
-            <div className="sftp-endpoint-empty">{t("sftp_select_conn")}</div>
-          )}
-        </div>
-      </div>
-
-      {/* Divider */}
-      <div className="sftp-divider" role="separator">
-        <div
-          className="sftp-direction-actions"
-          aria-label={t("file_cross_endpoint_unavailable")}
-        >
-          <button
-            disabled={!leftSelection.length || transfer?.status === "running"}
-            title={t("file_transfer_right")}
-            aria-label={t("file_transfer_right")}
-            onClick={() => void transferFiles("left", leftSelection)}
-          >
-            ›
-          </button>
-          <button
-            disabled={!rightSelection.length || transfer?.status === "running"}
-            title={t("file_transfer_left")}
-            aria-label={t("file_transfer_left")}
-            onClick={() => void transferFiles("right", rightSelection)}
-          >
-            ‹
-          </button>
-        </div>
-      </div>
-
-      {/* Right pane: Local (default) or another remote */}
-      <div className="sftp-endpoint">
-        <div className="sftp-endpoint-head">
-          <Icon name={rightConnId === null ? "laptop" : "monitor"} size={15} />
-          <span className="sftp-endpoint-label">
-            {rightConnId === null ? t("sftp_local") : t("sftp_remote")}
-          </span>
-          <CustomSelect
-            value={rightConnId === null ? "local" : String(rightConnId)}
-            onChange={(v) => setRightConnId(v === "local" ? null : Number(v))}
-            style={{}}
-          >
-            <option value="local">{t("sftp_local_option")}</option>
-            {connections.map((c) => (
-              <option key={c.id} value={String(c.id)}>
-                {c.name}
-              </option>
-            ))}
-          </CustomSelect>
-        </div>
-        <div style={{ flex: 1, minHeight: 0 }}>
-          {rightConnId ? (
-            <SftpPanel
-              connId={rightConnId}
-              endpointId={rightEndpoint}
-              clipboard={clipboard}
-              onClipboardChange={setClipboard}
-              onPathChange={setRightPath}
-              onSelectionChange={setRightSelection}
-              refreshNonce={refreshNonce}
-            />
-          ) : (
-            <SftpPanel
-              localMode
-              endpointId={rightEndpoint}
-              clipboard={clipboard}
-              onClipboardChange={setClipboard}
-              onPathChange={setRightPath}
-              onSelectionChange={setRightSelection}
-              refreshNonce={refreshNonce}
-            />
-          )}
-        </div>
-      </div>
-      {transfer && (
-        <div
-          className={`sftp-cross-status${transfer.status === "failed" ? " is-error" : ""}`}
-          role={transfer.status === "failed" ? "alert" : "status"}
-        >
-          <span>
-            {transfer.status === "running"
-              ? t("file_operation_running")
-              : transfer.message || t("file_operation_failed")}
-          </span>
-          {transfer.status === "failed" && retry && (
-            <button onClick={() => void transferFiles(retry.from, retry.paths)}>
-              {t("file_retry")}
-            </button>
-          )}
-        </div>
-      )}
+        {connId ? <SftpPanel key={connId} connId={connId} endpointId={`remote:${connId}`} refreshNonce={refreshNonce} onSocketChange={setSocket} onOpenFile={openFile} /> : <div className="sftp-endpoint-empty">{t("sftp_select_conn")}</div>}
+      </aside>
+      <main className="file-editor-workspace" aria-label={selectedConnectionName || t("file_remote_files")}>
+        {renderGroup("primary")}{split && renderGroup("secondary")}
+      </main>
     </div>
   );
 }

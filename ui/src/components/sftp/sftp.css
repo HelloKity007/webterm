@@ -585,3 +585,124 @@
     animation: none;
   }
 }
+
+/* Remote file workbench: the explorer is a navigation tool, the editor owns
+   the remaining space. This intentionally replaces the old local/remote
+   transfer split so a browser never appears as the server's local disk. */
+.file-workbench {
+  height: 100%;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(260px, 32%) minmax(0, 1fr);
+  color: var(--sftp-text);
+  background: #101512;
+}
+.file-explorer {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--sftp-line);
+  background: var(--sftp-bg);
+}
+.file-explorer > .sftp-shell { min-height: 0; flex: 1; }
+.file-explorer-head {
+  min-height: 43px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 9px;
+  color: #c9d9cc;
+  background: #1a231c;
+  border-bottom: 1px solid var(--sftp-line);
+  font-weight: 650;
+}
+.file-explorer-head > span { white-space: nowrap; }
+.file-explorer-head select { min-width: 0; flex: 1; }
+.file-editor-workspace {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  background: #111713;
+}
+.file-workbench.is-split .file-editor-workspace { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.file-editor-group {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--sftp-line);
+}
+.file-editor-group:last-child { border-right: 0; }
+.file-editor-tabs {
+  min-height: 38px;
+  display: flex;
+  align-items: stretch;
+  overflow-x: auto;
+  overflow-y: hidden;
+  background: #18201a;
+  border-bottom: 1px solid var(--sftp-line);
+}
+.file-editor-tab {
+  min-width: 0;
+  max-width: 210px;
+  display: flex;
+  align-items: center;
+  color: var(--sftp-muted);
+  border-right: 1px solid #2d3a31;
+}
+.file-editor-tab.is-active { color: var(--sftp-text); background: #111713; box-shadow: inset 0 2px var(--sftp-signal); }
+.file-editor-tab > button:first-child {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  overflow: hidden;
+  border: 0;
+  color: inherit;
+  background: transparent;
+  cursor: pointer;
+}
+.file-editor-tab > button:first-child span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.file-editor-tab i { width: 6px; height: 6px; flex: none; border-radius: 50%; background: #dda45c; }
+.file-editor-tab-close, .file-editor-split {
+  width: 30px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  color: var(--sftp-muted);
+  background: transparent;
+  cursor: pointer;
+}
+.file-editor-tab-close:hover, .file-editor-split:hover { color: var(--sftp-text); background: var(--sftp-raised); }
+.file-editor-split { margin-left: auto; border-left: 1px solid #2d3a31; }
+.file-editor-stack { position: relative; min-height: 0; flex: 1; }
+.file-editor-page { position: absolute; inset: 0; min-width: 0; min-height: 0; }
+.file-editor-page[hidden] { display: none; }
+.file-editor-workbench { min-height: 0; background: #101512; }
+.file-editor-workbench .cm-editor { height: 100%; }
+.file-editor-workbench .cm-content { caret-color: #f2fff1; }
+.file-editor-empty {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  color: var(--sftp-muted);
+  text-align: center;
+}
+.file-editor-empty strong { color: var(--sftp-text); font-weight: 600; }
+.file-editor-empty span { max-width: 31ch; line-height: 1.5; }
+@media (max-width: 860px) {
+  .file-workbench { grid-template-columns: minmax(220px, 42%) minmax(0, 1fr); }
+  .file-workbench.is-split .file-editor-workspace { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); }
+  .file-workbench.is-split .file-editor-group { border-right: 0; border-bottom: 1px solid var(--sftp-line); }
+}
+@media (max-width: 600px) {
+  .file-workbench { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(260px, 42%) minmax(0, 1fr); }
+  .file-explorer { border-right: 0; border-bottom: 1px solid var(--sftp-line); }
+}

@@ -1,95 +1,52 @@
 // @vitest-environment jsdom
-import {
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-  waitFor,
-} from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import DualPaneSftp from "./DualPaneSftp";
 import { setLang } from "../../i18n";
 
 vi.mock("./SftpPanel", () => ({
-  default: (props: {
-    endpointId: string;
-    localMode?: boolean;
-    onSelectionChange?: (paths: string[]) => void;
-    onPathChange?: (path: string) => void;
-  }) => (
+  default: (props: { endpointId: string; onOpenFile?: (file: { path: string; name: string; revision?: string }) => void }) => (
     <div>
       <span>{props.endpointId}</span>
-      <button
-        onClick={() => {
-          props.onPathChange?.(props.localMode ? "/home/demo" : "/var/log");
-          props.onSelectionChange?.([
-            props.localMode ? "/home/demo/a.txt" : "/var/log/app.log",
-          ]);
-        }}
-      >
-        select-{props.endpointId}
-      </button>
+      <button onClick={() => props.onOpenFile?.({ path: "/var/log/app.log", name: "app.log", revision: "one" })}>open-log</button>
+      <button onClick={() => props.onOpenFile?.({ path: "/etc/app.conf", name: "app.conf", revision: "two" })}>open-config</button>
     </div>
   ),
 }));
 
-describe("DualPaneSftp transfer", () => {
-  afterEach(() => {
-    cleanup();
-    vi.restoreAllMocks();
-  });
+vi.mock("../common/FileEditor", () => ({
+  default: ({ fileName }: { fileName: string }) => <div>editor:{fileName}</div>,
+}));
 
-  it("selects the first remote endpoint when connections load asynchronously", async () => {
+describe("Remote file workbench", () => {
+  afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+
+  it("selects the first remote endpoint when connections load asynchronously", () => {
     setLang("en");
     const { rerender } = render(<DualPaneSftp connections={[]} />);
     expect(screen.queryByText("remote:7")).toBeNull();
     rerender(<DualPaneSftp connections={[{ id: 7, name: "server-7" }]} />);
-    expect(await screen.findByText("remote:7")).toBeTruthy();
-    expect(screen.getByText("server-7")).toBeTruthy();
+    expect(screen.getByText("remote:7")).toBeTruthy();
+    expect(screen.getByText("Remote files")).toBeTruthy();
+    expect(screen.queryByText("Local")).toBeNull();
   });
 
-  it("transfers selected remote files to the current local directory", async () => {
+  it("opens remote files as persistent editor tabs instead of a transfer pane", async () => {
     setLang("en");
-    localStorage.setItem("token", "test-token");
-    const request = vi
-      .fn()
-      .mockResolvedValue({
-        ok: true,
-        json: async () => ({ succeeded: ["/var/log/app.log"], failed: [] }),
-      });
-    vi.stubGlobal("fetch", request);
     render(<DualPaneSftp connections={[{ id: 7, name: "server-7" }]} />);
-    fireEvent.click(screen.getByRole("button", { name: "select-remote:7" }));
-    fireEvent.click(
-      screen.getByRole("button", { name: "Transfer to the right" }),
-    );
-    await waitFor(() => expect(request).toHaveBeenCalledOnce());
-    const [, options] = request.mock.calls[0];
-    expect(JSON.parse(options.body)).toMatchObject({
-      source: { kind: "sftp", conn_id: 7, path: "/var/log/app.log" },
-      destination: { kind: "local", path: "/home/app.log" },
-      move: false,
-    });
+    fireEvent.click(screen.getByRole("button", { name: "open-log" }));
+    fireEvent.click(screen.getByRole("button", { name: "open-config" }));
+    expect(await screen.findByRole("tab", { name: /app\.log/ })).toBeTruthy();
+    expect(screen.getByRole("tab", { name: /app\.conf/ })).toBeTruthy();
   });
 
-  it("keeps a failed transfer visible and offers retry", async () => {
+  it("routes new files to the editor column the operator focused after splitting", async () => {
     setLang("en");
-    const request = vi
-      .fn()
-      .mockResolvedValue({
-        ok: true,
-        json: async () => ({
-          failed: [{ path: "/var/log/app.log", error: "denied" }],
-        }),
-      });
-    vi.stubGlobal("fetch", request);
     render(<DualPaneSftp connections={[{ id: 7, name: "server-7" }]} />);
-    fireEvent.click(screen.getByRole("button", { name: "select-remote:7" }));
-    fireEvent.click(
-      screen.getByRole("button", { name: "Transfer to the right" }),
-    );
-    expect((await screen.findByRole("alert")).textContent).toContain("denied");
-    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
-    await waitFor(() => expect(request).toHaveBeenCalledTimes(2));
+    fireEvent.click(screen.getByRole("button", { name: "Split editor" }));
+    fireEvent.mouseDown(document.querySelector('[data-editor-group="secondary"]')!);
+    fireEvent.click(screen.getByRole("button", { name: "open-log" }));
+    const secondary = document.querySelector('[data-editor-group="secondary"]')!;
+    expect(secondary.textContent).toContain("app.log");
   });
 });

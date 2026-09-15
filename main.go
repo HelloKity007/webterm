@@ -145,13 +145,9 @@ func main() {
 	mux.Handle("/ws/layout", handler.TicketWebSocketHandler{Store: st, Tickets: wsTickets, Endpoint: "layout", Next: websocket.Handler(layoutH.HandleEvents)})
 
 	sftpRestH := &handler.SftpHandler{Store: st, Pool: pool, AESCipher: aesCipher}
-	localFSRestH := handler.LocalFSHandler{}
 
 	mux.Handle("POST /api/sftp/upload", auth.Middleware(http.HandlerFunc(sftpRestH.Upload)))
 	mux.Handle("GET /api/sftp/download/{id}", handler.TicketHTTPHandler{Store: st, Tickets: wsTickets, Endpoint: "sftp-download", Next: http.HandlerFunc(sftpRestH.Download)})
-	mux.Handle("POST /api/local-files/upload", auth.Middleware(http.HandlerFunc(localFSRestH.Upload)))
-	mux.Handle("GET /api/local-files/download", handler.TicketHTTPHandler{Store: st, Tickets: wsTickets, Endpoint: "local-download", Next: http.HandlerFunc(localFSRestH.Download)})
-	mux.Handle("POST /api/files/transfer", auth.Middleware(http.HandlerFunc(sftpRestH.Transfer)))
 
 	dbConnH := &handler.DbConnHandler{Store: st, AESCipher: aesCipher}
 	groupH := &handler.GroupHandler{Store: st}
@@ -170,7 +166,6 @@ func main() {
 	mux.Handle("DELETE /api/terminal-sessions/{conn_id}", auth.Middleware(http.HandlerFunc(wsH.CloseTerminalSession)))
 	mux.Handle("/ws/sftp/{conn_id}", handler.TicketWebSocketHandler{Store: st, Tickets: wsTickets, Endpoint: "sftp", Next: websocket.Handler(wsH.HandleSFTP)})
 	mux.Handle("/ws/db/{conn_id}", handler.TicketWebSocketHandler{Store: st, Tickets: wsTickets, Endpoint: "db", Next: websocket.Handler(wsH.HandleDB)})
-	mux.Handle("/ws/local-fs", handler.TicketWebSocketHandler{Store: st, Tickets: wsTickets, Endpoint: "local-fs", Next: websocket.Handler(handler.HandleLocalFSWithRegistry(wsRegistry))})
 
 	mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

@@ -6,7 +6,7 @@ Release boundary: test `9444` only until the user separately approves production
 
 ## Outcome
 
-Replace the current basic SFTP/local file lists with a cohesive, operations-grade
+Replace the current basic SFTP/local file lists with a cohesive, remote-only
 file workspace while preserving terminal directory following, existing connection
 authorization, the SSH/SFTP pool, and the accepted terminal/mobile behavior.
 
@@ -35,18 +35,13 @@ during long sessions.
 ### Layout
 
 ```text
-+ Location / connection +-------------------- Search + View + More +
-| breadcrumb path                                                   |
-+-------------------------------------------------------------------+
-| Name                          | Size       | Modified       | Mode  |
-| [ ] folder / file rows, dense but calm, selection stays obvious  |
-|                                                                   |
-+-------------------------------------------------------------------+
-| selection summary        free/entry status        transfer drawer |
-+-------------------------------------------------------------------+
++ Remote connection +------------------------------------------------+
+| explorer: path, search, file rows | editor tabs / split editor     |
+| explorer: upload/download/actions | persistent remote file content |
++---------------------------------------------------------------------+
 
-Dual pane: [ local workspace ]  < transfer affordance > [ SFTP ]
-Mobile: one active pane, pane switcher, bottom action bar, task drawer.
+The browser transfers files directly to the selected remote endpoint. It never
+labels the WebTerm host filesystem as the browser's local Windows filesystem.
 ```
 
 Alignment is left-led. Numeric metadata aligns right. Borders communicate table,
@@ -61,10 +56,10 @@ split and task boundaries; decoration does not compete with the content.
 5. Large directories and files must not freeze the interface or scale server memory
    with object size.
 
-Self-critique: the initial dark-surface concept could have become a generic developer
-dashboard. It is constrained here to the file work surface only, retains WebTerm's
-existing green chrome, uses no gradients/cards as decoration, and makes the two-pane
-transfer relationship the single memorable visual idea.
+Self-critique: the initial dual-pane transfer concept was misleading for browser
+users because its “local” pane was actually the WebTerm host. The revised layout
+makes the persistent editor workbench the memorable relationship and reserves the
+left rail for remote navigation only.
 
 ## Work packages and evidence
 
@@ -82,8 +77,8 @@ and memory measurements during large transfer.
 
 - Rebuild toolbar, breadcrumb, table, status and empty/error/loading states.
 - Add filtering, selection, range/multi-select, keyboard navigation and batch actions.
-- Add copy/cut/paste and explicit cross-pane transfer affordances where backend
-  capabilities support them.
+- Add copy/cut/paste within one remote endpoint; upload/download bridge the
+  browser and that endpoint without exposing a host-local filesystem.
 - Add responsive single-pane/mobile behavior and accessible labels/focus.
 - Keep editing, upload/download, chmod, rename, mkdir and directory following.
 

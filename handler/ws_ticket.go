@@ -147,10 +147,6 @@ func validWSTicketRequest(request wsTicketRequest) bool {
 		return request.ConnID > 0 && request.TerminalID == "" && request.ClientID == ""
 	case "layout":
 		return request.ConnID == 0 && request.TerminalID == "" && request.ClientID != "" && len(request.ClientID) <= 128
-	case "local-fs":
-		return request.ConnID == 0 && request.TerminalID == "" && request.ClientID == ""
-	case "local-download":
-		return request.ConnID == 0 && request.TerminalID == "" && request.ClientID == ""
 	default:
 		return false
 	}

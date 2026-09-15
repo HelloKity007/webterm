@@ -22,7 +22,6 @@ interface Props {
   onGoParent?: () => void;
   onToggleFollow?: () => void;
   followCd?: boolean;
-  localMode?: boolean;
   endpointId: string;
   clipboard: FileClipboard | null;
   onClipboardChange: (clipboard: FileClipboard | null) => void;
@@ -114,7 +113,6 @@ export default function FileList(p: Props) {
     onGoParent,
     onToggleFollow,
     followCd,
-    localMode,
     endpointId,
     clipboard,
     onClipboardChange,
@@ -223,7 +221,7 @@ export default function FileList(p: Props) {
   }, [selected, visible]);
   const upload = useCallback(
     (items: FileList | File[]) => {
-      if ((!connId && !localMode) || !items.length) return;
+      if (!connId || !items.length) return;
       const dest = uploadTarget.current || currentPath;
       uploadTarget.current = null;
       setUploading(true);
@@ -239,7 +237,7 @@ export default function FileList(p: Props) {
         const f = items[i];
         setUploadName(f.name);
         const form = new FormData();
-        if (!localMode) form.append("conn_id", String(connId));
+        form.append("conn_id", String(connId));
         form.append("path", `${dest.replace(/\/$/, "")}/${f.name}`);
         form.append("file", f);
         const x = new XMLHttpRequest();
@@ -264,30 +262,23 @@ export default function FileList(p: Props) {
           setUploading(false);
           flash(t("file_upload_error"));
         };
-        if (localMode) x.open("POST", "/api/local-files/upload");
-        else x.open("POST", "/api/sftp/upload");
+        x.open("POST", "/api/sftp/upload");
         x.setRequestHeader("Authorization", `Bearer ${token}`);
         x.send(form);
       };
       next(0);
     },
-    [connId, currentPath, localMode, onUpload, flash],
+    [connId, currentPath, onUpload, flash],
   );
   const download = async (path: string, name: string) => {
-    if (!connId && !localMode) return;
+    if (!connId) return;
     const a = document.createElement("a");
     try {
-      a.href = localMode
-        ? await downloadTicketURL(
-            "/api/local-files/download",
-            { endpoint: "local-download" },
-            { path },
-          )
-        : await downloadTicketURL(
-            `/api/sftp/download/${connId}`,
-            { endpoint: "sftp-download", connId },
-            { path },
-          );
+    a.href = await downloadTicketURL(
+      `/api/sftp/download/${connId}`,
+      { endpoint: "sftp-download", connId },
+      { path },
+    );
     } catch {
       flash(`${t("file_download_failed")}: ${name}`);
       return;
@@ -463,7 +454,7 @@ export default function FileList(p: Props) {
           </button>
           <button
             className="sftp-action sftp-primary"
-            disabled={!connId && !localMode}
+            disabled={!connId}
             onClick={() => fileInput.current?.click()}
           >
             <Icon name="arrow-up" size={14} />

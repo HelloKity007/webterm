@@ -5,7 +5,7 @@ import SftpPanel from "./SftpPanel";
 
 const ticketURL = vi
   .fn()
-  .mockResolvedValue("ws://localhost/ws/local-fs?ticket=test");
+  .mockResolvedValue("ws://localhost/ws/sftp/7?ticket=test");
 
 vi.mock("../../api/wsTicket", () => ({
   websocketTicketURL: (...args: unknown[]) => ticketURL(...args),
@@ -33,7 +33,7 @@ class MockWebSocket {
   }
 }
 
-describe("SftpPanel local endpoint", () => {
+describe("SftpPanel remote endpoint", () => {
   afterEach(() => {
     cleanup();
     ticketURL.mockClear();
@@ -41,20 +41,20 @@ describe("SftpPanel local endpoint", () => {
     vi.unstubAllGlobals();
   });
 
-  it("opens the local filesystem websocket without a remote connection id", async () => {
+  it("opens only the selected remote filesystem websocket", async () => {
     vi.stubGlobal("WebSocket", MockWebSocket);
-    render(<SftpPanel localMode />);
+    render(<SftpPanel connId={7} />);
 
     await waitFor(() =>
-      expect(ticketURL).toHaveBeenCalledWith("/ws/local-fs", {
-        endpoint: "local-fs",
+      expect(ticketURL).toHaveBeenCalledWith("/ws/sftp/7", {
+        endpoint: "sftp", connId: 7,
       }),
     );
   });
 
-  it("closes the active local socket when the panel unmounts", async () => {
+  it("closes the active remote socket when the panel unmounts", async () => {
     vi.stubGlobal("WebSocket", MockWebSocket);
-    const view = render(<SftpPanel localMode />);
+    const view = render(<SftpPanel connId={7} />);
     await waitFor(() => expect(MockWebSocket.instances).toHaveLength(1));
 
     view.unmount();
@@ -64,7 +64,7 @@ describe("SftpPanel local endpoint", () => {
 
   it("uses the current path input value when navigating with Enter", async () => {
     vi.stubGlobal("WebSocket", MockWebSocket);
-    const view = render(<SftpPanel localMode />);
+    const view = render(<SftpPanel connId={7} />);
     await waitFor(() => expect(MockWebSocket.instances).toHaveLength(1));
     const socket = MockWebSocket.instances[0];
     socket.onopen?.();

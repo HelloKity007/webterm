@@ -28,10 +28,15 @@ export interface SftpFile {
   link_to?: string;
 }
 
+export interface OpenRemoteFile {
+  path: string;
+  name: string;
+  revision?: string;
+}
+
 interface Props {
   connId?: number;
   tabId?: string;
-  localMode?: boolean;
   currentPath?: string;
   onPathChange?: (path: string) => void;
   style?: React.CSSProperties;
@@ -40,12 +45,13 @@ interface Props {
   onClipboardChange?: (clipboard: FileClipboard | null) => void;
   onSelectionChange?: (paths: string[]) => void;
   refreshNonce?: number;
+  onOpenFile?: (file: OpenRemoteFile) => void;
+  onSocketChange?: (socket: WebSocket | null) => void;
 }
 
 export default function SftpPanel({
   connId,
   tabId,
-  localMode,
   currentPath,
   onPathChange,
   style,
@@ -54,8 +60,10 @@ export default function SftpPanel({
   onClipboardChange,
   onSelectionChange,
   refreshNonce,
+  onOpenFile,
+  onSocketChange,
 }: Props) {
-  const defaultPath = currentPath || (localMode ? "/home" : "/");
+  const defaultPath = currentPath || "/";
   const [path, setPath] = useState(defaultPath);
   const [files, setFiles] = useState<SftpFile[]>([]);
   const [loading, setLoading] = useState(false);
@@ -71,8 +79,7 @@ export default function SftpPanel({
     destination: string;
   } | null>(null);
   const operationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const endpointId =
-    endpointIdProp || (localMode ? "local" : `remote:${connId}`);
+  const endpointId = endpointIdProp || `remote:${connId}`;
   const clipboard =
     externalClipboard === undefined ? internalClipboard : externalClipboard;
   const changeClipboard = onClipboardChange || setInternalClipboard;
@@ -106,6 +113,10 @@ export default function SftpPanel({
   useEffect(() => {
     pathRef.current = path;
   }, [path]);
+  useEffect(() => {
+    onSocketChange?.(editorSocket);
+    return () => onSocketChange?.(null);
+  }, [editorSocket, onSocketChange]);
   useEffect(() => {
     filesRef.current = files;
   }, [files]);
@@ -151,7 +162,7 @@ export default function SftpPanel({
 
   // Create or reuse WebSocket for current connId
   useEffect(() => {
-    if (connId == null && !localMode) return;
+    if (connId == null) return;
     let cancelled = false;
     let retryTimer: ReturnType<typeof setTimeout> | undefined;
     let heartbeat: ReturnType<typeof setInterval> | undefined;
@@ -236,12 +247,10 @@ export default function SftpPanel({
     setError("");
 
     void (async () => {
-      const wsUrl = localMode
-        ? await websocketTicketURL("/ws/local-fs", { endpoint: "local-fs" })
-        : await websocketTicketURL(`/ws/sftp/${connId!}`, {
-            endpoint: "sftp",
-            connId: connId!,
-          });
+      const wsUrl = await websocketTicketURL(`/ws/sftp/${connId}`, {
+        endpoint: "sftp",
+        connId,
+      });
       if (cancelled) return;
       const socket = new WebSocket(wsUrl);
       wsRef.current = socket;
@@ -379,7 +388,6 @@ export default function SftpPanel({
     connId,
     defaultPath,
     fetchDir,
-    localMode,
     sessionKey,
     tabId,
     wsNonce,
@@ -521,12 +529,16 @@ export default function SftpPanel({
   };
   const handleEditFile = (filePath: string, fileName: string) => {
     const file = filesRef.current.find((entry) => entry.path === filePath);
-    setEditFile({
+    const openedFile = {
       path: filePath,
       name: fileName,
       revision: file?.revision || (file ? `${file.mod_time}:${file.size}` : undefined),
-      refreshMode: null,
-    });
+    };
+    if (onOpenFile) {
+      onOpenFile(openedFile);
+      return;
+    }
+    setEditFile({ ...openedFile, refreshMode: null });
   };
   const handleChmod = (filePath: string, mode: string) => {
     wsRef.current?.send(
@@ -686,7 +698,6 @@ export default function SftpPanel({
             onGoParent={handleGoParent}
             onToggleFollow={() => setFollowCd(!followCd)}
             followCd={followCd}
-            localMode={localMode}
             endpointId={endpointId}
             clipboard={clipboard}
             onClipboardChange={changeClipboard}

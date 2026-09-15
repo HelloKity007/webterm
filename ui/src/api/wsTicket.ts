@@ -1,6 +1,6 @@
 import { apiFetch } from './client';
 
-export type WSEndpoint = 'ssh' | 'sftp' | 'db' | 'layout' | 'local-fs' | 'sftp-download' | 'local-download';
+export type WSEndpoint = 'ssh' | 'sftp' | 'db' | 'layout' | 'sftp-download';
 export interface WSTicketScope {
   endpoint: WSEndpoint;
   connId?: number;
