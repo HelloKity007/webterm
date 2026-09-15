@@ -70,4 +70,29 @@ describe("Remote file workbench", () => {
     fireEvent.keyDown(config, { key: "ArrowLeft" });
     expect(screen.getByRole("tab", { name: /app\.log/ }).getAttribute("aria-selected")).toBe("true");
   });
+
+  it("reorders tabs by drag and maps vertical wheel input to the tab strip", async () => {
+    setLang("en");
+    render(<DualPaneSftp connections={[{ id: 7, name: "server-7" }]} />);
+    fireEvent.click(screen.getByRole("button", { name: "open-log" }));
+    fireEvent.click(screen.getByRole("button", { name: "open-config" }));
+    const strip = document.querySelector<HTMLElement>('.file-editor-tabs')!;
+    strip.scrollLeft = 0;
+    fireEvent.wheel(strip, { deltaY: 120, deltaX: 0 });
+    expect(strip.scrollLeft).toBe(120);
+
+    const transfer = {
+      effectAllowed: "",
+      dropEffect: "",
+      value: "",
+      setData: (_type: string, value: string) => { transfer.value = value; },
+      getData: () => transfer.value,
+    };
+    const log = screen.getByRole("tab", { name: /app\.log/ }).parentElement!;
+    const config = screen.getByRole("tab", { name: /app\.conf/ }).parentElement!;
+    fireEvent.dragStart(config, { dataTransfer: transfer });
+    fireEvent.dragOver(log, { dataTransfer: transfer });
+    fireEvent.drop(log, { dataTransfer: transfer });
+    expect([...strip.querySelectorAll('[role="tab"]')].map((tab) => tab.textContent)).toEqual(["app.conf", "app.log"]);
+  });
 });
