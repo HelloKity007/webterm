@@ -131,6 +131,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
   const zmodemActiveRef = useRef(false);
   const outputQueueRef = useRef<Uint8Array[]>([]);
   const outputFrameRef = useRef<number | null>(null);
+  const outputTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const outputWritePendingRef = useRef(false);
   const outputPumpRef = useRef<() => void>(() => {});
   const sendRef = useRef<(data: string) => void>(() => {});
@@ -999,9 +1000,10 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
         }
       };
       const pumpTerminalOutput = () => {
-        if (outputFrameRef.current !== null || outputWritePendingRef.current || outputQueueRef.current.length === 0) return;
-        outputFrameRef.current = requestAnimationFrame(() => {
+        if (outputFrameRef.current !== null || outputTimerRef.current !== null || outputWritePendingRef.current || outputQueueRef.current.length === 0) return;
+        const writeNextOutput = () => {
           outputFrameRef.current = null;
+          outputTimerRef.current = null;
           const merged = takeTerminalOutput(outputQueueRef.current, 16 * 1024);
           if (merged.byteLength === 0) return;
           try {
@@ -1022,7 +1024,17 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
             console.warn('terminal output delivery:', error);
             pumpTerminalOutput();
           }
-        });
+        };
+        // Browsers may stop animation frames for a display:none terminal.
+        // The socket still receives its tmux capture, leaving a long queue
+        // that is then visibly replayed each time the tab is selected. Parse
+        // hidden output on a timer so xterm's buffer stays current; use rAF
+        // only when the terminal can actually paint.
+        if (surfaceElement.offsetWidth > 0 && surfaceElement.offsetHeight > 0) {
+          outputFrameRef.current = requestAnimationFrame(writeNextOutput);
+        } else {
+          outputTimerRef.current = setTimeout(writeNextOutput, 0);
+        }
       };
       outputPumpRef.current = pumpTerminalOutput;
       pumpTerminalOutput();
@@ -1057,8 +1069,10 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       if (viewportFollowFrame !== null) cancelAnimationFrame(viewportFollowFrame);
       if (widthFitFrame !== null) cancelAnimationFrame(widthFitFrame);
       if (outputFrameRef.current !== null) cancelAnimationFrame(outputFrameRef.current);
+      if (outputTimerRef.current !== null) clearTimeout(outputTimerRef.current);
       if (initialOutputFollowTimer) clearTimeout(initialOutputFollowTimer);
       outputFrameRef.current = null;
+      outputTimerRef.current = null;
       outputWritePendingRef.current = false;
       outputPumpRef.current = () => {};
       outputQueueRef.current = [];
