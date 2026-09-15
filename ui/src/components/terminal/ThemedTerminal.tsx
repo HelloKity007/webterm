@@ -56,6 +56,7 @@ import { calculateTerminalScale, constrainTerminalHeight, defaultSharedTerminalG
 import { fitTerminalColumns } from './terminalWidth';
 import { getSharedTerminalGrid, setSharedTerminalGrid } from './terminalGridCache';
 import { isMobileBrowserEnvironment } from '../layout/mobileLayout';
+import { clearShellHistoryViewport, loadShellHistoryViewport, restoredHistoryLine, saveShellHistoryViewport, shellHistoryViewportKey, type ShellHistoryViewport } from './shellHistoryViewport';
 
 interface Props {
   connId: number;
@@ -66,6 +67,30 @@ interface Props {
   myTabId?: string;
   workspaceIndex?: number;
   panelNumber?: number;
+}
+
+function safeSessionStorage(): Storage | null {
+  try { return window.sessionStorage; } catch { return null; }
+}
+
+function shellHistoryViewport(term: Terminal): ShellHistoryViewport | null {
+  const buffer = term.buffer.active;
+  if (buffer.type !== 'normal' || buffer.baseY < 1 || buffer.viewportY >= buffer.baseY) return null;
+  const start = buffer.viewportY;
+  let anchor = '';
+  let anchorOffset = 0;
+  for (let row = start; row <= Math.min(buffer.baseY, start + term.rows - 1); row++) {
+    const text = buffer.getLine(row)?.translateToString(true) || '';
+    if (text) { anchor = text; anchorOffset = row - start; break; }
+  }
+  return { anchor, anchorOffset, fromBottom: buffer.baseY - start, savedAt: Date.now() };
+}
+
+function restoreShellHistoryViewport(term: Terminal, snapshot: ShellHistoryViewport) {
+  const buffer = term.buffer.active;
+  const lines: string[] = [];
+  for (let row = 0; row <= buffer.baseY; row++) lines.push(buffer.getLine(row)?.translateToString(true) || '');
+  term.scrollToLine(restoredHistoryLine(snapshot, lines, buffer.baseY));
 }
 
 type Octets = Uint8Array | ArrayBuffer;
@@ -151,6 +176,11 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
   const shellHistoryLoadingRef = useRef(false);
   const pendingShellHistoryScrollRef = useRef(0);
   const suppressLateScreenSnapshotRef = useRef(false);
+  const shellHistoryRestoreRef = useRef<ShellHistoryViewport | null>(null);
+  const shellHistoryStorageRef = useRef<Storage | null>(null);
+  const shellHistoryStorageKeyRef = useRef<string | null>(null);
+  const shellHistoryReaderActiveRef = useRef(false);
+  const shellHistoryRestoreInFlightRef = useRef(false);
   const onStatusRef = useRef(onStatus);
   const onResizeDimRef = useRef(onResizeDim);
   const themeName = usePreferencesStore((s) => s.themeName);
@@ -457,9 +487,20 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
   const loadShellHistoryForScroll = useCallback((lines: number) => {
     const term = termRef.current;
     if (!term) return;
+    const restore = shellHistoryRestoreRef.current;
+    // A reload may already have received one visible screen. That is not a
+    // complete history buffer, so a saved reader position must still fetch
+    // the explicit bounded capture instead of accepting that screen as final.
+    if (restore && shellHistoryLoadedRef.current) {
+      shellHistoryRestoreInFlightRef.current = false;
+      restoreShellHistoryViewport(term, restore);
+      shellHistoryRestoreRef.current = null;
+      shellHistoryReaderActiveRef.current = true;
+      return;
+    }
     // A buffer with a scrollback base is already complete for this client.
     // Do not make a control-plane request on every ordinary wheel event.
-    if (shellHistoryLoadedRef.current || term.buffer.active.baseY > 0) {
+    if (!restore && (shellHistoryLoadedRef.current || term.buffer.active.baseY > 0)) {
       term.scrollLines(lines);
       // A peer can own a taller shared tmux grid than this panel. Once a
       // downward wheel has genuinely returned xterm to its live bottom, make
@@ -514,14 +555,22 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
         shellHistoryLoadedRef.current = true;
         term.scrollToBottom();
         const requestedScroll = pendingShellHistoryScrollRef.current;
-        term.scrollLines(requestedScroll);
+        const pendingRestore = shellHistoryRestoreRef.current;
+        if (pendingRestore) {
+          shellHistoryRestoreInFlightRef.current = false;
+          restoreShellHistoryViewport(term, pendingRestore);
+          shellHistoryRestoreRef.current = null;
+          shellHistoryReaderActiveRef.current = true;
+        } else {
+          term.scrollLines(requestedScroll);
+        }
         // The initial, bounded screen capture races this explicit HTTP
         // capture on a fresh attachment. If it arrives just afterwards, its
         // live-screen write correctly follows the prompt and would otherwise
         // cancel the user's very first wheel-up. Reapply the same intent once
         // that attach burst has settled; later normal wheels use xterm alone.
         setTimeout(() => {
-          if (shellHistoryLoadedRef.current && termRef.current === term) term.scrollLines(requestedScroll);
+          if (shellHistoryLoadedRef.current && termRef.current === term && !shellHistoryReaderActiveRef.current) term.scrollLines(requestedScroll);
         }, 350);
       } catch (error) {
         suppressLateScreenSnapshotRef.current = false;
@@ -542,6 +591,16 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
     shellHistoryLoadingRef.current = false;
     pendingShellHistoryScrollRef.current = 0;
     suppressLateScreenSnapshotRef.current = false;
+    shellHistoryReaderActiveRef.current = false;
+    shellHistoryStorageRef.current = safeSessionStorage();
+    const userID = (() => {
+      try { return String(JSON.parse(localStorage.getItem('webterm-user') || '{}').id || 'anonymous'); } catch { return 'anonymous'; }
+    })();
+    shellHistoryStorageKeyRef.current = shellHistoryViewportKey(userID, connId, terminalID, workspaceIndex, panelNumber);
+    shellHistoryRestoreRef.current = shellHistoryStorageRef.current && shellHistoryStorageKeyRef.current
+      ? loadShellHistoryViewport(shellHistoryStorageRef.current, shellHistoryStorageKeyRef.current)
+      : null;
+    shellHistoryRestoreInFlightRef.current = shellHistoryRestoreRef.current !== null;
     const term = new Terminal({
       cursorBlink: true, fontSize: isMobileBrowserEnvironment() ? Math.max(11, fontSize - 4) : fontSize, fontFamily: '"JetBrains Mono", "JetBrains Maple Mono", Consolas, monospace',
       scrollback: terminalScrollbackLines,
@@ -610,6 +669,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
     let initialOutputFollow = true;
     let initialOutputFollowTimer: ReturnType<typeof setTimeout> | null = null;
     let cliViewportFollowTimer: ReturnType<typeof setTimeout> | null = null;
+    let shellHistoryRestoreTimer: ReturnType<typeof setTimeout> | null = null;
     let userOwnsViewport = false;
     const handleTerminalWheel = (event: WheelEvent) => {
       userOwnsViewport = true;
@@ -625,6 +685,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       return routeTerminalWheel(event, {
         scrollNotch: (lines) => {
           if (!alternate) {
+            shellHistoryReaderActiveRef.current = true;
             // A peer can enlarge tmux beyond this panel's local height. That
             // makes the outer surface scrollable, but it is only blank grid
             // tail — using it for a Bash wheel scroll hides the local prompt.
@@ -671,6 +732,20 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       if (event.ctrlKey) return;
       if (!handleTerminalWheel(event)) event.stopImmediatePropagation();
     };
+    const shellHistoryScrollDisposable = term.onScroll(() => {
+      if (shellHistoryRestoreInFlightRef.current || terminalModeRef.current === 'cli') return;
+      const storage = shellHistoryStorageRef.current;
+      const key = shellHistoryStorageKeyRef.current;
+      if (!storage || !key) return;
+      const viewport = shellHistoryViewport(term);
+      if (viewport) {
+        shellHistoryReaderActiveRef.current = true;
+        saveShellHistoryViewport(storage, key, viewport);
+      } else if (term.buffer.active.type === 'normal' && term.buffer.active.viewportY >= term.buffer.active.baseY) {
+        shellHistoryReaderActiveRef.current = false;
+        clearShellHistoryViewport(storage, key);
+      }
+    });
 
     // xterm's default touch handler emits key-like gestures, which makes a
     // phone swipe change the bash command history instead of scrolling. Map a
@@ -871,7 +946,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
           // history reader as being at the input bottom. Once the user has
           // wheeled, never let a later fit/title callback snap the xterm
           // viewport back to its live prompt.
-          const following = !userOwnsViewport || !viewportInitialized ||
+          const following = (!userOwnsViewport && !shellHistoryReaderActiveRef.current) || !viewportInitialized ||
             (terminalModeRef.current === 'cli' && fittedTerminalMode !== 'cli');
           term.resize(exactGrid.cols, exactGrid.rows);
           term.options.fontSize = fittedFont;
@@ -1215,6 +1290,17 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       pumpTerminalOutput();
       setTermKey((k) => k + 1);
 
+      // Restore only a deliberate Bash history reader. A normal reload stays
+      // cheap and receives the bounded visible screen as before; a saved
+      // reader explicitly requests history and returns to its content anchor.
+      if (shellHistoryRestoreRef.current) {
+        shellHistoryRestoreTimer = setTimeout(() => {
+          shellHistoryRestoreTimer = null;
+          if (termRef.current !== term || terminalModeRef.current === 'cli' || term.buffer.active.type === 'alternate') return;
+          loadShellHistoryForScroll(0);
+        }, 350);
+      }
+
       requestAnimationFrame(() => {
         scheduleFit();
         if (shouldAutoFocusTerminal(document.activeElement)) term.focus();
@@ -1249,6 +1335,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       if (outputTimerRef.current !== null) clearTimeout(outputTimerRef.current);
       if (initialOutputFollowTimer) clearTimeout(initialOutputFollowTimer);
       if (cliViewportFollowTimer) clearTimeout(cliViewportFollowTimer);
+      if (shellHistoryRestoreTimer) clearTimeout(shellHistoryRestoreTimer);
       outputFrameRef.current = null;
       outputTimerRef.current = null;
       outputWritePendingRef.current = false;
@@ -1256,6 +1343,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       outputQueueRef.current = [];
       titleDisposable.dispose();
       historyScrollbarDisposable.dispose();
+      shellHistoryScrollDisposable.dispose();
       modeDisposables.forEach(disposable => disposable.dispose());
       surfaceElement?.removeEventListener('touchstart', handleTouchStart, true);
       surfaceElement?.removeEventListener('touchmove', handleTouchMove, true);
@@ -1273,7 +1361,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       window.removeEventListener('resize', handleResize);
       window.removeEventListener('webterm-layout-drag-end', handleResize);
     };
-  }, [copyCurrentSelection, fontSize, loadShellHistoryForScroll, myTabId, pasteFromClipboard, setSftpCdPath, themeName]);
+  }, [connId, copyCurrentSelection, fontSize, loadShellHistoryForScroll, myTabId, panelNumber, pasteFromClipboard, setSftpCdPath, terminalID, themeName, workspaceIndex]);
   // Control Mode remains an opt-in diagnostic until the remote tmux stream is
   // proven to emit a complete redraw on every supported SSH implementation.
   // Control Mode provides per-client viewport state and deterministic replay
