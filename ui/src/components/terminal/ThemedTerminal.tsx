@@ -82,6 +82,15 @@ interface PendingLeftGesture {
   selecting: boolean;
 }
 
+function isTerminalScreenSnapshot(bytes: Uint8Array): boolean {
+  const prefix = '\x1b]2;webterm-grid:';
+  if (bytes.length < prefix.length) return false;
+  for (let index = 0; index < prefix.length; index++) {
+    if (bytes[index] !== prefix.charCodeAt(index)) return false;
+  }
+  return new TextDecoder().decode(bytes.subarray(0, Math.min(bytes.length, 256))).includes('\x1b[2J');
+}
+
 function hexToRgb(hex: string): string {
   const r = parseInt(hex.slice(1, 3), 16);
   const g = parseInt(hex.slice(3, 5), 16);
@@ -141,6 +150,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
   const shellHistoryLoadedRef = useRef(false);
   const shellHistoryLoadingRef = useRef(false);
   const pendingShellHistoryScrollRef = useRef(0);
+  const suppressLateScreenSnapshotRef = useRef(false);
   const onStatusRef = useRef(onStatus);
   const onResizeDimRef = useRef(onResizeDim);
   const themeName = usePreferencesStore((s) => s.themeName);
@@ -469,6 +479,11 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
     pendingShellHistoryScrollRef.current += lines;
     if (shellHistoryLoadingRef.current || !terminalID) return;
     shellHistoryLoadingRef.current = true;
+    // The websocket's bounded attach snapshot and this explicit tmux capture
+    // race on a newly restored panel. The capture already contains its latest
+    // screen, so a late attach snapshot must not append one more screen and
+    // force an intentional history reader back to the live bottom.
+    suppressLateScreenSnapshotRef.current = true;
     const query = new URLSearchParams({ terminal_id: terminalID });
     if (workspaceIndex && panelNumber) {
       query.set('workspace_index', String(workspaceIndex));
@@ -509,6 +524,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
           if (shellHistoryLoadedRef.current && termRef.current === term) term.scrollLines(requestedScroll);
         }, 350);
       } catch (error) {
+        suppressLateScreenSnapshotRef.current = false;
         console.warn('terminal history capture:', error);
       } finally {
         pendingShellHistoryScrollRef.current = 0;
@@ -525,6 +541,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
     shellHistoryLoadedRef.current = false;
     shellHistoryLoadingRef.current = false;
     pendingShellHistoryScrollRef.current = 0;
+    suppressLateScreenSnapshotRef.current = false;
     const term = new Terminal({
       cursorBlink: true, fontSize: isMobileBrowserEnvironment() ? Math.max(11, fontSize - 4) : fontSize, fontFamily: '"JetBrains Mono", "JetBrains Maple Mono", Consolas, monospace',
       scrollback: terminalScrollbackLines,
@@ -1260,6 +1277,10 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
             for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
           } else {
             bytes = new TextEncoder().encode(msg.data);
+          }
+          if (suppressLateScreenSnapshotRef.current && isTerminalScreenSnapshot(bytes)) {
+            suppressLateScreenSnapshotRef.current = false;
+            return;
           }
           enqueueTerminalOutput(bytes);
         }
