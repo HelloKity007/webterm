@@ -95,4 +95,25 @@ describe("Remote file workbench", () => {
     fireEvent.drop(log, { dataTransfer: transfer });
     expect([...strip.querySelectorAll('[role="tab"]')].map((tab) => tab.textContent)).toEqual(["app.conf", "app.log"]);
   });
+
+  it("moves a tab when dropped anywhere in the other editor group", async () => {
+    setLang("en");
+    render(<DualPaneSftp connections={[{ id: 7, name: "server-7" }]} />);
+    fireEvent.click(screen.getByRole("button", { name: "open-log" }));
+    fireEvent.click(screen.getByRole("button", { name: "Split editor" }));
+    const transfer = {
+      effectAllowed: "",
+      dropEffect: "",
+      value: "",
+      setData: (_type: string, value: string) => { transfer.value = value; },
+      getData: () => transfer.value,
+    };
+    const tab = screen.getByRole("tab", { name: /app\.log/ }).parentElement!;
+    const secondary = document.querySelector<HTMLElement>('[data-editor-group="secondary"]')!;
+    fireEvent.dragStart(tab, { dataTransfer: transfer });
+    fireEvent.dragOver(secondary, { dataTransfer: transfer });
+    fireEvent.drop(secondary, { dataTransfer: transfer });
+    expect(secondary.textContent).toContain("app.log");
+    expect(document.querySelector('[data-editor-group="primary"]')?.textContent).not.toContain("app.log");
+  });
 });

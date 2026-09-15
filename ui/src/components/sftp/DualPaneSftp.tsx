@@ -34,6 +34,7 @@ export default function DualPaneSftp({ connections }: Props) {
   const [split, setSplit] = useState(false);
   const [draggedTabId, setDraggedTabId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
+  const [dropGroup, setDropGroup] = useState<EditorGroup | null>(null);
   const [refreshNonce, setRefreshNonce] = useState(0);
 
   const connId = connections.some((connection) => connection.id === selectedConnId)
@@ -126,19 +127,31 @@ export default function DualPaneSftp({ connections }: Props) {
     const groupTabs = tabsFor(group);
     const activeId = active[group];
     const moveTo = otherGroup(group);
+    const moveDroppedTab = (event: React.DragEvent<HTMLElement>, beforeId?: string) => {
+      event.preventDefault();
+      event.stopPropagation();
+      moveTab(event.dataTransfer.getData("text/plain") || draggedTabId || "", group, beforeId);
+      setDraggedTabId(null);
+      setDropTarget(null);
+      setDropGroup(null);
+    };
     return (
-      <section className={`file-editor-group${focusedGroup === group ? " is-focused" : ""}`} data-editor-group={group} onMouseDown={() => setFocusedGroup(group)}>
+      <section className={`file-editor-group${focusedGroup === group ? " is-focused" : ""}${dropGroup === group ? " is-drop-target" : ""}`} data-editor-group={group} onMouseDown={() => setFocusedGroup(group)}
+        onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "move"; setDropGroup(group); }}
+        onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node)) setDropGroup(null); }}
+        onDrop={(event) => moveDroppedTab(event)}>
         <div className="file-editor-tab-strip">
           <button className="file-editor-scroll" aria-label={t("file_scroll_tabs_left")} title={t("file_scroll_tabs_left")} onClick={() => scrollTabs(group, -1)}><Icon name="chevron-left" size={15} /></button>
           <div className="file-editor-tabs" role="tablist" aria-label={t("file_open_files")}
-            onWheel={(event) => { if (Math.abs(event.deltaY) > Math.abs(event.deltaX)) { event.preventDefault(); event.currentTarget.scrollLeft += event.deltaY; } }}>
+            onWheel={(event) => { if (Math.abs(event.deltaY) > Math.abs(event.deltaX)) { event.preventDefault(); event.currentTarget.scrollLeft += event.deltaY; } }}
+            onDrop={(event) => moveDroppedTab(event)}>
             {groupTabs.map((tab) => (
               <div key={tab.id} data-editor-tab-id={tab.id} draggable className={`file-editor-tab${tab.id === activeId ? " is-active" : ""}${draggedTabId === tab.id ? " is-dragging" : ""}${dropTarget === tab.id ? " is-drop-target" : ""}`}
                 onDragStart={(event) => { event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", tab.id); setDraggedTabId(tab.id); }}
-                onDragEnd={() => { setDraggedTabId(null); setDropTarget(null); }}
+                onDragEnd={() => { setDraggedTabId(null); setDropTarget(null); setDropGroup(null); }}
                 onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "move"; setDropTarget(tab.id); }}
                 onDragLeave={() => setDropTarget(null)}
-                onDrop={(event) => { event.preventDefault(); moveTab(event.dataTransfer.getData("text/plain") || draggedTabId || tab.id, group, tab.id); setDraggedTabId(null); setDropTarget(null); }}>
+                onDrop={(event) => moveDroppedTab(event, tab.id)}>
                 <button role="tab" tabIndex={tab.id === activeId ? 0 : -1} aria-selected={tab.id === activeId} onKeyDown={(event) => onTabKeys(event, group, tab.id)} onClick={() => activate(group, tab.id)}>
                   <Icon name="file" size={14} /><span title={tab.path}>{tab.name}</span>{tab.dirty && <i aria-label={t("file_unsaved")} />}
                 </button>

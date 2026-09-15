@@ -8,7 +8,7 @@ import { sql } from '@codemirror/lang-sql';
 import { json } from '@codemirror/lang-json';
 import { javascript } from '@codemirror/lang-javascript';
 import { python } from '@codemirror/lang-python';
-import { colors, font } from '../../theme/tokens';
+import { font } from '../../theme/tokens';
 
 interface Props {
   filePath: string;
@@ -170,8 +170,10 @@ export default function FileEditor({ filePath, fileName, ws, revision, refreshMo
         '.cm-cursor, .cm-dropCursor': { borderLeftColor: '#ffffff', borderLeftWidth: '2px' },
         '.cm-selectionBackground, ::selection': { backgroundColor: '#2f6950 !important' },
         '.cm-activeLine': { backgroundColor: '#182b20' },
-        '.cm-gutters': { background: colors.bgDeep, color: '#afc4b2', border: 'none' },
-        '.cm-activeLineGutter': { background: '#1b3022', color: '#effbf1' },
+        // The line-number column is part of the dark editor surface. The
+        // former light application token made line numbers almost invisible.
+        '.cm-gutters': { background: '#14221a', color: '#d5e2d7', border: 'none' },
+        '.cm-activeLineGutter': { background: '#213027', color: '#f0f7f1' },
       }, { dark: true }),
     ];
 
