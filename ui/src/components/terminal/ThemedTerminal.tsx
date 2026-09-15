@@ -744,6 +744,11 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
             const follow = () => {
               const surface = ref.current;
               if (!surface) return;
+              // Bash scrollback lives in xterm's normal buffer. The outer
+              // surface may not gain height when a peer enlarges the shared
+              // grid, so returning only that element to its old scrollTop can
+              // still leave the prompt below xterm's internal viewport.
+              if (terminalModeRef.current !== 'cli') term.scrollToBottom();
               surface.scrollTop = terminalModeRef.current === 'cli' ? surface.scrollHeight :
                 localViewportRevealRow(surface.scrollTop, surface.clientHeight, surface.scrollHeight,
                   contentHeight / exactGrid.rows, term.buffer.active.cursorY);
