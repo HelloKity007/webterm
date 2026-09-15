@@ -476,7 +476,13 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
         // tab switch, so even a busy 20,000-line pane cannot visually replay
         // while the user is merely changing tabs.
         term.reset();
-        await new Promise<void>((resolve) => term.write(bytes, resolve));
+        // Use the same bounded write size as the live socket pump. A tmux
+        // history capture can be megabytes long; one giant xterm write causes
+        // renderer starvation and makes the first visible history frame look
+        // like overlapping text on some WebGL paths.
+        for (let offset = 0; offset < bytes.length; offset += 16 * 1024) {
+          await new Promise<void>((resolve) => term.write(bytes.subarray(offset, offset + 16 * 1024), resolve));
+        }
         shellHistoryLoadedRef.current = true;
         term.scrollToBottom();
         term.scrollLines(pendingShellHistoryScrollRef.current);

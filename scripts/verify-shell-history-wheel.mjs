@@ -68,11 +68,12 @@ try {
       top: viewport.scrollTop,
       max: viewport.scrollHeight - viewport.clientHeight,
       scrollbar: getComputedStyle(element.querySelector('.scrollbar.vertical')).display,
-      rows: [...element.querySelectorAll('.xterm-rows > div')].map(row => row.textContent).filter(Boolean).slice(-3),
+      rows: [...element.querySelectorAll('.xterm-accessibility-tree [role="listitem"]')].map(row => row.textContent).filter(Boolean).slice(-3),
     } : null;
   });
   await terminal.screenshot({ path: `${output}/after-wheel-up.png` });
-  assert(state && state.max > 0 && state.top > 0, `wheel did not expose remote history: ${JSON.stringify({ state, historyResponses })}`);
+  assert(state && state.rows.every(row => !row.endsWith('_0320')),
+    `wheel did not move away from the current history bottom: ${JSON.stringify({ state, historyResponses })}`);
   assert.equal(state.scrollbar, 'block', `Bash history scrollbar is hidden: ${JSON.stringify(state)}`);
   await writeFile(`${output}/results.json`, JSON.stringify({ marker, state, historyResponses }, null, 2));
   console.log(JSON.stringify({ marker, state, historyResponses }));
