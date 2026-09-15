@@ -43,3 +43,13 @@ func TestShellSnapshotRetainsHistoryBeyondViewport(t *testing.T) {
 		t.Fatalf("cursor not restored: %q", got)
 	}
 }
+
+func TestInitialTerminalScreenCaptureNeverRequestsScrollback(t *testing.T) {
+	got := initialTerminalScreenCaptureCommand("wt01-01-05-example", "qa-socket", "/opt/tmux")
+	if strings.Contains(got, " -S ") {
+		t.Fatalf("initial capture must not request shell scrollback: %q", got)
+	}
+	if !strings.Contains(got, "capture-pane -p -e -t wt01-01-05-example") {
+		t.Fatalf("initial capture must target its visible pane: %q", got)
+	}
+}

@@ -473,7 +473,7 @@ func (h *WSHandler) HandleSSH(conn *websocket.Conn) {
 			}
 		}
 		targetName := captureTarget
-		captureCommand := scopeTmuxCommand("tmux capture-pane -p -e -t "+targetName, h.TmuxSocket, h.TmuxBinary)
+		captureCommand := initialTerminalScreenCaptureCommand(targetName, h.TmuxSocket, h.TmuxBinary)
 		paneCommand := scopeTmuxCommand("tmux display-message -p -t "+targetName+" '#{pane_id}\t#{pane_current_command}\t#{pane_width}\t#{pane_height}\t#{cursor_x}\t#{cursor_y}\t#{alternate_on}'", h.TmuxSocket, h.TmuxBinary)
 		go func() {
 			captureClient, captureErr := newSSHClient()
@@ -578,6 +578,14 @@ func (h *WSHandler) HandleSSH(conn *websocket.Conn) {
 	}
 	go io.Copy(&recordingWSWriter{wsWriter: wsWriter{outbound: outbound}, history: history}, stdoutPipe)
 	io.Copy(&recordingWSWriter{wsWriter: wsWriter{outbound: outbound}, history: history}, stderrPipe)
+}
+
+// initialTerminalScreenCaptureCommand deliberately uses tmux's default
+// visible-pane range. A control client needs a screen to render, but asking
+// for scrollback here turns an ordinary tab attachment into megabytes of
+// replayed historical output.
+func initialTerminalScreenCaptureCommand(targetName, socket, binary string) string {
+	return scopeTmuxCommand("tmux capture-pane -p -e -t "+targetName, socket, binary)
 }
 
 func (h *WSHandler) HandleDB(conn *websocket.Conn) {
