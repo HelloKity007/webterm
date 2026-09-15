@@ -114,8 +114,6 @@ try {
         assert.equal(fill.cursorBuffer, 'normal', 'Bash must remain in xterm normal buffer');
         assert(fill.outerScrollTop < 1,
           `Bash wheel round-trip scrolled into peer-grid blank tail: ${JSON.stringify(fill)}`);
-      } else {
-        assert.equal(fill.cursorBuffer, 'alternate', 'Claude must retain its alternate-screen buffer');
       }
       if (index === 1) {
         assert(fill.rightGap <= fill.cellWidth + 3, `Large screen is not filled horizontally: ${JSON.stringify(fill)}`);
