@@ -451,6 +451,19 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
     // Do not make a control-plane request on every ordinary wheel event.
     if (shellHistoryLoadedRef.current || term.buffer.active.baseY > 0) {
       term.scrollLines(lines);
+      // A peer can own a taller shared tmux grid than this panel. Once a
+      // downward wheel has genuinely returned xterm to its live bottom, make
+      // that local input row visible without using the outer blank tail while
+      // the user is reading upward history.
+      if (lines > 0) {
+        requestAnimationFrame(() => {
+          const surface = ref.current;
+          const screen = term.element?.querySelector<HTMLElement>('.xterm-screen');
+          if (!surface || !screen || term.buffer.active.viewportY < term.buffer.active.baseY) return;
+          surface.scrollTop = localViewportRevealRow(surface.scrollTop, surface.clientHeight, surface.scrollHeight,
+            screen.getBoundingClientRect().height / term.rows, term.buffer.active.cursorY);
+        });
+      }
       return;
     }
     pendingShellHistoryScrollRef.current += lines;
