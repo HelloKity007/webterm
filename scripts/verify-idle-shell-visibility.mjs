@@ -70,7 +70,13 @@ try {
           sharedRows: surface.dataset.sharedRows, screenHeight: screen.height,
           xtermViewportScrollTop: viewport?.scrollTop, xtermViewportScrollHeight: viewport?.scrollHeight,
           xtermViewportHeight: viewport?.clientHeight,
-          shellScrollbar: { display: scrollbarStyle?.display, width: scrollbarBounds?.width, height: scrollbarBounds?.height },
+          shellScrollbar: { display: scrollbarStyle?.display, width: scrollbarBounds?.width, height: scrollbarBounds?.height,
+            left: scrollbarBounds?.left, screenLeft: screen.left, screenRight: screen.right,
+            gapFromGrid: scrollbarBounds ? scrollbarBounds.left - screen.right : null,
+            inlineLeft: scrollbar?.style.left, computedLeft: scrollbarStyle?.left,
+            classes: scrollbar?.className, parentClasses: scrollbar?.parentElement?.className,
+            configuredLeft: xterm?.style.getPropertyValue('--webterm-scrollbar-left'),
+            inheritedLeft: scrollbarStyle?.getPropertyValue('--webterm-scrollbar-left') },
           layout: {
             surface: describe(surface),
             xterm: describe(xterm),
@@ -87,6 +93,8 @@ try {
       assert.equal(metrics.cursorBuffer, 'normal', 'Idle Bash must use xterm normal buffer');
       assert(metrics.shellScrollbar.display !== 'none' && (metrics.shellScrollbar.width || 0) > 0,
         'Bash native history scrollbar is hidden');
+      assert(metrics.shellScrollbar.gapFromGrid >= 1 && metrics.shellScrollbar.gapFromGrid <= 3,
+        `Bash history scrollbar must sit 2px from the rendered grid: ${JSON.stringify(metrics.shellScrollbar)}`);
       assert(metrics.cursorTop >= metrics.scrollTop - 1, 'Idle prompt hidden above local viewport');
       assert(metrics.cursorBottom <= metrics.scrollTop + metrics.height + 1, 'Idle prompt hidden below local viewport');
     }

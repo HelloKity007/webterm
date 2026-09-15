@@ -781,6 +781,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
     let sharedGrid: TerminalGrid | null = mobileBrowser ? null : (myTabId ? getSharedTerminalGrid(myTabId) : null);
     let pendingFitFrame: number | null = null;
     let widthFitFrame: number | null = null;
+    let historyScrollbarFrame: number | null = null;
     let localWidthSettled = false;
     let announcedGrid: TerminalGrid | null = null;
     let fittedGridKey = '';
@@ -790,6 +791,33 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
     let viewportFollowFrame: number | null = null;
     let viewportFollowTimer: ReturnType<typeof setTimeout> | null = null;
     const fontMeasure = document.createElement('canvas').getContext('2d');
+
+    // xterm's scrollable element spans the whole panel, while a shared grid
+    // can deliberately end before that panel does. Keep Bash's history rail
+    // attached to the final rendered column instead of to the panel edge.
+    // This must be an inline important rule: xterm may refresh its own rail
+    // position after it paints a batch of output.
+    const alignHistoryScrollbar = () => {
+      if (mobileBrowser) return;
+      const screen = term.element?.querySelector<HTMLElement>('.xterm-screen');
+      const scrollbar = term.element?.querySelector<HTMLElement>('.scrollbar.vertical');
+      const scrollable = scrollbar?.parentElement;
+      if (!screen || !scrollbar || !scrollable) return;
+      const screenRect = screen.getBoundingClientRect();
+      const scrollableRect = scrollable.getBoundingClientRect();
+      if (!screenRect.width || !scrollableRect.width) return;
+      const left = `${Math.round(screenRect.right - scrollableRect.left + 2)}px`;
+      if (scrollbar.style.left !== left) scrollbar.style.setProperty('left', left, 'important');
+      if (scrollbar.style.right !== 'auto') scrollbar.style.setProperty('right', 'auto', 'important');
+    };
+    const scheduleHistoryScrollbarAlignment = () => {
+      if (mobileBrowser || historyScrollbarFrame !== null) return;
+      historyScrollbarFrame = requestAnimationFrame(() => {
+        historyScrollbarFrame = null;
+        alignHistoryScrollbar();
+      });
+    };
+    const historyScrollbarDisposable = term.onRender(scheduleHistoryScrollbarAlignment);
 
     term.onResize(({ cols, rows }) => {
       if (cols < 2 || rows < 1) return; // ignore zero-size (hidden terminal)
@@ -1005,11 +1033,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
               const screenRect = screen?.getBoundingClientRect();
               const scrollbar = term.element?.querySelector<HTMLElement>('.scrollbar.vertical')?.getBoundingClientRect();
               if (!screenRect || !scrollbar || !screenRect.width || !scrollbar.width) return;
-              // The shared grid can be narrower than its panel by design.
-              // Keep the xterm history thumb immediately after the final
-              // rendered column instead of marooning it at the panel edge.
-              const screenOffsetLeft = screen?.offsetLeft || 0;
-              term.element?.style.setProperty('--webterm-scrollbar-left', `${Math.round(screenOffsetLeft + screenRect.width + 2)}px`);
+              scheduleHistoryScrollbarAlignment();
               // xterm suspends painting offscreen panes. Their rectangle may
               // describe an old grid even though term.cols already changed.
               if (screenRect.top >= window.innerHeight || screenRect.bottom <= 0) return;
@@ -1220,6 +1244,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       if (viewportFollowFrame !== null) cancelAnimationFrame(viewportFollowFrame);
       if (viewportFollowTimer !== null) clearTimeout(viewportFollowTimer);
       if (widthFitFrame !== null) cancelAnimationFrame(widthFitFrame);
+      if (historyScrollbarFrame !== null) cancelAnimationFrame(historyScrollbarFrame);
       if (outputFrameRef.current !== null) cancelAnimationFrame(outputFrameRef.current);
       if (outputTimerRef.current !== null) clearTimeout(outputTimerRef.current);
       if (initialOutputFollowTimer) clearTimeout(initialOutputFollowTimer);
@@ -1230,6 +1255,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       outputPumpRef.current = () => {};
       outputQueueRef.current = [];
       titleDisposable.dispose();
+      historyScrollbarDisposable.dispose();
       modeDisposables.forEach(disposable => disposable.dispose());
       surfaceElement?.removeEventListener('touchstart', handleTouchStart, true);
       surfaceElement?.removeEventListener('touchmove', handleTouchMove, true);

@@ -134,10 +134,6 @@ select:focus, input:focus, textarea:focus, button:focus-visible, [role="button"]
    the screen desynchronizes glyphs, cursor coordinates, and scrollback rows. */
 .terminal-surface .xterm-screen { transform: none !important; transform-origin: top left; }
 .terminal-surface .xterm-rows { line-height: normal; }
-/* Keep the history thumb visually attached to the terminal grid. A shared
-   terminal can intentionally leave spare panel width after its final column;
-   the thumb belongs beside that final column, not at the far panel edge. */
-.terminal-surface .xterm .scrollbar.vertical { left: var(--webterm-scrollbar-left, auto) !important; right: auto !important; }
 .terminal-surface.desktop-local-viewport { scrollbar-width: auto; scrollbar-color: auto; scrollbar-gutter: stable; overscroll-behavior: contain; padding-left: 4px !important; }
 .terminal-surface.desktop-local-viewport::-webkit-scrollbar { width: 5px; height: 5px; }
 .terminal-surface.desktop-local-viewport::-webkit-scrollbar-thumb { background: #76a78088; border-radius: 3px; }
