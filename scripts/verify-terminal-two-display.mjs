@@ -95,10 +95,19 @@ try {
         const bar = e.querySelector('.scrollbar.vertical').getBoundingClientRect();
         const surface = e.getBoundingClientRect();
         const edge = e.classList.contains('desktop-local-viewport') ? surface.left + e.clientWidth : bar.left;
-        return { font: e.dataset.fittedFontSize, cols: Number(e.dataset.sharedCols), rows: Number(e.dataset.sharedRows), rightGap: edge - screen.right, bottomGap: surface.top + e.clientHeight - screen.bottom, cellWidth: screen.width / Number(e.dataset.sharedCols), cellHeight: screen.height / Number(e.dataset.sharedRows) };
+        return { font: e.dataset.fittedFontSize, cols: Number(e.dataset.sharedCols), rows: Number(e.dataset.sharedRows),
+          outerScrollTop: e.scrollTop, cursorRow: Number(e.dataset.cursorRow), cursorBuffer: e.dataset.cursorBuffer,
+          rightGap: edge - screen.right, bottomGap: surface.top + e.clientHeight - screen.bottom,
+          cellWidth: screen.width / Number(e.dataset.sharedCols), cellHeight: screen.height / Number(e.dataset.sharedRows) };
       });
       results.push({ display: index, panel: number, fill });
       assert(fill.rightGap >= 0 && fill.bottomGap >= 0, 'Terminal overlaps a panel edge');
+      if (number === 2) {
+        assert.equal(fill.cursorBuffer, 'normal', 'Bash must remain in xterm normal buffer');
+        assert(fill.cursorRow >= 0, 'Bash cursor is not available for visual verification');
+        assert(fill.outerScrollTop < 1,
+          `Bash wheel round-trip scrolled into peer-grid blank tail: ${JSON.stringify(fill)}`);
+      }
       if (index === 1) {
         assert(fill.rightGap <= fill.cellWidth + 3, `Large screen is not filled horizontally: ${JSON.stringify(fill)}`);
         assert(fill.bottomGap <= fill.cellHeight + 3, `Large screen is not filled vertically: ${JSON.stringify(fill)}`);

@@ -20,7 +20,7 @@ import { deliverTerminalBytes } from './terminalOutput';
 import TerminalHistoryHelp from './TerminalHistoryHelp';
 import MobileTerminalReader from './MobileTerminalReader';
 import { terminalModeAfterPrivateControl } from './terminalMode';
-import { localViewportFont, localViewportScroll, localViewportRevealRow } from './localViewport';
+import { localViewportFont, localViewportRevealRow } from './localViewport';
 import { observeTerminalRenderer } from './terminalRendererMetrics';
 import { takeTerminalOutput } from './terminalOutputQueue';
 import {
@@ -523,16 +523,12 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
         (terminalModeRef.current === 'unknown' && (alternateScreenRef.current || term.buffer.active.type === 'alternate'));
       return routeTerminalWheel(event, {
         scrollNotch: (lines) => {
-          const surface = ref.current;
-          if (!mobileBrowser && surface) {
-            const screenHeight = term.element?.querySelector('.xterm-screen')?.getBoundingClientRect().height || 0;
-            const next = localViewportScroll(surface.scrollTop, surface.clientHeight, surface.scrollHeight, screenHeight / term.rows, lines);
-            if (Math.abs(next - surface.scrollTop) > 0.5) {
-              surface.scrollTop = next;
-              return;
-            }
-          }
           if (!alternate) {
+            // A peer can enlarge tmux beyond this panel's local height. That
+            // makes the outer surface scrollable, but it is only blank grid
+            // tail — using it for a Bash wheel scroll hides the local prompt.
+            // Shell history belongs to xterm's normal buffer and its native
+            // right-side scrollbar, never to the peer-grid overflow wrapper.
             term.scrollLines(lines);
             return;
           }
