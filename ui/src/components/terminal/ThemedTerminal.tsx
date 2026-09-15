@@ -793,9 +793,13 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
           // Re-entering the viewport or receiving the same title is not a
           // geometry change. Keep the already painted metrics untouched.
           if (key === fittedGridKey) return;
+          // A local xterm scrollback has no outer-surface overflow, so an
+          // outer scroll-position check would incorrectly classify an active
+          // history reader as being at the input bottom. Once the user has
+          // wheeled, never let a later fit/title callback snap the xterm
+          // viewport back to its live prompt.
           const following = !userOwnsViewport || !viewportInitialized ||
-            (terminalModeRef.current === 'cli' && fittedTerminalMode !== 'cli') ||
-            ref.current.scrollHeight - ref.current.clientHeight - ref.current.scrollTop < 2;
+            (terminalModeRef.current === 'cli' && fittedTerminalMode !== 'cli');
           term.resize(exactGrid.cols, exactGrid.rows);
           term.options.fontSize = fittedFont;
           term.options.letterSpacing = 0;
