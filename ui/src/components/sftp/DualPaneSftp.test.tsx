@@ -49,4 +49,25 @@ describe("Remote file workbench", () => {
     const secondary = document.querySelector('[data-editor-group="secondary"]')!;
     expect(secondary.textContent).toContain("app.log");
   });
+
+  it("moves active tabs between split editors and exposes scroll controls", async () => {
+    setLang("en");
+    render(<DualPaneSftp connections={[{ id: 7, name: "server-7" }]} />);
+    fireEvent.click(screen.getByRole("button", { name: "open-log" }));
+    fireEvent.click(screen.getByRole("button", { name: "Split editor" }));
+    fireEvent.click(screen.getByRole("button", { name: "Move active file to the other editor" }));
+    expect(document.querySelector('[data-editor-group="secondary"]')?.textContent).toContain("app.log");
+    expect(screen.getAllByRole("button", { name: "Scroll tabs left" })).toHaveLength(2);
+    expect(screen.getAllByRole("button", { name: "Scroll tabs right" })).toHaveLength(2);
+  });
+
+  it("moves through tabs with arrow keys", async () => {
+    setLang("en");
+    render(<DualPaneSftp connections={[{ id: 7, name: "server-7" }]} />);
+    fireEvent.click(screen.getByRole("button", { name: "open-log" }));
+    fireEvent.click(screen.getByRole("button", { name: "open-config" }));
+    const config = screen.getByRole("tab", { name: /app\.conf/ });
+    fireEvent.keyDown(config, { key: "ArrowLeft" });
+    expect(screen.getByRole("tab", { name: /app\.log/ }).getAttribute("aria-selected")).toBe("true");
+  });
 });

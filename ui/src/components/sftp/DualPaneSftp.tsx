@@ -20,8 +20,11 @@ type EditorTab = OpenRemoteFile & {
 };
 
 const tabIdFor = (path: string) => `file:${path}`;
+const otherGroup = (group: EditorGroup): EditorGroup => group === "primary" ? "secondary" : "primary";
+const tabElement = (id: string) => [...document.querySelectorAll<HTMLElement>("[data-editor-tab-id]")]
+  .find((element) => element.dataset.editorTabId === id) || null;
 
-/** One remote endpoint and a durable editor workbench. */
+/** A remote file explorer with movable, split editor groups. */
 export default function DualPaneSftp({ connections }: Props) {
   const [selectedConnId, setSelectedConnId] = useState<number | null>(connections[0]?.id || null);
   const [socket, setSocket] = useState<WebSocket | null>(null);
@@ -29,20 +32,35 @@ export default function DualPaneSftp({ connections }: Props) {
   const [active, setActive] = useState<Record<EditorGroup, string | null>>({ primary: null, secondary: null });
   const [focusedGroup, setFocusedGroup] = useState<EditorGroup>("primary");
   const [split, setSplit] = useState(false);
+  const [draggedTabId, setDraggedTabId] = useState<string | null>(null);
+  const [dropTarget, setDropTarget] = useState<string | null>(null);
   const [refreshNonce, setRefreshNonce] = useState(0);
 
   const connId = connections.some((connection) => connection.id === selectedConnId)
     ? selectedConnId : connections[0]?.id || null;
+
+  const tabsFor = useCallback((group: EditorGroup, source = tabs) => source.filter((tab) => tab.group === group), [tabs]);
+  const replaceGroup = (source: EditorTab[], group: EditorGroup, nextGroup: EditorTab[]) => {
+    const other = source.filter((tab) => tab.group !== group);
+    return group === "primary" ? [...nextGroup, ...other] : [...other, ...nextGroup];
+  };
+
+  const activate = useCallback((group: EditorGroup, id: string) => {
+    setFocusedGroup(group);
+    setActive((current) => ({ ...current, [group]: id }));
+    requestAnimationFrame(() => tabElement(id)?.scrollIntoView?.({ block: "nearest", inline: "nearest" }));
+  }, []);
 
   const openFile = useCallback((file: OpenRemoteFile) => {
     const id = tabIdFor(file.path);
     setTabs((current) => {
       const existing = current.find((tab) => tab.id === id);
       if (existing) return current.map((tab) => tab.id === id ? { ...tab, group: focusedGroup, revision: file.revision || tab.revision } : tab);
-      return [...current, { ...file, id, group: focusedGroup, refreshMode: null, dirty: false }];
+      const created: EditorTab = { ...file, id, group: focusedGroup, refreshMode: null, dirty: false };
+      return replaceGroup(current, focusedGroup, [...current.filter((tab) => tab.group === focusedGroup), created]);
     });
-    setActive((current) => ({ ...current, [focusedGroup]: id }));
-  }, [focusedGroup]);
+    activate(focusedGroup, id);
+  }, [activate, focusedGroup]);
 
   const closeTab = useCallback((id: string) => {
     setTabs((current) => {
@@ -56,31 +74,86 @@ export default function DualPaneSftp({ connections }: Props) {
     });
   }, []);
 
+  const moveTab = useCallback((id: string, destination: EditorGroup, beforeId?: string) => {
+    setTabs((current) => {
+      const moving = current.find((tab) => tab.id === id);
+      if (!moving) return current;
+      const without = current.filter((tab) => tab.id !== id);
+      const destinationTabs = without.filter((tab) => tab.group === destination);
+      const insertAt = beforeId ? Math.max(0, destinationTabs.findIndex((tab) => tab.id === beforeId)) : destinationTabs.length;
+      const nextDestination = [...destinationTabs];
+      nextDestination.splice(insertAt < 0 ? nextDestination.length : insertAt, 0, { ...moving, group: destination });
+      const next = replaceGroup(without, destination, nextDestination);
+      setActive((selected) => ({
+        ...selected,
+        [moving.group]: moving.group === destination ? selected[moving.group] : without.filter((tab) => tab.group === moving.group).at(-1)?.id || null,
+        [destination]: id,
+      }));
+      return next;
+    });
+    setFocusedGroup(destination);
+  }, []);
+
+  const createSplit = () => {
+    setSplit(true);
+    setFocusedGroup("secondary");
+  };
   const mergeSplit = () => {
     setTabs((current) => current.map((tab) => tab.group === "secondary" ? { ...tab, group: "primary" } : tab));
     setActive((current) => ({ primary: current.primary || current.secondary, secondary: null }));
     setFocusedGroup("primary");
     setSplit(false);
   };
+  const scrollTabs = (group: EditorGroup, direction: number) => document
+    .querySelector<HTMLElement>(`[data-editor-group="${group}"] .file-editor-tabs`)
+    ?.scrollBy?.({ left: direction * 180, behavior: "smooth" });
+  const onTabKeys = (event: React.KeyboardEvent<HTMLButtonElement>, group: EditorGroup, tabId: string) => {
+    const groupTabs = tabsFor(group);
+    const index = groupTabs.findIndex((tab) => tab.id === tabId);
+    let next = -1;
+    if (event.key === "ArrowRight") next = (index + 1) % groupTabs.length;
+    if (event.key === "ArrowLeft") next = (index - 1 + groupTabs.length) % groupTabs.length;
+    if (event.key === "Home") next = 0;
+    if (event.key === "End") next = groupTabs.length - 1;
+    if (next >= 0) {
+      event.preventDefault();
+      activate(group, groupTabs[next].id);
+      requestAnimationFrame(() => tabElement(groupTabs[next].id)?.querySelector<HTMLButtonElement>("button")?.focus());
+    }
+  };
 
   const renderGroup = (group: EditorGroup) => {
-    const groupTabs = tabs.filter((tab) => tab.group === group);
+    const groupTabs = tabsFor(group);
     const activeId = active[group];
+    const moveTo = otherGroup(group);
     return (
-      <section className="file-editor-group" data-editor-group={group} onMouseDown={() => setFocusedGroup(group)}>
-        <div className="file-editor-tabs" role="tablist" aria-label={t("file_open_files")}>
-          {groupTabs.map((tab) => (
-            <div key={tab.id} className={`file-editor-tab${tab.id === activeId ? " is-active" : ""}`}>
-              <button role="tab" aria-selected={tab.id === activeId} onClick={() => setActive((current) => ({ ...current, [group]: tab.id }))}>
-                <Icon name="file" size={14} /><span>{tab.name}</span>{tab.dirty && <i aria-label={t("file_unsaved")} />}
-              </button>
-              <button className="file-editor-tab-close" aria-label={`${t("tab_close")} ${tab.name}`} onClick={() => closeTab(tab.id)}><Icon name="x" size={13} /></button>
-            </div>
-          ))}
-          {group === "primary" && <button className="file-editor-split" title={split ? t("file_close_split") : t("file_split_editor")} aria-label={split ? t("file_close_split") : t("file_split_editor")} onClick={() => split ? mergeSplit() : setSplit(true)}><Icon name={split ? "panel-left-close" : "table"} size={15} /></button>}
+      <section className={`file-editor-group${focusedGroup === group ? " is-focused" : ""}`} data-editor-group={group} onMouseDown={() => setFocusedGroup(group)}>
+        <div className="file-editor-tab-strip">
+          <button className="file-editor-scroll" aria-label={t("file_scroll_tabs_left")} title={t("file_scroll_tabs_left")} onClick={() => scrollTabs(group, -1)}><Icon name="chevron-left" size={15} /></button>
+          <div className="file-editor-tabs" role="tablist" aria-label={t("file_open_files")}
+            onWheel={(event) => { if (Math.abs(event.deltaY) > Math.abs(event.deltaX)) { event.preventDefault(); event.currentTarget.scrollLeft += event.deltaY; } }}>
+            {groupTabs.map((tab) => (
+              <div key={tab.id} data-editor-tab-id={tab.id} draggable className={`file-editor-tab${tab.id === activeId ? " is-active" : ""}${draggedTabId === tab.id ? " is-dragging" : ""}${dropTarget === tab.id ? " is-drop-target" : ""}`}
+                onDragStart={(event) => { event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", tab.id); setDraggedTabId(tab.id); }}
+                onDragEnd={() => { setDraggedTabId(null); setDropTarget(null); }}
+                onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "move"; setDropTarget(tab.id); }}
+                onDragLeave={() => setDropTarget(null)}
+                onDrop={(event) => { event.preventDefault(); moveTab(event.dataTransfer.getData("text/plain") || draggedTabId || tab.id, group, tab.id); setDraggedTabId(null); setDropTarget(null); }}>
+                <button role="tab" tabIndex={tab.id === activeId ? 0 : -1} aria-selected={tab.id === activeId} onKeyDown={(event) => onTabKeys(event, group, tab.id)} onClick={() => activate(group, tab.id)}>
+                  <Icon name="file" size={14} /><span title={tab.path}>{tab.name}</span>{tab.dirty && <i aria-label={t("file_unsaved")} />}
+                </button>
+                <button className="file-editor-tab-close" aria-label={`${t("tab_close")} ${tab.name}`} onClick={() => closeTab(tab.id)}><Icon name="x" size={13} /></button>
+              </div>
+            ))}
+          </div>
+          <button className="file-editor-scroll" aria-label={t("file_scroll_tabs_right")} title={t("file_scroll_tabs_right")} onClick={() => scrollTabs(group, 1)}><Icon name="chevron-right" size={15} /></button>
+          <div className="file-editor-group-actions">
+            {split && activeId && <button className="file-editor-tool" aria-label={t("file_move_to_other_editor")} title={t("file_move_to_other_editor")} onClick={() => moveTab(activeId, moveTo)}><Icon name="panel-right-open" size={15} /></button>}
+            {group === "primary" && <button className="file-editor-tool" aria-label={split ? t("file_close_split") : t("file_split_editor")} title={split ? t("file_close_split") : t("file_split_editor")} onClick={() => split ? mergeSplit() : createSplit()}><Icon name={split ? "panel-right-close" : "columns-2"} size={15} /></button>}
+          </div>
         </div>
         <div className="file-editor-stack">
-          {!groupTabs.length && <div className="file-editor-empty"><Icon name="file" size={30} /><strong>{t("file_editor_empty_title")}</strong><span>{t("file_editor_empty_hint")}</span></div>}
+          {!groupTabs.length && <div className="file-editor-empty"><Icon name="file" size={30} /><strong>{t("file_editor_empty_title")}</strong><span>{split ? t("file_editor_split_hint") : t("file_editor_empty_hint")}</span></div>}
           {groupTabs.map((tab) => (
             <div key={tab.id} className="file-editor-page" hidden={tab.id !== activeId}>
               <Suspense fallback={<div className="sftp-state">Loading…</div>}>
@@ -97,20 +170,15 @@ export default function DualPaneSftp({ connections }: Props) {
   };
 
   const selectedConnectionName = useMemo(() => connections.find((connection) => connection.id === connId)?.name || "", [connId, connections]);
-
   return (
     <div className={`file-workbench${split ? " is-split" : ""}`}>
       <aside className="file-explorer" aria-label={t("file_browser")}>
         <div className="file-explorer-head"><Icon name="monitor" size={15} /><span>{t("file_remote_files")}</span>
-          <CustomSelect value={String(connId || "")} onChange={(value) => setSelectedConnId(Number(value) || null)}>
-            {connections.map((connection) => <option key={connection.id} value={String(connection.id)}>{connection.name}</option>)}
-          </CustomSelect>
+          <CustomSelect value={String(connId || "")} onChange={(value) => setSelectedConnId(Number(value) || null)}>{connections.map((connection) => <option key={connection.id} value={String(connection.id)}>{connection.name}</option>)}</CustomSelect>
         </div>
         {connId ? <SftpPanel key={connId} connId={connId} endpointId={`remote:${connId}`} refreshNonce={refreshNonce} onSocketChange={setSocket} onOpenFile={openFile} /> : <div className="sftp-endpoint-empty">{t("sftp_select_conn")}</div>}
       </aside>
-      <main className="file-editor-workspace" aria-label={selectedConnectionName || t("file_remote_files")}>
-        {renderGroup("primary")}{split && renderGroup("secondary")}
-      </main>
+      <main className="file-editor-workspace" aria-label={selectedConnectionName || t("file_remote_files")}>{renderGroup("primary")}{split && renderGroup("secondary")}</main>
     </div>
   );
 }

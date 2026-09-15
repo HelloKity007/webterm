@@ -7,7 +7,7 @@ import { colors } from '../../theme/tokens';
 
 const modules: { type: ModuleType; label: string; icon: string }[] = [
   { type: 'ssh', label: t('activity_ssh'), icon: 'terminal' },
-  { type: 'files', label: t('activity_files'), icon: 'folder-open' },
+  { type: 'files', label: t('activity_files'), icon: 'file' },
   { type: 'database', label: t('activity_database'), icon: 'database' },
   { type: 'config', label: t('activity_config'), icon: 'sliders-horizontal' },
 ];

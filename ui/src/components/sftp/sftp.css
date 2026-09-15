@@ -1,11 +1,11 @@
 .sftp-shell {
-  --sftp-bg: #111713;
-  --sftp-panel: #18201a;
-  --sftp-raised: #202b23;
-  --sftp-line: #344339;
-  --sftp-text: #e4eee6;
-  --sftp-muted: #9aab9e;
-  --sftp-signal: #70b978;
+  --sftp-bg: #101713;
+  --sftp-panel: #17211b;
+  --sftp-raised: #233128;
+  --sftp-line: #38503f;
+  --sftp-text: #edf6ef;
+  --sftp-muted: #b2c5b6;
+  --sftp-signal: #86d69a;
   height: 100%;
   min-height: 0;
   display: flex;
@@ -590,19 +590,27 @@
    the remaining space. This intentionally replaces the old local/remote
    transfer split so a browser never appears as the server's local disk. */
 .file-workbench {
+  --file-bg: #0d1410;
+  --file-surface: #162019;
+  --file-surface-raised: #213027;
+  --file-border: #395140;
+  --file-text: #f0f7f1;
+  --file-text-muted: #b3c4b7;
+  --file-focus: #93d8a3;
+  --file-warning: #f2b86b;
   height: 100%;
   min-height: 0;
   display: grid;
   grid-template-columns: minmax(260px, 32%) minmax(0, 1fr);
-  color: var(--sftp-text);
-  background: #101512;
+  color: var(--file-text);
+  background: var(--file-bg);
 }
 .file-explorer {
   min-width: 0;
   min-height: 0;
   display: flex;
   flex-direction: column;
-  border-right: 1px solid var(--sftp-line);
+  border-inline-end: 1px solid var(--file-border);
   background: var(--sftp-bg);
 }
 .file-explorer > .sftp-shell { min-height: 0; flex: 1; }
@@ -612,9 +620,9 @@
   align-items: center;
   gap: 7px;
   padding: 0 9px;
-  color: #c9d9cc;
-  background: #1a231c;
-  border-bottom: 1px solid var(--sftp-line);
+  color: var(--file-text);
+  background: var(--file-surface-raised);
+  border-bottom: 1px solid var(--file-border);
   font-weight: 650;
 }
 .file-explorer-head > span { white-space: nowrap; }
@@ -624,7 +632,7 @@
   min-height: 0;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  background: #111713;
+  background: var(--file-bg);
 }
 .file-workbench.is-split .file-editor-workspace { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
 .file-editor-group {
@@ -632,34 +640,53 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
-  border-right: 1px solid var(--sftp-line);
+  border-inline-end: 1px solid var(--file-border);
 }
-.file-editor-group:last-child { border-right: 0; }
+.file-editor-group:last-child { border-inline-end: 0; }
+.file-editor-group.is-focused { box-shadow: inset 0 2px var(--file-focus); }
+.file-editor-tab-strip {
+  min-height: 40px;
+  display: flex;
+  align-items: stretch;
+  background: var(--file-surface);
+  border-bottom: 1px solid var(--file-border);
+}
 .file-editor-tabs {
-  min-height: 38px;
+  min-width: 0;
+  flex: 1;
+  min-height: 40px;
   display: flex;
   align-items: stretch;
   overflow-x: auto;
   overflow-y: hidden;
-  background: #18201a;
-  border-bottom: 1px solid var(--sftp-line);
+  overscroll-behavior-inline: contain;
+  scroll-snap-type: inline proximity;
+  scrollbar-width: thin;
+  scrollbar-color: #607667 transparent;
+  touch-action: pan-x;
 }
 .file-editor-tab {
-  min-width: 0;
-  max-width: 210px;
+  min-width: 112px;
+  max-width: 220px;
+  scroll-snap-align: start;
   display: flex;
   align-items: center;
-  color: var(--sftp-muted);
-  border-right: 1px solid #2d3a31;
+  color: var(--file-text-muted);
+  border-inline-end: 1px solid var(--file-border);
+  background: transparent;
+  cursor: grab;
 }
-.file-editor-tab.is-active { color: var(--sftp-text); background: #111713; box-shadow: inset 0 2px var(--sftp-signal); }
+.file-editor-tab:active { cursor: grabbing; }
+.file-editor-tab.is-active { color: var(--file-text); background: #233128; box-shadow: inset 0 2px var(--file-focus); }
+.file-editor-tab.is-dragging { opacity: 0.45; }
+.file-editor-tab.is-drop-target { box-shadow: inset 3px 0 var(--file-focus); }
 .file-editor-tab > button:first-child {
   min-width: 0;
   flex: 1;
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 0 8px;
+  padding: 0 10px;
   overflow: hidden;
   border: 0;
   color: inherit;
@@ -667,22 +694,27 @@
   cursor: pointer;
 }
 .file-editor-tab > button:first-child span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.file-editor-tab i { width: 6px; height: 6px; flex: none; border-radius: 50%; background: #dda45c; }
-.file-editor-tab-close, .file-editor-split {
-  width: 30px;
+.file-editor-tab i { width: 7px; height: 7px; flex: none; border-radius: 50%; background: var(--file-warning); box-shadow: 0 0 0 2px #233128; }
+.file-editor-tab-close, .file-editor-tool, .file-editor-scroll {
+  width: 32px;
   display: grid;
   place-items: center;
   border: 0;
-  color: var(--sftp-muted);
+  color: var(--file-text-muted);
   background: transparent;
   cursor: pointer;
 }
-.file-editor-tab-close:hover, .file-editor-split:hover { color: var(--sftp-text); background: var(--sftp-raised); }
-.file-editor-split { margin-left: auto; border-left: 1px solid #2d3a31; }
+.file-editor-tab-close:hover, .file-editor-tool:hover, .file-editor-scroll:hover { color: var(--file-text); background: var(--file-surface-raised); }
+.file-editor-scroll { flex: none; border-inline-end: 1px solid var(--file-border); }
+.file-editor-tab-strip > .file-editor-scroll:nth-of-type(2) { border-inline-start: 1px solid var(--file-border); border-inline-end: 0; }
+.file-editor-group-actions { flex: none; display: flex; border-inline-start: 1px solid var(--file-border); }
+.file-editor-tool { border-inline-end: 1px solid var(--file-border); }
+.file-editor-tool:last-child { border-inline-end: 0; }
+.file-editor-tab > button:focus-visible, .file-editor-tool:focus-visible, .file-editor-scroll:focus-visible, .file-editor-tab-close:focus-visible { outline: 2px solid var(--file-focus); outline-offset: -2px; }
 .file-editor-stack { position: relative; min-height: 0; flex: 1; }
 .file-editor-page { position: absolute; inset: 0; min-width: 0; min-height: 0; }
 .file-editor-page[hidden] { display: none; }
-.file-editor-workbench { min-height: 0; background: #101512; }
+.file-editor-workbench { min-height: 0; background: var(--file-bg); }
 .file-editor-workbench .cm-editor { height: 100%; }
 .file-editor-workbench .cm-content { caret-color: #f2fff1; }
 .file-editor-empty {
@@ -692,10 +724,10 @@
   align-items: center;
   justify-content: center;
   gap: 9px;
-  color: #a8bdac;
+  color: var(--file-text-muted);
   text-align: center;
 }
-.file-editor-empty strong { color: #e4eee6; font-weight: 600; }
+.file-editor-empty strong { color: var(--file-text); font-weight: 650; }
 .file-editor-empty span { max-width: 31ch; line-height: 1.5; }
 @media (max-width: 860px) {
   .file-workbench { grid-template-columns: minmax(220px, 42%) minmax(0, 1fr); }
