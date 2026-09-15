@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"log"
 	"net/http"
+	"path"
 	"strconv"
 	"strings"
 	"sync"
@@ -802,11 +803,16 @@ func (h *WSHandler) HandleSFTP(conn *websocket.Conn) {
 	defer h.Store.EndSessionLog(logID)
 
 	var msg struct {
-		Action  string `json:"action"`
-		Path    string `json:"path"`
-		NewPath string `json:"new_path"`
-		Content string `json:"content"`
-		Mode    string `json:"mode"`
+		Action           string   `json:"action"`
+		Path             string   `json:"path"`
+		NewPath          string   `json:"new_path"`
+		Content          string   `json:"content"`
+		Mode             string   `json:"mode"`
+		Paths            []string `json:"paths"`
+		Destination      string   `json:"destination"`
+		RequestID        string   `json:"request_id"`
+		ExpectedRevision string   `json:"expected_revision"`
+		Force            bool     `json:"force"`
 	}
 	for {
 		if err := receiveWebSocketJSON(conn, &msg); err != nil {
@@ -819,22 +825,48 @@ func (h *WSHandler) HandleSFTP(conn *websocket.Conn) {
 			files, err := sftpClient.ListDir(msg.Path)
 			if err != nil {
 				outbound.Send(map[string]interface{}{"type": "error", "error": err.Error()})
-			} else {
-				outbound.Send(map[string]interface{}{"type": "file_list", "path": msg.Path, "files": files})
+			} else if err := sendChunkedFileList(outbound, msg.Path, files); err != nil {
+				return
+			}
+		case "stat":
+			info, err := sftpClient.Stat(msg.Path)
+			if err != nil {
+				outbound.Send(map[string]interface{}{"type": "error", "error": err.Error()})
+			} else if err := outbound.Send(map[string]interface{}{
+				"type": "file_stat", "path": msg.Path, "size": info.Size(),
+				"mod_time": info.ModTime().Format("2006-01-02 15:04:05"), "revision": fileRevision(info),
+			}); err != nil {
+				return
 			}
 		case "read":
 			data, err := sftpClient.ReadFile(msg.Path)
 			if err != nil {
 				outbound.Send(map[string]interface{}{"type": "error", "error": err.Error()})
+			} else if info, statErr := sftpClient.Stat(msg.Path); statErr != nil {
+				outbound.Send(map[string]interface{}{"type": "error", "error": statErr.Error()})
 			} else {
-				outbound.Send(map[string]interface{}{"type": "file_content", "path": msg.Path, "content": string(data)})
+				outbound.Send(map[string]interface{}{"type": "file_content", "path": msg.Path, "content": string(data), "revision": fileRevision(info)})
 			}
 		case "write":
-			err := sftpClient.WriteFile(msg.Path, []byte(msg.Content))
+			var err error
+			if !msg.Force && msg.ExpectedRevision != "" {
+				info, statErr := sftpClient.Stat(msg.Path)
+				if statErr != nil || fileRevision(info) != msg.ExpectedRevision {
+					if statErr != nil {
+						outbound.Send(map[string]interface{}{"type": "write_conflict", "path": msg.Path})
+					} else {
+						outbound.Send(map[string]interface{}{"type": "write_conflict", "path": msg.Path, "revision": fileRevision(info)})
+					}
+					continue
+				}
+			}
+			err = sftpClient.WriteFile(msg.Path, []byte(msg.Content))
 			if err != nil {
 				outbound.Send(map[string]interface{}{"type": "error", "error": err.Error()})
+			} else if info, statErr := sftpClient.Stat(msg.Path); statErr != nil {
+				outbound.Send(map[string]interface{}{"type": "error", "error": statErr.Error()})
 			} else {
-				outbound.Send(map[string]interface{}{"type": "write_done", "path": msg.Path})
+				outbound.Send(map[string]interface{}{"type": "write_done", "path": msg.Path, "revision": fileRevision(info)})
 			}
 		case "delete":
 			err := sftpClient.Delete(msg.Path)
@@ -850,6 +882,32 @@ func (h *WSHandler) HandleSFTP(conn *websocket.Conn) {
 			} else {
 				outbound.Send(map[string]interface{}{"type": "rename_done", "path": msg.Path, "new_path": msg.NewPath})
 			}
+		case "copy", "move":
+			paths := msg.Paths
+			if len(paths) == 0 && msg.Path != "" {
+				paths = []string{msg.Path}
+			}
+			destination := msg.Destination
+			if destination == "" {
+				destination = msg.NewPath
+			}
+			succeeded := make([]string, 0, len(paths))
+			failed := make([]fileOperationFailure, 0)
+			for _, source := range paths {
+				target := path.Join(destination, path.Base(source))
+				var err error
+				if msg.Action == "move" {
+					err = sftpClient.Move(source, target)
+				} else {
+					err = sftpClient.Copy(source, target)
+				}
+				if err != nil {
+					failed = append(failed, fileOperationFailure{Path: source, Error: err.Error()})
+				} else {
+					succeeded = append(succeeded, source)
+				}
+			}
+			outbound.Send(map[string]interface{}{"type": "operation_done", "action": msg.Action, "request_id": msg.RequestID, "succeeded": succeeded, "failed": failed})
 		case "mkdir":
 			err := sftpClient.Mkdir(msg.Path)
 			if err != nil {

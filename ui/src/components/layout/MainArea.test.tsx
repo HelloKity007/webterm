@@ -1,37 +1,45 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import MainArea from './MainArea';
-import { useWorkspaceChromeStore } from '../../store/layout';
 
-const layoutState = { activeModule: 'ssh', drainTabQueue: () => [] };
+const layoutState: { activeModule: 'ssh' | 'files' | 'sftp'; drainTabQueue: () => never[] } = {
+  activeModule: 'ssh',
+  drainTabQueue: () => [],
+};
 vi.mock('../../store/layout', async (importOriginal) => ({ ...await importOriginal<typeof import('../../store/layout')>(), useLayoutStore: (selector: (state: typeof layoutState) => unknown) => selector(layoutState) }));
-vi.mock('../../store/connections', () => ({ useConnectionStore: (selector: (state: { connections: never[] }) => unknown) => selector({ connections: [] }) }));
-vi.mock('./SplitPane', () => ({
-  default: ({ onActiveSshChange }: { onActiveSshChange: (connId: number, tabId: string) => void }) => (
-    <button data-testid="activate-ssh" onClick={() => onActiveSshChange(7, 'tab-7')} />
-  ),
-}));
-vi.mock('../sftp/SftpPanel', () => ({ default: () => <div data-testid="right-sidebar" /> }));
-vi.mock('../sftp/DualPaneSftp', () => ({ default: () => <div /> }));
+const { fetchConnections } = vi.hoisted(() => ({ fetchConnections: vi.fn().mockResolvedValue(undefined) }));
+vi.mock('../../store/connections', () => ({ useConnectionStore: (selector: (state: { connections: never[]; fetchConnections: typeof fetchConnections }) => unknown) => selector({ connections: [], fetchConnections }) }));
+vi.mock('../../store/auth', () => ({ useAuthStore: (selector: (state: { token: string }) => unknown) => selector({ token: 'test-token' }) }));
+vi.mock('./SplitPane', () => ({ default: () => <div data-testid="terminal-workspace" /> }));
+vi.mock('../sftp/DualPaneSftp', () => ({ default: () => <div data-testid="dual-pane-files" /> }));
 vi.mock('../config/ConfigPage', () => ({ default: () => <div /> }));
 vi.mock('./TabBar', () => ({ default: () => <div /> }));
 
-describe('MainArea default panels', () => {
-  afterEach(() => { cleanup(); useWorkspaceChromeStore.setState({ filesExpanded: false }); });
-  it('opens an SSH tab with the left SFTP sidebar collapsed, then toggles without remounting it', () => {
-    render(<MainArea />);
-    fireEvent.click(screen.getByTestId('activate-ssh'));
+describe('MainArea unified file workspace', () => {
+  afterEach(() => { cleanup(); layoutState.activeModule = 'ssh'; fetchConnections.mockClear(); });
 
-    expect(screen.getByTestId('right-sidebar').parentElement?.style.width).toBe('0px');
-    const panel = screen.getByTestId('right-sidebar');
-    expect(panel.parentElement?.style.order).toBe('-1');
-    act(() => useWorkspaceChromeStore.getState().toggleFiles());
-    expect(panel.parentElement?.style.width).toBe('260px');
-    expect(panel.parentElement?.hasAttribute('inert')).toBe(false);
-    act(() => useWorkspaceChromeStore.getState().toggleFiles());
-    expect(screen.getByTestId('right-sidebar')).toBe(panel);
-    expect(panel.parentElement?.style.width).toBe('0px');
-    expect(panel.parentElement?.hasAttribute('inert')).toBe(true);
+  it('keeps SSH focused on the terminal without mounting the removed SSH file sidebar', () => {
+    render(<MainArea />);
+
+    expect(screen.getByTestId('terminal-workspace').parentElement?.parentElement?.style.display).toBe('flex');
+    expect(document.querySelector('.ssh-files-sidebar')).toBeNull();
+    expect(document.querySelector('.ssh-files-resize')).toBeNull();
+  });
+
+  it('renders the dual-pane manager for the new files module', () => {
+    layoutState.activeModule = 'files';
+    render(<MainArea />);
+
+    expect(screen.getByTestId('file-workspace').style.display).toBe('flex');
+    expect(screen.getByTestId('dual-pane-files')).toBeTruthy();
+    expect(fetchConnections).toHaveBeenCalledOnce();
+  });
+
+  it('maps a legacy persisted sftp module to the file workspace instead of a blank view', () => {
+    layoutState.activeModule = 'sftp';
+    render(<MainArea />);
+
+    expect(screen.getByTestId('file-workspace').style.display).toBe('flex');
   });
 });

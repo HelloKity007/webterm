@@ -1,51 +1,31 @@
-import { lazy, Suspense, useState, useEffect, useCallback, useRef } from 'react';
-import { useLayoutStore, useWorkspaceChromeStore } from '../../store/layout';
-import { t } from '../../i18n';
+import { lazy, Suspense, useState, useEffect } from 'react';
+import { normalizeModuleType, useLayoutStore } from '../../store/layout';
 import type { Tab } from '../../store/layout';
 import { useConnectionStore } from '../../store/connections';
-import Icon from '../common/Icon';
+import { useAuthStore } from '../../store/auth';
 import SplitPane from './SplitPane';
 import DualPaneSftp from '../sftp/DualPaneSftp';
-import SftpPanel from '../sftp/SftpPanel';
 import ConfigPage from '../config/ConfigPage';
 const QueryEditor = lazy(() => import('../database/QueryEditor'));
 import TabBar from './TabBar';
 import { colors, font } from '../../theme/tokens';
 
 export default function MainArea() {
-  const activeModule = useLayoutStore((s) => s.activeModule);
+  // Normalize at the rendering boundary too so a legacy persisted `sftp`
+  // snapshot cannot restore into an empty workspace before migration runs.
+  const activeModule = normalizeModuleType(useLayoutStore((s) => s.activeModule));
+  const token = useAuthStore((s) => s.token);
   const connections = useConnectionStore((s) => s.connections);
+  const fetchConnections = useConnectionStore((s) => s.fetchConnections);
   const drainTabQueue = useLayoutStore((s) => s.drainTabQueue);
-  const sftpCollapsed = !useWorkspaceChromeStore(s => s.filesExpanded);
-  const [sftpWidth, setSftpWidth] = useState(260);
-  const sftpDragRef = useRef({ startX: 0, startW: 0, dragging: false });
-  const [sftpCtx, setSftpCtx] = useState<{ connId: number; tabId: string } | null>(null);
-
-  const onSftpResizeStart = useCallback((e: React.MouseEvent) => {
-    sftpDragRef.current = { startX: e.clientX, startW: sftpWidth, dragging: true };
-    const onMove = (ev: MouseEvent) => {
-      if (!sftpDragRef.current.dragging) return;
-      const w = Math.max(160, Math.min(600, sftpDragRef.current.startW + (ev.clientX - sftpDragRef.current.startX)));
-      setSftpWidth(w);
-    };
-    const onUp = () => { sftpDragRef.current.dragging = false; document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); };
-    document.addEventListener('mousemove', onMove);
-    document.addEventListener('mouseup', onUp);
-  }, [sftpWidth]);
-  const handleActiveSsh = useCallback((connId: number | null, tabId: string | null) => {
-    // Negative connId: signal to close SFTP for that connId if it's the current one
-    if (connId != null && connId < 0) {
-      setSftpCtx((prev) => prev && prev.connId === -connId ? null : prev);
-      return;
-    }
-    if (connId == null || tabId == null) { setSftpCtx(null); return; }
-    setSftpCtx((prev) => {
-      if (prev && prev.connId === connId && prev.tabId === tabId) return prev;
-      return { connId, tabId };
-    });
-  }, []);
   const [dbTabs, setDbTabs] = useState<Tab[]>([]);
   const [dbActiveTabId, setDbActiveTabId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (token && activeModule === 'files' && connections.length === 0) {
+      void fetchConnections();
+    }
+  }, [activeModule, connections.length, fetchConnections, token]);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -85,42 +65,12 @@ export default function MainArea() {
       {/* SSH module */}
       <div style={{ flex: 1, display: show('ssh'), overflow: 'hidden', position: 'relative' }}>
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 }}>
-          <SplitPane onActiveSshChange={handleActiveSsh} />
+          <SplitPane />
         </div>
-        {(
-          <>
-            <div className="ssh-files-sidebar" aria-hidden={sftpCollapsed} inert={sftpCollapsed}
-              style={{ order: -1, width: sftpCollapsed ? 0 : sftpWidth, maxWidth: 'calc(100vw - 118px)', flexShrink: 0, borderRight: sftpCollapsed ? 'none' : '1px solid var(--c-border)', overflow: 'hidden' }}>
-              {sftpCtx ? <SftpPanel connId={sftpCtx.connId} tabId={sftpCtx.tabId} /> : <div style={{ padding: 12, color: colors.textMuted, fontSize: font.md }}>{t('ssh_files_select')}</div>}
-            </div>
-          </>
-        )}
-        {/* Resize handle overlaid on the left sidebar's right edge. */}
-        {sftpCtx && !sftpCollapsed && (
-          <div className="ssh-files-resize" onMouseDown={onSftpResizeStart}
-            style={{
-              position: 'absolute', left: `calc(min(${sftpWidth}px, 100vw - 118px) - 3px)`, top: 0, bottom: 0,
-              width: 6, cursor: 'col-resize', zIndex: 10,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-            }}
-            onMouseEnter={(e) => {
-              const line = e.currentTarget.firstChild as HTMLElement;
-              line.style.width = '2px'; line.style.background = colors.border;
-              (e.currentTarget.lastChild as HTMLElement).style.opacity = '1';
-            }}
-            onMouseLeave={(e) => {
-              const line = e.currentTarget.firstChild as HTMLElement;
-              line.style.width = '0px';
-              (e.currentTarget.lastChild as HTMLElement).style.opacity = '0';
-            }}>
-            <div style={{ width: 0, height: '100%', background: colors.accent }} />
-            <span style={{ position: 'absolute', color: colors.accent, userSelect: 'none', background: colors.bg, padding: '2px 0', opacity: 0, display: 'flex', alignItems: 'center' }}><Icon name="grip-vertical" size={12} /></span>
-          </div>
-        )}
       </div>
 
-      {/* SFTP module */}
-      <div style={{ flex: 1, display: show('sftp'), flexDirection: 'column', overflow: 'hidden' }}>
+      {/* Unified local/remote file workspace. */}
+      <div data-testid="file-workspace" style={{ flex: 1, display: show('files'), flexDirection: 'column', overflow: 'hidden' }}>
         <DualPaneSftp connections={connections} />
       </div>
 

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { websocketTicketURL, webSocketClientID, WebSocketAuthError } from './wsTicket';
+import { downloadTicketURL, websocketTicketURL, webSocketClientID, WebSocketAuthError } from './wsTicket';
 
 describe('websocket tickets', () => {
   afterEach(() => { vi.restoreAllMocks(); sessionStorage.clear(); localStorage.clear(); });
@@ -19,6 +19,17 @@ describe('websocket tickets', () => {
   it('classifies forbidden ticket acquisition as non-retryable', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{}', { status: 403 }));
     await expect(websocketTicketURL('/ws/layout', { endpoint: 'layout', clientId: 'c1' })).rejects.toBeInstanceOf(WebSocketAuthError);
+  });
+
+  it('uses a short-lived scoped ticket instead of the JWT in download URLs', async () => {
+    localStorage.setItem('token', 'long-lived-jwt');
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ ticket: 'download-ticket' }), { status: 200 }));
+
+    const url = await downloadTicketURL('/api/sftp/download/4', { endpoint: 'sftp-download', connId: 4 }, { path: '/tmp/report.txt' });
+
+    expect(url).toContain('path=%2Ftmp%2Freport.txt');
+    expect(url).toContain('ticket=download-ticket');
+    expect(url).not.toContain('long-lived-jwt');
   });
 
   it('keeps a stable client id within a browser tab', () => {

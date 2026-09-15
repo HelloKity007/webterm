@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http/httptest"
 	"strings"
@@ -9,6 +10,55 @@ import (
 
 	"golang.org/x/net/websocket"
 )
+
+func TestChunkedFileListKeepsLargeDirectoriesBelowOneFrame(t *testing.T) {
+	files := make([]int, fileListChunkSize*2+7)
+	for i := range files {
+		files[i] = i
+	}
+	serverDone := make(chan error, 1)
+	server := httptest.NewServer(websocket.Handler(func(conn *websocket.Conn) {
+		outbound := newWSOutbound(conn)
+		serverDone <- sendChunkedFileList(outbound, "/tmp/large", files)
+		outbound.Close()
+	}))
+	defer server.Close()
+	client, err := websocket.Dial("ws"+strings.TrimPrefix(server.URL, "http"), "", server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	var total, chunks int
+	for {
+		var message struct {
+			Type  string          `json:"type"`
+			Files json.RawMessage `json:"files"`
+		}
+		if err := websocket.JSON.Receive(client, &message); err != nil {
+			t.Fatal(err)
+		}
+		if message.Type == "file_list_chunk" {
+			var chunk []int
+			if err := json.Unmarshal(message.Files, &chunk); err != nil {
+				t.Fatal(err)
+			}
+			if len(chunk) > fileListChunkSize {
+				t.Fatalf("chunk has %d files, limit %d", len(chunk), fileListChunkSize)
+			}
+			total += len(chunk)
+			chunks++
+		}
+		if message.Type == "file_list_end" {
+			break
+		}
+	}
+	if chunks != 3 || total != len(files) {
+		t.Fatalf("chunks=%d total=%d", chunks, total)
+	}
+	if err := <-serverDone; err != nil {
+		t.Fatal(err)
+	}
+}
 
 func TestWSOutboundSerializesConcurrentSenders(t *testing.T) {
 	const senders = 4

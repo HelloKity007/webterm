@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useLayoutStore } from '../../store/layout';
+import { normalizeModuleType, useLayoutStore } from '../../store/layout';
 import { useConnectionStore } from '../../store/connections';
 import { useAuthStore } from '../../store/auth';
 import type { Connection, DbConnection, Group } from '../../store/connections';
@@ -24,7 +24,7 @@ function isDbConnection(connection: SidebarConnection): connection is DbConnecti
 }
 
 export default function Sidebar({ collapsed, width }: { collapsed: boolean; width: number }) {
-  const activeModule = useLayoutStore((s) => s.activeModule);
+  const activeModule = normalizeModuleType(useLayoutStore((s) => s.activeModule));
   const { connections, groups, dbConnections, fetchConnections, fetchDbConnections, fetchGroups } = useConnectionStore();
   const requestTab = useLayoutStore((s) => s.requestTab);
   const setFocusedPane = useLayoutStore((s) => s.setFocusedPane);
@@ -53,22 +53,24 @@ export default function Sidebar({ collapsed, width }: { collapsed: boolean; widt
   };
 
   const isSsh = activeModule === 'ssh';
+  const isFiles = activeModule === 'files';
   const isDb = activeModule === 'database';
-  const typeStr = isSsh ? 'ssh' : 'database';
+  const isSshConnectionModule = isSsh || isFiles;
+  const typeStr = isSshConnectionModule ? 'ssh' : 'database';
 
   const token = useAuthStore((s) => s.token);
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
   useEffect(() => {
     if (!token) return;
-    if (activeModule === 'ssh' || activeModule === 'sftp') {
+    if (isSshConnectionModule) {
       fetchGroups('ssh');
       fetchConnections();
     } else if (activeModule === 'database') {
       fetchGroups('database');
       fetchDbConnections();
     }
-  }, [activeModule, fetchConnections, fetchDbConnections, fetchGroups, token]);
+  }, [activeModule, fetchConnections, fetchDbConnections, fetchGroups, isSshConnectionModule, token]);
 
   const handleDblClick = (conn: Connection) => {
     // The sidebar lives outside every pane, so restore a valid target before
@@ -83,7 +85,7 @@ export default function Sidebar({ collapsed, width }: { collapsed: boolean; widt
     await apiPost('/api/groups', { name: name.trim(), type: typeStr, parent_id: 0 });
     setShowGroupInput(false);
     setNewGroupName('');
-    if (isSsh) fetchGroups('ssh');
+    if (isSshConnectionModule) fetchGroups('ssh');
     else fetchGroups('database');
   };
 
@@ -91,13 +93,13 @@ export default function Sidebar({ collapsed, width }: { collapsed: boolean; widt
     if (!name.trim()) return;
     await apiPut(`/api/groups/${id}`, { name: name.trim() });
     setEditingGroupId(null);
-    if (isSsh) fetchGroups('ssh');
+    if (isSshConnectionModule) fetchGroups('ssh');
     else fetchGroups('database');
   };
 
   const handleDeleteGroup = async (id: number) => {
     await apiDelete(`/api/groups/${id}`);
-    if (isSsh) { fetchGroups('ssh'); fetchConnections(); }
+    if (isSshConnectionModule) { fetchGroups('ssh'); fetchConnections(); }
     else { fetchGroups('database'); fetchDbConnections(); }
     setGroupMenu(null);
   };
@@ -239,8 +241,8 @@ export default function Sidebar({ collapsed, width }: { collapsed: boolean; widt
         setBlankMenu({ x: e.clientX, y: e.clientY });
       }}>
       <div style={{ height: 36, padding: '0 10px', color: colors.text, fontWeight: 600, borderBottom: '1px solid var(--c-border)', flexShrink: 0, whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 6, boxSizing: 'border-box' }}>
-        {activeModule === 'ssh' ? <Icon name="terminal" size={14} /> : activeModule === 'sftp' ? <Icon name="folder-open" size={14} /> : activeModule === 'database' ? <Icon name="database" size={14} /> : <Icon name="settings" size={14} />}
-        <span style={{ flex: 1 }}>{activeModule === 'ssh' ? t('sidebar_ssh') : activeModule === 'sftp' ? t('sidebar_sftp') : activeModule === 'database' ? t('sidebar_database') : t('activity_config')}</span>
+        {isSsh ? <Icon name="terminal" size={14} /> : isFiles ? <Icon name="folder-open" size={14} /> : isDb ? <Icon name="database" size={14} /> : <Icon name="settings" size={14} />}
+        <span style={{ flex: 1 }}>{isSsh ? t('sidebar_ssh') : isFiles ? t('sidebar_files') : isDb ? t('sidebar_database') : t('activity_config')}</span>
         {!collapsed && (
           <span title={t("multi_mode")} onClick={() => { setMultiMode(!multiMode); setSelectedIds(new Set()); }}
             style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', flexShrink: 0 }}>
@@ -277,7 +279,7 @@ export default function Sidebar({ collapsed, width }: { collapsed: boolean; widt
           </div>
         )}
         <div style={{ overflow: 'auto', flex: 1 }}>
-          {(isSsh || activeModule === 'sftp') && (
+          {isSshConnectionModule && (
             <>
               {groups.map((g) => renderGroup(g))}
               {(groupMap[0] || []).map((c) => renderConnItem(c, false))}
@@ -297,9 +299,9 @@ export default function Sidebar({ collapsed, width }: { collapsed: boolean; widt
             {t('logout')}
           </button>
         </div>
-        {(isSsh || isDb) && (
+        {(isSshConnectionModule || isDb) && (
           <div style={{ borderTop: '1px solid var(--c-border)', padding: '4px 8px', marginTop: 'auto' }}>
-            <div onClick={() => { if (isSsh) { setEditingConn(null); setShowConnForm(true); } else { setEditingDbConn(null); setShowDbForm(true); } }}
+            <div onClick={() => { if (isSshConnectionModule) { setEditingConn(null); setShowConnForm(true); } else { setEditingDbConn(null); setShowDbForm(true); } }}
             style={{ padding: '4px 8px', color: colors.textLight, cursor: 'pointer', fontSize: font.sm }}>{t("sidebar_new_conn")}</div>
           {showGroupInput ? (
             <div style={{ display: 'flex', gap: 4, padding: '4px 0' }}>

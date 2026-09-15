@@ -69,6 +69,47 @@ func TestWSTicketIssueAuthorizesConnectionAndDoesNotCache(t *testing.T) {
 	}
 }
 
+func TestDownloadTicketScopes(t *testing.T) {
+	if !validWSTicketRequest(wsTicketRequest{Endpoint: "local-download"}) {
+		t.Fatal("local download scope should be valid")
+	}
+	if !validWSTicketRequest(wsTicketRequest{Endpoint: "sftp-download", ConnID: 7}) {
+		t.Fatal("SFTP download scope should be valid")
+	}
+	if validWSTicketRequest(wsTicketRequest{Endpoint: "sftp-download"}) ||
+		validWSTicketRequest(wsTicketRequest{Endpoint: "local-download", ConnID: 7}) {
+		t.Fatal("download ticket accepted a mismatched connection scope")
+	}
+}
+
+func TestTicketHTTPHandlerIsSingleUseAndHidesTicket(t *testing.T) {
+	st := newQuickConnectTestStore(t)
+	owner, _ := st.CreateUser("download-owner", "hash", "user")
+	service := NewWSTicketService()
+	token, _ := service.issue(wsTicket{claims: auth.Claims{UserID: owner}, endpoint: "local-download"})
+	called := 0
+	handler := TicketHTTPHandler{Store: st, Tickets: service, Endpoint: "local-download", Next: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called++
+		if auth.GetUser(r) == nil || r.URL.Query().Get("ticket") != "" || r.URL.Query().Get("path") != "/tmp/report.txt" {
+			t.Fatal("download handler did not receive sanitized authenticated request")
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})}
+	request := httptest.NewRequest(http.MethodGet, "https://webterm.test/api/local-files/download?path=%2Ftmp%2Freport.txt&ticket="+token, nil)
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusNoContent || called != 1 {
+		t.Fatalf("download code=%d called=%d", response.Code, called)
+	}
+
+	replay := httptest.NewRequest(http.MethodGet, "https://webterm.test/api/local-files/download?path=%2Ftmp%2Freport.txt&ticket="+token, nil)
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, replay)
+	if response.Code != http.StatusUnauthorized || called != 1 {
+		t.Fatalf("replay code=%d called=%d", response.Code, called)
+	}
+}
+
 func TestTicketWebSocketHandlerRejectsBeforeUpgradeAndInjectsClaims(t *testing.T) {
 	service := NewWSTicketService()
 	token, _ := service.issue(wsTicket{claims: auth.Claims{UserID: 19}, endpoint: "ssh", connID: 4, terminalID: "term-a"})
