@@ -64,15 +64,21 @@ try {
   await page.waitForTimeout(2500);
   const state = await terminal.evaluate(element => {
     const viewport = element.querySelector('.xterm-viewport');
+    const scrollbar = element.querySelector('.scrollbar.vertical');
+    const slider = scrollbar?.firstElementChild;
+    const scrollbarBox = scrollbar?.getBoundingClientRect();
+    const sliderBox = slider?.getBoundingClientRect();
     return viewport ? {
       top: viewport.scrollTop,
       max: viewport.scrollHeight - viewport.clientHeight,
-      scrollbar: getComputedStyle(element.querySelector('.scrollbar.vertical')).display,
+      scrollbar: getComputedStyle(scrollbar).display,
+      sliderTop: sliderBox && scrollbarBox ? sliderBox.top - scrollbarBox.top : null,
+      sliderTravel: sliderBox && scrollbarBox ? scrollbarBox.height - sliderBox.height : null,
       rows: [...element.querySelectorAll('.xterm-accessibility-tree [role="listitem"]')].map(row => row.textContent).filter(Boolean).slice(-3),
     } : null;
   });
   await terminal.screenshot({ path: `${output}/after-wheel-up.png` });
-  assert(state && state.rows.every(row => !row.endsWith('_0320')),
+  assert(state && state.sliderTravel > 0 && state.sliderTop < state.sliderTravel - 1,
     `wheel did not move away from the current history bottom: ${JSON.stringify({ state, historyResponses })}`);
   assert.equal(state.scrollbar, 'block', `Bash history scrollbar is hidden: ${JSON.stringify(state)}`);
   await writeFile(`${output}/results.json`, JSON.stringify({ marker, state, historyResponses }, null, 2));

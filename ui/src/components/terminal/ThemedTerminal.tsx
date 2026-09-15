@@ -485,7 +485,16 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
         }
         shellHistoryLoadedRef.current = true;
         term.scrollToBottom();
-        term.scrollLines(pendingShellHistoryScrollRef.current);
+        const requestedScroll = pendingShellHistoryScrollRef.current;
+        term.scrollLines(requestedScroll);
+        // The initial, bounded screen capture races this explicit HTTP
+        // capture on a fresh attachment. If it arrives just afterwards, its
+        // live-screen write correctly follows the prompt and would otherwise
+        // cancel the user's very first wheel-up. Reapply the same intent once
+        // that attach burst has settled; later normal wheels use xterm alone.
+        setTimeout(() => {
+          if (shellHistoryLoadedRef.current && termRef.current === term) term.scrollLines(requestedScroll);
+        }, 350);
       } catch (error) {
         console.warn('terminal history capture:', error);
       } finally {
