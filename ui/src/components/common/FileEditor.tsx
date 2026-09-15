@@ -165,8 +165,13 @@ export default function FileEditor({ filePath, fileName, ws, revision, refreshMo
       EditorView.theme({
         '&': { height: '100%' },
         '.cm-scroller': { overflow: 'auto' },
-        '.cm-content': { fontFamily: 'Menlo, Monaco, monospace', fontSize: font.lg },
-        '.cm-gutters': { background: colors.bgDeep, color: colors.textDim, border: 'none' },
+        '.cm-content': { fontFamily: 'Menlo, Monaco, monospace', fontSize: font.lg, color: '#e6f2e7', caretColor: '#ffffff' },
+        '.cm-line': { color: '#e6f2e7' },
+        '.cm-cursor, .cm-dropCursor': { borderLeftColor: '#ffffff', borderLeftWidth: '2px' },
+        '.cm-selectionBackground, ::selection': { backgroundColor: '#2f6950 !important' },
+        '.cm-activeLine': { backgroundColor: '#182b20' },
+        '.cm-gutters': { background: colors.bgDeep, color: '#afc4b2', border: 'none' },
+        '.cm-activeLineGutter': { background: '#1b3022', color: '#effbf1' },
       }, { dark: true }),
     ];
 
