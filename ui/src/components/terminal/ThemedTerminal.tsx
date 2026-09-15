@@ -509,6 +509,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
     const wheelSender = createLatestTerminalWheelSender((data) => sendRef.current(JSON.stringify({ data })));
     let initialOutputFollow = true;
     let initialOutputFollowTimer: ReturnType<typeof setTimeout> | null = null;
+    let cliViewportFollowTimer: ReturnType<typeof setTimeout> | null = null;
     let userOwnsViewport = false;
     const handleTerminalWheel = (event: WheelEvent) => {
       userOwnsViewport = true;
@@ -541,6 +542,25 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
             { x: event.clientX, y: bounds.top + bounds.height / 2 }, bounds, term.cols, term.rows,
           );
           wheelSender.notch(`\x1b[<${lines < 0 ? 64 : 65};${col};${row}M`);
+          // A downwards CLI wheel returns toward the composer. Its shared grid
+          // may be taller than this display, so reveal the actual xterm cursor
+          // after the CLI has processed that page command. Do not do this for
+          // upward history browsing: that would snap the user back to bottom.
+          if (lines > 0 && !mobileBrowser) {
+            const revealCliCursor = () => {
+              const surface = ref.current;
+              const screen = term.element?.querySelector<HTMLElement>('.xterm-screen');
+              if (!surface || !screen || terminalModeRef.current !== 'cli') return;
+              surface.scrollTop = localViewportRevealRow(surface.scrollTop, surface.clientHeight, surface.scrollHeight,
+                screen.getBoundingClientRect().height / term.rows, term.buffer.active.cursorY);
+            };
+            requestAnimationFrame(revealCliCursor);
+            if (cliViewportFollowTimer) clearTimeout(cliViewportFollowTimer);
+            cliViewportFollowTimer = setTimeout(() => {
+              cliViewportFollowTimer = null;
+              revealCliCursor();
+            }, 160);
+          }
         },
       });
     };
@@ -1094,6 +1114,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       if (outputFrameRef.current !== null) cancelAnimationFrame(outputFrameRef.current);
       if (outputTimerRef.current !== null) clearTimeout(outputTimerRef.current);
       if (initialOutputFollowTimer) clearTimeout(initialOutputFollowTimer);
+      if (cliViewportFollowTimer) clearTimeout(cliViewportFollowTimer);
       outputFrameRef.current = null;
       outputTimerRef.current = null;
       outputWritePendingRef.current = false;
