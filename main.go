@@ -16,6 +16,7 @@ import (
 	"os"
 	"os/signal"
 	"regexp"
+	"strings"
 	"syscall"
 	"time"
 
@@ -227,6 +228,15 @@ func spaHandler() http.HandlerFunc {
 		if len(path) >= 3 && path[:3] == "/ws" {
 			return
 		}
+		// index.html names the currently deployed hashed assets. It must always
+		// be revalidated so a normal F5 never bootstraps an old deployment whose
+		// asset files have already been replaced. Hashed assets remain immutable.
+		assetPath := strings.TrimPrefix(path, "/")
+		if assetPath == "" || assetPath == "index.html" {
+			w.Header().Set("Cache-Control", "no-store, max-age=0")
+		} else if strings.HasPrefix(assetPath, "assets/") {
+			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		}
 
 		// Try to serve the requested file
 		f, err := dist.Open(path[1:]) // strip leading "/"
@@ -237,6 +247,7 @@ func spaHandler() http.HandlerFunc {
 		}
 
 		// SPA fallback: serve index.html
+		w.Header().Set("Cache-Control", "no-store, max-age=0")
 		indexFile, err := dist.Open("index.html")
 		if err != nil {
 			http.Error(w, "index.html not found", http.StatusInternalServerError)
