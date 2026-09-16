@@ -35,6 +35,18 @@ interface TerminalClipboardShortcutActions {
 }
 
 const forwardedTerminalPointerEvents = new WeakSet<Event>();
+const terminalModifierKeys = new Set([
+  'Alt', 'AltGraph', 'CapsLock', 'Control', 'Fn', 'FnLock', 'Hyper',
+  'Meta', 'NumLock', 'ScrollLock', 'Shift', 'Symbol', 'SymbolLock',
+]);
+
+// Keeping a terminal's prompt in view is useful once the user actually starts
+// typing, but modifier-only keydowns carry no terminal input. In particular,
+// browsers dispatch a standalone `Control` keydown before Ctrl shortcuts; do
+// not let that keydown discard the user's current scrollback position.
+export function shouldRevealTerminalInputCursor(key: string): boolean {
+  return !terminalModifierKeys.has(key);
+}
 
 export function shouldAutoFocusTerminal(activeElement: Element | null): boolean {
   if (!activeElement) return true;

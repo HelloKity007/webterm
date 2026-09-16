@@ -51,6 +51,7 @@ import {
   routeTerminalMouseMove,
   routeTerminalMouseUp,
   shouldAutoFocusTerminal,
+  shouldRevealTerminalInputCursor,
 } from './terminalInteractions';
 import { calculateTerminalScale, constrainTerminalHeight, defaultSharedTerminalGrid, desktopRequestedGrid, mobileSharedTerminalGrid, parseSharedTerminalGridTitle, sharedGridForViewport, smallViewportWidth, type TerminalGrid } from './terminalScaling';
 import { fitTerminalColumns } from './terminalWidth';
@@ -1617,8 +1618,9 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
         onMouseDownCapture={handleSurfaceMouseDown}
         onMouseMoveCapture={handleSurfaceMouseMove}
         onMouseUpCapture={handleSurfaceMouseUp}
-        onKeyDownCapture={() => {
+        onKeyDownCapture={(event) => {
           mouseStateRef.current.tmuxMenuActive = false;
+          if (!shouldRevealTerminalInputCursor(event.key)) return;
           pendingCursorRevealRef.current = true;
           revealInputCursor();
         }}

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest';
-import { clearTerminalHistory, copyTerminalText, createTerminalMouseState, getTerminalGridPosition, getTerminalSelectionRange, getTerminalSelectionRows, isForwardedTerminalPointerEvent, isTerminalSelectionDrag, pasteTerminalText, replayTerminalLeftClick, routeTerminalClipboardShortcut, routeTerminalControlShortcut, routeTerminalContextMenu, routeTerminalMouseDown, routeTerminalMouseMove, routeTerminalMouseUp, shouldAutoFocusTerminal, shouldPersistTerminalSelection } from './terminalInteractions';
+import { clearTerminalHistory, copyTerminalText, createTerminalMouseState, getTerminalGridPosition, getTerminalSelectionRange, getTerminalSelectionRows, isForwardedTerminalPointerEvent, isTerminalSelectionDrag, pasteTerminalText, replayTerminalLeftClick, routeTerminalClipboardShortcut, routeTerminalControlShortcut, routeTerminalContextMenu, routeTerminalMouseDown, routeTerminalMouseMove, routeTerminalMouseUp, shouldAutoFocusTerminal, shouldPersistTerminalSelection, shouldRevealTerminalInputCursor } from './terminalInteractions';
 
 describe('terminal autofocus', () => {
   it('does not steal focus from an active text editor', () => {
@@ -343,6 +343,15 @@ describe('terminal clear action', () => {
 });
 
 describe('terminal control keys', () => {
+  it('does not reveal the prompt for modifier-only keydowns', () => {
+    expect(shouldRevealTerminalInputCursor('Control')).toBe(false);
+    expect(shouldRevealTerminalInputCursor('Shift')).toBe(false);
+    expect(shouldRevealTerminalInputCursor('Alt')).toBe(false);
+    expect(shouldRevealTerminalInputCursor('Meta')).toBe(false);
+    expect(shouldRevealTerminalInputCursor('c')).toBe(true);
+    expect(shouldRevealTerminalInputCursor('Enter')).toBe(true);
+  });
+
   it('sends Ctrl+C as ETX while leaving Enter to xterm', () => {
     const sendControl = vi.fn();
 
