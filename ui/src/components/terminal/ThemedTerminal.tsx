@@ -1208,26 +1208,41 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
 
     const surfaceElement = ref.current;
     let webglAddon: WebglAddon | null = null;
+    let webglSetupTimer: number | null = null;
     const rendererObservation = surfaceElement ? observeTerminalRenderer(surfaceElement) : null;
     if (surfaceElement) {
       surfaceElement.style.backgroundColor = themeConfig.background;
       term.open(surfaceElement);
       // Full-screen CLIs repaint the alternate buffer heavily. Prefer GPU
-      // rendering, but gracefully retain xterm's DOM renderer when WebGL is
-      // unavailable (for example in headless or embedded browsers).
-      try {
-        webglAddon = new WebglAddon();
-        term.loadAddon(webglAddon);
-        rendererObservation?.webgl();
-        webglAddon.onContextLoss(() => {
-          webglAddon?.dispose();
-          webglAddon = null;
-          rendererObservation?.contextLost();
+      // rendering, but install it only after the first paint. Constructing a
+      // WebGL renderer can synchronously block the browser for hundreds of
+      // milliseconds; doing that in the tab/panel click commit is what makes
+      // an unrelated panel appear frozen or briefly white. The DOM renderer
+      // is fully functional while the browser is busy and remains the
+      // fallback when WebGL is unavailable.
+      const installWebgl = () => {
+        webglSetupTimer = null;
+        if (!termRef.current || termRef.current !== term || webglAddon) return;
+        try {
+          webglAddon = new WebglAddon();
+          term.loadAddon(webglAddon);
+          rendererObservation?.webgl();
+          webglAddon.onContextLoss(() => {
+            webglAddon?.dispose();
+            webglAddon = null;
+            rendererObservation?.contextLost();
+            scheduleFit();
+          });
           scheduleFit();
-        });
-      } catch (error) {
-        console.warn('WebGL renderer unavailable; using xterm DOM renderer', error);
-        webglAddon = null;
+        } catch (error) {
+          console.warn('WebGL renderer unavailable; using xterm DOM renderer', error);
+          webglAddon = null;
+        }
+      };
+      if (typeof window.requestIdleCallback === 'function') {
+        webglSetupTimer = window.requestIdleCallback(installWebgl, { timeout: 1200 });
+      } else {
+        webglSetupTimer = window.setTimeout(installWebgl, 80);
       }
       surfaceElement.addEventListener('touchstart', handleTouchStart, { passive: true, capture: true });
       surfaceElement.addEventListener('touchmove', handleTouchMove, { passive: false, capture: true });
@@ -1354,6 +1369,11 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       if (historyScrollbarFrame !== null) cancelAnimationFrame(historyScrollbarFrame);
       if (outputFrameRef.current !== null) cancelAnimationFrame(outputFrameRef.current);
       if (outputTimerRef.current !== null) clearTimeout(outputTimerRef.current);
+      if (webglSetupTimer !== null) {
+        if (typeof window.cancelIdleCallback === 'function') window.cancelIdleCallback(webglSetupTimer);
+        else clearTimeout(webglSetupTimer);
+        webglSetupTimer = null;
+      }
       if (initialOutputFollowTimer) clearTimeout(initialOutputFollowTimer);
       if (cliViewportFollowTimer) clearTimeout(cliViewportFollowTimer);
       if (shellHistoryRestoreTimer) clearTimeout(shellHistoryRestoreTimer);
