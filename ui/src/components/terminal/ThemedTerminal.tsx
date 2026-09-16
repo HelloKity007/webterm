@@ -23,6 +23,7 @@ import { terminalModeAfterPrivateControl } from './terminalMode';
 import { localViewportFont, localViewportRevealRow } from './localViewport';
 import { observeTerminalRenderer } from './terminalRendererMetrics';
 import { takeTerminalOutput } from './terminalOutputQueue';
+import { cancelTerminalOutput, scheduleTerminalOutput } from './terminalOutputScheduler';
 import {
   createTerminalWheelState,
   createLatestTerminalWheelSender,
@@ -1286,40 +1287,29 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
         }
       };
       const pumpTerminalOutput = () => {
-        if (outputFrameRef.current !== null || outputTimerRef.current !== null || outputWritePendingRef.current || outputQueueRef.current.length === 0) return;
-        const writeNextOutput = () => {
-          outputFrameRef.current = null;
-          outputTimerRef.current = null;
-          const merged = takeTerminalOutput(outputQueueRef.current, 16 * 1024);
-          if (merged.byteLength === 0) return;
-          try {
-            if (zsentryRef.current) {
-              deliverTerminalBytes(term, zsentryRef.current, merged);
+        if (outputWritePendingRef.current || outputQueueRef.current.length === 0) return;
+        scheduleTerminalOutput(writeNextOutput);
+      };
+      const writeNextOutput = () => {
+        const merged = takeTerminalOutput(outputQueueRef.current, 16 * 1024);
+        if (merged.byteLength === 0) return;
+        try {
+          if (zsentryRef.current) {
+            deliverTerminalBytes(term, zsentryRef.current, merged);
+            recordOutputBatch(merged.byteLength);
+            pumpTerminalOutput();
+          } else {
+            outputWritePendingRef.current = true;
+            term.write(merged, () => {
+              outputWritePendingRef.current = false;
               recordOutputBatch(merged.byteLength);
               pumpTerminalOutput();
-            } else {
-              outputWritePendingRef.current = true;
-              term.write(merged, () => {
-                outputWritePendingRef.current = false;
-                recordOutputBatch(merged.byteLength);
-                pumpTerminalOutput();
-              });
-            }
-          } catch (error) {
-            outputWritePendingRef.current = false;
-            console.warn('terminal output delivery:', error);
-            pumpTerminalOutput();
+            });
           }
-        };
-        // Browsers may stop animation frames for a display:none terminal.
-        // The socket still receives its tmux capture, leaving a long queue
-        // that is then visibly replayed each time the tab is selected. Parse
-        // hidden output on a timer so xterm's buffer stays current; use rAF
-        // only when the terminal can actually paint.
-        if (surfaceElement.offsetWidth > 0 && surfaceElement.offsetHeight > 0) {
-          outputFrameRef.current = requestAnimationFrame(writeNextOutput);
-        } else {
-          outputTimerRef.current = setTimeout(writeNextOutput, 0);
+        } catch (error) {
+          outputWritePendingRef.current = false;
+          console.warn('terminal output delivery:', error);
+          pumpTerminalOutput();
         }
       };
       outputPumpRef.current = pumpTerminalOutput;
@@ -1369,6 +1359,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       if (historyScrollbarFrame !== null) cancelAnimationFrame(historyScrollbarFrame);
       if (outputFrameRef.current !== null) cancelAnimationFrame(outputFrameRef.current);
       if (outputTimerRef.current !== null) clearTimeout(outputTimerRef.current);
+      cancelTerminalOutput(outputPumpRef.current);
       if (webglSetupTimer !== null) {
         if (typeof window.cancelIdleCallback === 'function') window.cancelIdleCallback(webglSetupTimer);
         else clearTimeout(webglSetupTimer);
