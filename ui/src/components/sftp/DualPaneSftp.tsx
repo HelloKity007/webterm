@@ -92,11 +92,14 @@ export default function DualPaneSftp({ connections }: Props) {
     ? selectedConnId : connections[0]?.id || null;
 
   useLayoutEffect(() => {
-    if (!connId || selectedConnId !== connId) return;
+    // Connections arrive asynchronously after the workspace is mounted. In
+    // that first render selectedConnId is null while connId correctly falls
+    // back to the first connection; that valid workspace must be persisted.
+    if (!connId) return;
     const saved: PersistedWorkbench = { version: 1, connectionId: connId, tabs, active, focusedGroup, split };
     persistedRef.current = saved;
     writePersistedWorkbench(saved);
-  }, [active, connId, focusedGroup, selectedConnId, split, tabs]);
+  }, [active, connId, focusedGroup, split, tabs]);
 
   useEffect(() => {
     const persistBeforeUnload = () => {
