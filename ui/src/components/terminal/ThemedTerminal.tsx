@@ -496,11 +496,11 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       restoreShellHistoryViewport(term, restore);
       shellHistoryRestoreRef.current = null;
       shellHistoryReaderActiveRef.current = true;
-      // scrollToLine synchronously emits xterm's scroll event. Keep the
-      // restore guard through that event, otherwise the restore itself is
-      // mistaken for a user return to the prompt and erases its saved anchor.
+      // Keep the scroll listener guarded until after this current paint. A
+      // scrollToLine emits xterm's scroll event synchronously.
       requestAnimationFrame(() => {
         if (termRef.current === term && shellHistoryRestoreRef.current === null) {
+          restoreShellHistoryViewport(term, restore);
           shellHistoryRestoreInFlightRef.current = false;
         }
       });
@@ -576,14 +576,6 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
           restoreShellHistoryViewport(term, pendingRestore);
           shellHistoryRestoreRef.current = null;
           shellHistoryReaderActiveRef.current = true;
-          // Keep the scroll listener guarded for the restoration event itself.
-          // xterm emits onScroll from scrollToLine, before this callback
-          // returns; clearing the guard first loses the persisted viewport.
-          requestAnimationFrame(() => {
-            if (termRef.current === term && shellHistoryRestoreRef.current === null) {
-              shellHistoryRestoreInFlightRef.current = false;
-            }
-          });
         } else {
           term.scrollLines(requestedScroll);
         }
@@ -593,7 +585,16 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
         // cancel the user's very first wheel-up. Reapply the same intent once
         // that attach burst has settled; later normal wheels use xterm alone.
         setTimeout(() => {
-          if (shellHistoryLoadedRef.current && termRef.current === term && !shellHistoryReaderActiveRef.current) term.scrollLines(requestedScroll);
+          if (!shellHistoryLoadedRef.current || termRef.current !== term) return;
+          if (pendingRestore) {
+            // A hard reload can receive its WebSocket screen snapshot just
+            // after the HTTP history capture. Reapply the exact reader anchor
+            // after that attach burst, rather than leaving the user at bottom.
+            restoreShellHistoryViewport(term, pendingRestore);
+            shellHistoryRestoreInFlightRef.current = false;
+          } else if (!shellHistoryReaderActiveRef.current) {
+            term.scrollLines(requestedScroll);
+          }
         }, 350);
       } catch (error) {
         suppressLateScreenSnapshotRef.current = false;
