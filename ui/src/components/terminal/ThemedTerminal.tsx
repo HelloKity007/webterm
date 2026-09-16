@@ -493,10 +493,17 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
     // complete history buffer, so a saved reader position must still fetch
     // the explicit bounded capture instead of accepting that screen as final.
     if (restore && shellHistoryLoadedRef.current) {
-      shellHistoryRestoreInFlightRef.current = false;
       restoreShellHistoryViewport(term, restore);
       shellHistoryRestoreRef.current = null;
       shellHistoryReaderActiveRef.current = true;
+      // scrollToLine synchronously emits xterm's scroll event. Keep the
+      // restore guard through that event, otherwise the restore itself is
+      // mistaken for a user return to the prompt and erases its saved anchor.
+      requestAnimationFrame(() => {
+        if (termRef.current === term && shellHistoryRestoreRef.current === null) {
+          shellHistoryRestoreInFlightRef.current = false;
+        }
+      });
       return;
     }
     // A buffer with a scrollback base is already complete for this client.
@@ -558,10 +565,17 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
         const requestedScroll = pendingShellHistoryScrollRef.current;
         const pendingRestore = shellHistoryRestoreRef.current;
         if (pendingRestore) {
-          shellHistoryRestoreInFlightRef.current = false;
           restoreShellHistoryViewport(term, pendingRestore);
           shellHistoryRestoreRef.current = null;
           shellHistoryReaderActiveRef.current = true;
+          // Keep the scroll listener guarded for the restoration event itself.
+          // xterm emits onScroll from scrollToLine, before this callback
+          // returns; clearing the guard first loses the persisted viewport.
+          requestAnimationFrame(() => {
+            if (termRef.current === term && shellHistoryRestoreRef.current === null) {
+              shellHistoryRestoreInFlightRef.current = false;
+            }
+          });
         } else {
           term.scrollLines(requestedScroll);
         }
