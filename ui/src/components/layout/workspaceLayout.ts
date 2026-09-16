@@ -21,6 +21,15 @@ export interface PersistedWorkspace {
   workspaceTabs: WorkspaceTab[];
 }
 
+/** Browser-local selection. It deliberately never travels in the shared layout. */
+export interface LocalWorkspaceSelection {
+  activeWorkspaceTabID: string | null;
+  workspaces: Record<string, {
+    focusedPaneId: string | null;
+    activeTabIDs: Record<string, string | null>;
+  }>;
+}
+
 export type WorkspaceIDFactory = (prefix: string) => string;
 export type WorkspaceTabTitleFactory = (tab: Tab) => string;
 
@@ -60,6 +69,42 @@ export function sharedWorkspaceSnapshot(value: PersistedWorkspace): PersistedWor
       layout: sharedLayoutSnapshot(workspace.layout),
     })),
   };
+}
+
+export function localWorkspaceSelection(value: PersistedWorkspace, activeWorkspaceTabID: string | null): LocalWorkspaceSelection {
+  const workspaces: LocalWorkspaceSelection['workspaces'] = {};
+  for (const workspace of value.workspaceTabs) {
+    const activeTabIDs: Record<string, string | null> = {};
+    for (const [paneID, pane] of Object.entries(workspace.layout.panes)) activeTabIDs[paneID] = pane.activeTabId;
+    workspaces[workspace.id] = { focusedPaneId: workspace.layout.focusedPaneId, activeTabIDs };
+  }
+  return { activeWorkspaceTabID, workspaces };
+}
+
+export function applyLocalWorkspaceSelection(value: PersistedWorkspace, selection: LocalWorkspaceSelection | null | undefined): { value: PersistedWorkspace; activeWorkspaceTabID: string | null } {
+  if (!selection || !selection.workspaces || typeof selection.workspaces !== 'object') {
+    return { value, activeWorkspaceTabID: null };
+  }
+  const workspaceTabs = value.workspaceTabs.map((workspace) => {
+    const local = selection.workspaces[workspace.id];
+    if (!local || !local.activeTabIDs || typeof local.activeTabIDs !== 'object') return workspace;
+    const panes: PersistedLayout['panes'] = {};
+    for (const [paneID, pane] of Object.entries(workspace.layout.panes)) {
+      const selectedID = local.activeTabIDs[paneID];
+      panes[paneID] = {
+        tabs: pane.tabs.map((tab) => ({ ...tab })),
+        activeTabId: localActiveTabID(typeof selectedID === 'string' ? selectedID : null, pane.tabs, pane.activeTabId),
+      };
+    }
+    const focusedPaneId = typeof local.focusedPaneId === 'string' && panes[local.focusedPaneId]
+      ? local.focusedPaneId
+      : workspace.layout.focusedPaneId;
+    return { ...workspace, layout: { tree: structuredClone(workspace.layout.tree), panes, focusedPaneId } };
+  });
+  const activeWorkspaceTabID = typeof selection.activeWorkspaceTabID === 'string' && workspaceTabs.some((workspace) => workspace.id === selection.activeWorkspaceTabID)
+    ? selection.activeWorkspaceTabID
+    : null;
+  return { value: { workspaceTabs }, activeWorkspaceTabID };
 }
 
 export function preserveLocalWorkspaceSelection(remote: PersistedWorkspace, local: PersistedWorkspace): PersistedWorkspace {

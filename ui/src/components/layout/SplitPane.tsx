@@ -22,13 +22,16 @@ import WorkspaceTabBar from './WorkspaceTabBar';
 import { getSharedTerminalGrid, setSharedTerminalGrid } from '../terminal/terminalGridCache';
 import { discardPersistentTerminal } from '../terminal/persistentTerminalStore';
 import {
+  applyLocalWorkspaceSelection,
   createWorkspaceTab,
   emptyPersistedWorkspace,
+  localWorkspaceSelection,
   normalizePersistedWorkspace,
   preserveLocalWorkspaceSelection,
   renameWorkspaceTab,
   removeWorkspaceTab,
   sharedWorkspaceSnapshot,
+  type LocalWorkspaceSelection,
   type PersistedWorkspace,
   type WorkspaceCreateMode,
 } from './workspaceLayout';
@@ -122,13 +125,35 @@ function workspaceSnapshot(): PersistedWorkspace {
   return workspaceState;
 }
 
-function restoreWorkspace(value: unknown): boolean {
+function localSelectionStorageKey(userID: number) {
+  return `webterm:terminal-workspace-selection:v1:${userID}`;
+}
+
+function loadLocalWorkspaceSelection(userID: number): LocalWorkspaceSelection | null {
+  try {
+    const value = JSON.parse(window.localStorage.getItem(localSelectionStorageKey(userID)) || 'null') as LocalWorkspaceSelection | null;
+    return value && typeof value === 'object' && value.workspaces && typeof value.workspaces === 'object' ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveLocalWorkspaceSelection(userID: number) {
+  try {
+    window.localStorage.setItem(localSelectionStorageKey(userID), JSON.stringify(localWorkspaceSelection(workspaceSnapshot(), activeWorkspaceTabID)));
+  } catch { /* Browser storage is optional UI state. */ }
+}
+
+function restoreWorkspace(value: unknown, savedSelection?: LocalWorkspaceSelection | null): boolean {
   const previousActiveWorkspaceID = activeWorkspaceTabID;
   syncActiveWorkspaceLayout();
   const previousActiveLayout = workspaceState.workspaceTabs.find((workspace) => workspace.id === previousActiveWorkspaceID)?.layout;
   const normalized = normalizePersistedWorkspace(value);
   if (!normalized) return false;
   workspaceState = preserveLocalWorkspaceSelection(normalized, workspaceState);
+  const localRestore = applyLocalWorkspaceSelection(workspaceState, savedSelection);
+  workspaceState = localRestore.value;
+  if (localRestore.activeWorkspaceTabID) activeWorkspaceTabID = localRestore.activeWorkspaceTabID;
   if (!workspaceState.workspaceTabs.some((workspace) => workspace.id === activeWorkspaceTabID)) {
     activeWorkspaceTabID = workspaceState.workspaceTabs[0].id;
   }
@@ -1028,6 +1053,7 @@ export default function SplitPane({ onActiveSshChange }: { onActiveSshChange?: (
   const persistedLayoutRef = useRef('');
   const restoredAtRef = useRef(0);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const localSelectionReadyRef = useRef(false);
   const [layoutMessage, setLayoutMessage] = useState('');
   const [closingWorkspace, setClosingWorkspace] = useState(false);
   const [presenceCounts, setPresenceCounts] = useState<Record<string, number>>({});
@@ -1036,8 +1062,8 @@ export default function SplitPane({ onActiveSshChange }: { onActiveSshChange?: (
 
   useLayoutEffect(() => subscribe(() => forceWorkspaceUpdate((version) => version + 1)), []);
 
-  const applyLayout = useCallback((response: { schema_version: number; revision: number; layout: unknown; skipped_tabs: number }) => {
-    if (!restoreWorkspace(response.layout)) {
+  const applyLayout = useCallback((response: { schema_version: number; revision: number; layout: unknown; skipped_tabs: number }, savedSelection?: LocalWorkspaceSelection | null) => {
+    if (!restoreWorkspace(response.layout, savedSelection)) {
       setLayoutMessage('已保存布局格式无效；已保留当前布局，请联系管理员检查原始数据。');
       return;
     }
@@ -1055,19 +1081,40 @@ export default function SplitPane({ onActiveSshChange }: { onActiveSshChange?: (
 
   useEffect(() => {
     let active = true;
+    localSelectionReadyRef.current = false;
     if (!token || !userID) {
       resetWorkspace();
       return () => { active = false; };
     }
+    const savedSelection = loadLocalWorkspaceSelection(userID);
     const clearMessageTimer = window.setTimeout(() => setLayoutMessage(''), 0);
     void apiGet('/api/layout').then((response) => {
       if (!active) return;
-      applyLayout(response);
+      applyLayout(response, savedSelection);
+      localSelectionReadyRef.current = true;
+      saveLocalWorkspaceSelection(userID);
     }).catch(() => {
       if (active) setLayoutMessage('无法恢复已保存布局；当前会话仍可继续使用。');
     });
     return () => { active = false; window.clearTimeout(clearMessageTimer); };
   }, [applyLayout, token, userID]);
+
+  useEffect(() => {
+    if (!token || !userID) return;
+    const persistLocalSelection = () => {
+      if (localSelectionReadyRef.current) saveLocalWorkspaceSelection(userID);
+    };
+    const stopLayout = subscribe(persistLocalSelection);
+    const stopStore = useLayoutStore.subscribe(persistLocalSelection);
+    window.addEventListener('pagehide', persistLocalSelection);
+    window.addEventListener('beforeunload', persistLocalSelection);
+    return () => {
+      stopLayout();
+      stopStore();
+      window.removeEventListener('pagehide', persistLocalSelection);
+      window.removeEventListener('beforeunload', persistLocalSelection);
+    };
+  }, [token, userID]);
 
   useEffect(() => {
     if (!token || !userID) return;

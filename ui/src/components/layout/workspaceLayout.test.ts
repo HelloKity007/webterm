@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
+  applyLocalWorkspaceSelection,
   createWorkspaceTab,
+  localWorkspaceSelection,
   migrateLayoutV1,
   normalizePersistedWorkspace,
   preserveLocalWorkspaceSelection,
@@ -129,5 +131,23 @@ describe('workspace layout schema v2', () => {
     expect(merged.workspaceTabs[0].name).toBe('renamed elsewhere');
     expect(merged.workspaceTabs[0].layout.panes.root.activeTabId).toBe('ssh-2');
     expect(merged.workspaceTabs[0].layout.focusedPaneId).toBe('root');
+  });
+
+  it('restores local active workspace, focused pane and every pane tab after a page reload', () => {
+    const local = migrateLayoutV1({
+      tree: { type: 'split', direction: 'horizontal', ratios: [0.5, 0.5], children: [{ type: 'leaf', id: 'left' }, { type: 'leaf', id: 'right' }] },
+      panes: {
+        left: { tabs: [{ id: 'ssh-left-a', type: 'ssh', title: 'left a', connId: 1 }, { id: 'ssh-left-b', type: 'ssh', title: 'left b', connId: 1 }], activeTabId: 'ssh-left-b' },
+        right: { tabs: [{ id: 'ssh-right-a', type: 'ssh', title: 'right a', connId: 2 }, { id: 'ssh-right-b', type: 'ssh', title: 'right b', connId: 2 }], activeTabId: 'ssh-right-a' },
+      },
+      focusedPaneId: 'right',
+    })!;
+    const selection = localWorkspaceSelection(local, 'workspace-1');
+    const restored = applyLocalWorkspaceSelection(sharedWorkspaceSnapshot(local), selection);
+
+    expect(restored.activeWorkspaceTabID).toBe('workspace-1');
+    expect(restored.value.workspaceTabs[0].layout.focusedPaneId).toBe('right');
+    expect(restored.value.workspaceTabs[0].layout.panes.left.activeTabId).toBe('ssh-left-b');
+    expect(restored.value.workspaceTabs[0].layout.panes.right.activeTabId).toBe('ssh-right-a');
   });
 });
