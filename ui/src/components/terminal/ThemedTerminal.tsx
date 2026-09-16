@@ -34,6 +34,11 @@ import {
   terminalActionMessage,
   terminalScrollbackLines,
 } from './terminalCliSupport';
+
+// Keep each xterm write below the browser's long-task threshold when several
+// panels stream concurrently. Eight independent 16 KiB writes can otherwise
+// land in the same frame and starve input/painting for hundreds of ms.
+const TERMINAL_OUTPUT_BATCH_BYTES = 4 * 1024;
 import {
   clearTerminalHistory,
   copyTerminalText,
@@ -565,8 +570,8 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
         // history capture can be megabytes long; one giant xterm write causes
         // renderer starvation and makes the first visible history frame look
         // like overlapping text on some WebGL paths.
-        for (let offset = 0; offset < bytes.length; offset += 16 * 1024) {
-          await new Promise<void>((resolve) => term.write(bytes.subarray(offset, offset + 16 * 1024), resolve));
+        for (let offset = 0; offset < bytes.length; offset += TERMINAL_OUTPUT_BATCH_BYTES) {
+          await new Promise<void>((resolve) => term.write(bytes.subarray(offset, offset + TERMINAL_OUTPUT_BATCH_BYTES), resolve));
         }
         shellHistoryLoadedRef.current = true;
         term.scrollToBottom();
@@ -1290,7 +1295,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
         const writeNextOutput = () => {
           outputFrameRef.current = null;
           outputTimerRef.current = null;
-          const merged = takeTerminalOutput(outputQueueRef.current, 16 * 1024);
+          const merged = takeTerminalOutput(outputQueueRef.current, TERMINAL_OUTPUT_BATCH_BYTES);
           if (merged.byteLength === 0) return;
           try {
             if (zsentryRef.current) {
