@@ -15,11 +15,11 @@ vi.mock("./SftpPanel", () => ({
 }));
 
 vi.mock("../common/FileEditor", () => ({
-  default: ({ fileName }: { fileName: string }) => <div>editor:{fileName}</div>,
+  default: ({ fileName, initialDraft }: { fileName: string; initialDraft?: { content: string } }) => <div>editor:{fileName}{initialDraft ? `:${initialDraft.content}` : ""}</div>,
 }));
 
 describe("Remote file workbench", () => {
-  afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+  afterEach(() => { cleanup(); window.localStorage.clear(); vi.restoreAllMocks(); });
 
   it("selects the first remote endpoint when connections load asynchronously", () => {
     setLang("en");
@@ -115,5 +115,26 @@ describe("Remote file workbench", () => {
     fireEvent.drop(secondary, { dataTransfer: transfer });
     expect(secondary.textContent).toContain("app.log");
     expect(document.querySelector('[data-editor-group="primary"]')?.textContent).not.toContain("app.log");
+  });
+
+  it("restores open files, their groups and active state after a reload", async () => {
+    setLang("en");
+    window.localStorage.setItem("webterm:file-workbench:v1", JSON.stringify({
+      version: 1,
+      connectionId: 7,
+      tabs: [
+        { id: "ignored", path: "/var/log/app.log", name: "app.log", revision: "one", group: "primary", refreshMode: "manual", dirty: false },
+        { id: "ignored", path: "/etc/app.conf", name: "app.conf", revision: "two", group: "secondary", refreshMode: "auto", dirty: true, draft: { content: "saved locally", baseRevision: "two" } },
+      ],
+      active: { primary: "file:/var/log/app.log", secondary: "file:/etc/app.conf" },
+      focusedGroup: "secondary",
+      split: true,
+    }));
+    render(<DualPaneSftp connections={[{ id: 7, name: "server-7" }]} />);
+    expect(await screen.findByRole("tab", { name: /app\.log/ })).toBeTruthy();
+    expect(document.querySelector('[data-editor-group="secondary"]')?.textContent).toContain("app.conf");
+    expect(screen.getByRole("tab", { name: /app\.conf/ }).getAttribute("aria-selected")).toBe("true");
+    expect(document.querySelector('.file-workbench')?.classList.contains("is-split")).toBe(true);
+    expect(screen.getByText("editor:app.conf:saved locally")).toBeTruthy();
   });
 });

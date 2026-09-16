@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useMemo, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import SftpPanel, { type OpenRemoteFile } from "./SftpPanel";
 import CustomSelect from "../common/CustomSelect";
 import Icon from "../common/Icon";
@@ -12,26 +12,65 @@ interface Props {
 }
 
 type EditorGroup = "primary" | "secondary";
+type PersistedDraft = { content: string; baseRevision?: string };
 type EditorTab = OpenRemoteFile & {
   id: string;
   group: EditorGroup;
   refreshMode: "auto" | "manual" | null;
   dirty: boolean;
+  draft?: PersistedDraft;
+};
+
+type PersistedWorkbench = {
+  version: 1;
+  connectionId: number;
+  tabs: EditorTab[];
+  active: Record<EditorGroup, string | null>;
+  focusedGroup: EditorGroup;
+  split: boolean;
 };
 
 const tabIdFor = (path: string) => `file:${path}`;
+const FILE_WORKBENCH_STORAGE_KEY = "webterm:file-workbench:v1";
 const otherGroup = (group: EditorGroup): EditorGroup => group === "primary" ? "secondary" : "primary";
 const tabElement = (id: string) => [...document.querySelectorAll<HTMLElement>("[data-editor-tab-id]")]
   .find((element) => element.dataset.editorTabId === id) || null;
+const isEditorGroup = (value: unknown): value is EditorGroup => value === "primary" || value === "secondary";
+const isRefreshMode = (value: unknown): value is "auto" | "manual" | null => value === "auto" || value === "manual" || value === null;
+
+function loadPersistedWorkbench(): PersistedWorkbench | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const saved = JSON.parse(window.localStorage.getItem(FILE_WORKBENCH_STORAGE_KEY) || "null") as Partial<PersistedWorkbench> | null;
+    if (!saved || saved.version !== 1 || typeof saved.connectionId !== "number") return null;
+    const tabs = Array.isArray(saved.tabs) ? saved.tabs.flatMap((tab): EditorTab[] => {
+      if (!tab || typeof tab.path !== "string" || typeof tab.name !== "string" || !isEditorGroup(tab.group) || !isRefreshMode(tab.refreshMode)) return [];
+      const draft = tab.draft && typeof tab.draft.content === "string"
+        ? { content: tab.draft.content, baseRevision: typeof tab.draft.baseRevision === "string" ? tab.draft.baseRevision : undefined }
+        : undefined;
+      return [{ path: tab.path, name: tab.name, revision: typeof tab.revision === "string" ? tab.revision : undefined, id: tabIdFor(tab.path), group: tab.group, refreshMode: tab.refreshMode, dirty: Boolean(draft), draft }];
+    }) : [];
+    const restoreActive = (group: EditorGroup) => {
+      const candidate = saved.active?.[group];
+      return typeof candidate === "string" && tabs.some((tab) => tab.group === group && tab.id === candidate)
+        ? candidate
+        : tabs.filter((tab) => tab.group === group).at(-1)?.id || null;
+    };
+    return { version: 1, connectionId: saved.connectionId, tabs, active: { primary: restoreActive("primary"), secondary: restoreActive("secondary") }, focusedGroup: isEditorGroup(saved.focusedGroup) ? saved.focusedGroup : "primary", split: Boolean(saved.split) || tabs.some((tab) => tab.group === "secondary") };
+  } catch {
+    return null;
+  }
+}
 
 /** A remote file explorer with movable, split editor groups. */
 export default function DualPaneSftp({ connections }: Props) {
-  const [selectedConnId, setSelectedConnId] = useState<number | null>(connections[0]?.id || null);
+  const [storedWorkbench] = useState(loadPersistedWorkbench);
+  const [selectedConnId, setSelectedConnId] = useState<number | null>(storedWorkbench?.connectionId || connections[0]?.id || null);
   const [socket, setSocket] = useState<WebSocket | null>(null);
-  const [tabs, setTabs] = useState<EditorTab[]>([]);
-  const [active, setActive] = useState<Record<EditorGroup, string | null>>({ primary: null, secondary: null });
-  const [focusedGroup, setFocusedGroup] = useState<EditorGroup>("primary");
-  const [split, setSplit] = useState(false);
+  const [tabs, setTabs] = useState<EditorTab[]>(storedWorkbench?.tabs || []);
+  const [active, setActive] = useState<Record<EditorGroup, string | null>>(storedWorkbench?.active || { primary: null, secondary: null });
+  const [focusedGroup, setFocusedGroup] = useState<EditorGroup>(storedWorkbench?.focusedGroup || "primary");
+  const [split, setSplit] = useState(Boolean(storedWorkbench?.split));
   const [draggedTabId, setDraggedTabId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
   const [dropGroup, setDropGroup] = useState<EditorGroup | null>(null);
@@ -39,6 +78,19 @@ export default function DualPaneSftp({ connections }: Props) {
 
   const connId = connections.some((connection) => connection.id === selectedConnId)
     ? selectedConnId : connections[0]?.id || null;
+
+  useEffect(() => {
+    if (!connId || selectedConnId !== connId) return;
+    const saved: PersistedWorkbench = { version: 1, connectionId: connId, tabs, active, focusedGroup, split };
+    try {
+      window.localStorage.setItem(FILE_WORKBENCH_STORAGE_KEY, JSON.stringify(saved));
+    } catch {
+      // Preserve layout and opened files even if a very large unsaved draft
+      // exceeds browser storage quota.
+      const withoutDrafts = { ...saved, tabs: tabs.map((tab) => ({ ...tab, draft: undefined, dirty: false })) };
+      try { window.localStorage.setItem(FILE_WORKBENCH_STORAGE_KEY, JSON.stringify(withoutDrafts)); } catch { /* Storage is unavailable. */ }
+    }
+  }, [active, connId, focusedGroup, selectedConnId, split, tabs]);
 
   const tabsFor = useCallback((group: EditorGroup, source = tabs) => source.filter((tab) => tab.group === group), [tabs]);
   const replaceGroup = (source: EditorTab[], group: EditorGroup, nextGroup: EditorTab[]) => {
@@ -173,6 +225,8 @@ export default function DualPaneSftp({ connections }: Props) {
                 <FileEditor embedded filePath={tab.path} fileName={tab.name} revision={tab.revision} ws={socket} refreshMode={tab.refreshMode}
                   onRefreshModeChange={(refreshMode) => setTabs((current) => current.map((item) => item.id === tab.id ? { ...item, refreshMode } : item))}
                   onDirtyChange={(dirty) => setTabs((current) => current.map((item) => item.id === tab.id ? { ...item, dirty } : item))}
+                  initialDraft={tab.draft}
+                  onDraftChange={(draft) => setTabs((current) => current.map((item) => item.id === tab.id ? { ...item, dirty: Boolean(draft), draft: draft || undefined } : item))}
                   onClose={() => closeTab(tab.id)} onSaved={() => setRefreshNonce((value) => value + 1)} />
               </Suspense>
             </div>

@@ -21,8 +21,11 @@ interface Props {
   onSaved: () => void;
   embedded?: boolean;
   onDirtyChange?: (dirty: boolean) => void;
+  initialDraft?: FileEditorDraft;
+  onDraftChange?: (draft: FileEditorDraft | null) => void;
 }
 
+export type FileEditorDraft = { content: string; baseRevision?: string };
 type RemoteFileMessage = { type?: string; path?: string; content?: string; error?: string; revision?: string };
 
 function detectLanguage(fileName: string): Extension | Extension[] {
@@ -40,7 +43,7 @@ function detectLanguage(fileName: string): Extension | Extension[] {
   }
 }
 
-export default function FileEditor({ filePath, fileName, ws, revision, refreshMode, onRefreshModeChange, onClose, onSaved, embedded = false, onDirtyChange }: Props) {
+export default function FileEditor({ filePath, fileName, ws, revision, refreshMode, onRefreshModeChange, onClose, onSaved, embedded = false, onDirtyChange, initialDraft, onDraftChange }: Props) {
   const editorRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const [content, setContent] = useState('');
@@ -59,8 +62,11 @@ export default function FileEditor({ filePath, fileName, ws, revision, refreshMo
   const saveHandlerRef = useRef<() => void>(() => {});
   const lastRevisionRef = useRef(revision);
   const dirtyChangeRef = useRef(onDirtyChange);
+  const draftChangeRef = useRef(onDraftChange);
+  const initialDraftRef = useRef(initialDraft);
 
   useEffect(() => { dirtyChangeRef.current = onDirtyChange; }, [onDirtyChange]);
+  useEffect(() => { draftChangeRef.current = onDraftChange; }, [onDraftChange]);
 
   // Read file from remote
   useEffect(() => {
@@ -70,12 +76,20 @@ export default function FileEditor({ filePath, fileName, ws, revision, refreshMo
     const handler = (e: MessageEvent) => {
       const msg = JSON.parse(e.data) as RemoteFileMessage;
       if (msg.type === 'file_content' && msg.path === filePath) {
-        setContent(msg.content || '');
-        origContentRef.current = msg.content || '';
+        const serverContent = msg.content || '';
+        // A restored draft is never written automatically. It remains a
+        // dirty buffer against the newly-read server version, so the existing
+        // conflict and refresh safeguards still apply after a browser reload.
+        const draft = reloadNonce === 0 ? initialDraftRef.current : undefined;
+        const restoredDraft = typeof draft?.content === 'string' ? draft.content : serverContent;
+        const restoredDirty = restoredDraft !== serverContent;
+        setContent(restoredDraft);
+        origContentRef.current = serverContent;
         serverRevisionRef.current = msg.revision || serverRevisionRef.current;
         lastRevisionRef.current = msg.revision || lastRevisionRef.current;
-        dirtyChangeRef.current?.(false);
-        setExternalChange(false);
+        dirtyChangeRef.current?.(restoredDirty);
+        if (!restoredDirty) draftChangeRef.current?.(null);
+        setExternalChange(Boolean(restoredDirty && draft?.baseRevision && draft.baseRevision !== msg.revision));
         setLoading(false);
         ws.removeEventListener('message', handler);
       } else if (msg.type === 'error') {
@@ -159,7 +173,10 @@ export default function FileEditor({ filePath, fileName, ws, revision, refreshMo
       ]),
       EditorView.updateListener.of((update) => {
         if (update.docChanged) {
-          dirtyChangeRef.current?.(update.state.doc.toString() !== origContentRef.current);
+          const nextContent = update.state.doc.toString();
+          const dirty = nextContent !== origContentRef.current;
+          dirtyChangeRef.current?.(dirty);
+          draftChangeRef.current?.(dirty ? { content: nextContent, baseRevision: serverRevisionRef.current } : null);
         }
       }),
       EditorView.theme({
@@ -208,6 +225,7 @@ export default function FileEditor({ filePath, fileName, ws, revision, refreshMo
       lastRevisionRef.current = serverRevisionRef.current;
       setSaving(false);
       dirtyChangeRef.current?.(false);
+      draftChangeRef.current?.(null);
       onSaved();
       if (!embedded) onClose();
     };
