@@ -41,11 +41,14 @@ const terminalModifierKeys = new Set([
 ]);
 
 // Keeping a terminal's prompt in view is useful once the user actually starts
-// typing, but modifier-only keydowns carry no terminal input. In particular,
-// browsers dispatch a standalone `Control` keydown before Ctrl shortcuts; do
-// not let that keydown discard the user's current scrollback position.
-export function shouldRevealTerminalInputCursor(key: string): boolean {
-  return !terminalModifierKeys.has(key);
+// typing, but modifier-only keydowns carry no terminal input. Browser reload
+// shortcuts are also delivered to the focused terminal before navigation. Do
+// not let Ctrl/Command+R (including Ctrl+Shift+R) flash its viewport to bottom
+// just before the restored page returns to the saved history position.
+export function shouldRevealTerminalInputCursor(event: Pick<TerminalKeyboardEvent, 'key' | 'ctrlKey' | 'metaKey'>): boolean {
+  if (terminalModifierKeys.has(event.key)) return false;
+  const key = event.key.toLowerCase();
+  return key !== 'f5' && !((event.ctrlKey || event.metaKey) && key === 'r');
 }
 
 export function shouldAutoFocusTerminal(activeElement: Element | null): boolean {

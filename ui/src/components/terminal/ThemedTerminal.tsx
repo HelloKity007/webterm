@@ -1639,7 +1639,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
         onMouseUpCapture={handleSurfaceMouseUp}
         onKeyDownCapture={(event) => {
           mouseStateRef.current.tmuxMenuActive = false;
-          if (!shouldRevealTerminalInputCursor(event.key)) return;
+          if (!shouldRevealTerminalInputCursor(event)) return;
           pendingCursorRevealRef.current = true;
           revealInputCursor();
         }}

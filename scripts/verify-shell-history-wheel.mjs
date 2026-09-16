@@ -102,6 +102,28 @@ try {
     `wheel did not move away from the current history bottom: ${JSON.stringify({ state, historyResponses })}`);
   assert.equal(state.scrollbar, 'block', `Bash history scrollbar is hidden: ${JSON.stringify(state)}`);
 
+  // A browser consumes Ctrl+Shift+R immediately after keydown. Assert the
+  // terminal's capture handler does not briefly reveal its prompt before that
+  // navigation starts; the synthetic event intentionally does not reload.
+  await terminal.locator('.xterm-helper-textarea').focus();
+  await terminal.locator('.xterm-helper-textarea').evaluate(textarea => {
+    textarea.dispatchEvent(new KeyboardEvent('keydown', {
+      bubbles: true, cancelable: true, key: 'R', code: 'KeyR', ctrlKey: true, shiftKey: true,
+    }));
+  });
+  const shortcutState = await terminal.evaluate(element => {
+    const scrollbar = element.querySelector('.scrollbar.vertical');
+    const slider = scrollbar?.firstElementChild;
+    const scrollbarBox = scrollbar?.getBoundingClientRect();
+    const sliderBox = slider?.getBoundingClientRect();
+    return {
+      sliderTop: sliderBox && scrollbarBox ? sliderBox.top - scrollbarBox.top : null,
+      sliderTravel: sliderBox && scrollbarBox ? scrollbarBox.height - sliderBox.height : null,
+    };
+  });
+  assert(shortcutState.sliderTravel > 0 && shortcutState.sliderTop < shortcutState.sliderTravel,
+    `Ctrl+Shift+R keydown flashed shell history to bottom: ${JSON.stringify({ state, shortcutState })}`);
+
   // Ctrl+Shift+R is a cache-bypassing page reload. The page must use the
   // viewport anchor recorded above to refill shell history and return to the
   // same non-bottom reader position, not merely preserve a browser cache.
@@ -133,8 +155,8 @@ try {
     `hard reload returned shell history to bottom: ${JSON.stringify({ state, reloadState, historyResponses })}`);
   assert(historyResponses.length >= 2,
     `hard reload did not request the saved shell history: ${JSON.stringify(historyResponses)}`);
-  await writeFile(`${output}/results.json`, JSON.stringify({ marker, panelNumber, command, state, reloadState, historyResponses }, null, 2));
-  console.log(JSON.stringify({ marker, panelNumber, command, state, reloadState, historyResponses }));
+  await writeFile(`${output}/results.json`, JSON.stringify({ marker, panelNumber, command, state, shortcutState, reloadState, historyResponses }, null, 2));
+  console.log(JSON.stringify({ marker, panelNumber, command, state, shortcutState, reloadState, historyResponses }));
 } finally {
   await browser.close();
 }

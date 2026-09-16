@@ -344,12 +344,19 @@ describe('terminal clear action', () => {
 
 describe('terminal control keys', () => {
   it('does not reveal the prompt for modifier-only keydowns', () => {
-    expect(shouldRevealTerminalInputCursor('Control')).toBe(false);
-    expect(shouldRevealTerminalInputCursor('Shift')).toBe(false);
-    expect(shouldRevealTerminalInputCursor('Alt')).toBe(false);
-    expect(shouldRevealTerminalInputCursor('Meta')).toBe(false);
-    expect(shouldRevealTerminalInputCursor('c')).toBe(true);
-    expect(shouldRevealTerminalInputCursor('Enter')).toBe(true);
+    const keydown = (key: string, modifiers: Partial<Pick<KeyboardEvent, 'ctrlKey' | 'metaKey'>> = {}) => ({
+      key, ctrlKey: false, metaKey: false, ...modifiers,
+    });
+    expect(shouldRevealTerminalInputCursor(keydown('Control'))).toBe(false);
+    expect(shouldRevealTerminalInputCursor(keydown('Shift'))).toBe(false);
+    expect(shouldRevealTerminalInputCursor(keydown('Alt'))).toBe(false);
+    expect(shouldRevealTerminalInputCursor(keydown('Meta'))).toBe(false);
+    expect(shouldRevealTerminalInputCursor(keydown('r', { ctrlKey: true }))).toBe(false);
+    expect(shouldRevealTerminalInputCursor(keydown('R', { ctrlKey: true }))).toBe(false);
+    expect(shouldRevealTerminalInputCursor(keydown('r', { metaKey: true }))).toBe(false);
+    expect(shouldRevealTerminalInputCursor(keydown('F5'))).toBe(false);
+    expect(shouldRevealTerminalInputCursor(keydown('c'))).toBe(true);
+    expect(shouldRevealTerminalInputCursor(keydown('Enter'))).toBe(true);
   });
 
   it('sends Ctrl+C as ETX while leaving Enter to xterm', () => {
