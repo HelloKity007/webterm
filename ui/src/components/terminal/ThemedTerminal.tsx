@@ -1291,7 +1291,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
         scheduleTerminalOutput(writeNextOutput);
       };
       const writeNextOutput = () => {
-          const merged = takeTerminalOutput(outputQueueRef.current, 8 * 1024);
+          const merged = takeTerminalOutput(outputQueueRef.current, 4 * 1024);
         if (merged.byteLength === 0) return;
         try {
           if (zsentryRef.current) {
