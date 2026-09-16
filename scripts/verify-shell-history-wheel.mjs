@@ -101,8 +101,40 @@ try {
   assert(historyScrolled && state && state.sliderTravel > 0 && state.sliderTop < state.sliderTravel,
     `wheel did not move away from the current history bottom: ${JSON.stringify({ state, historyResponses })}`);
   assert.equal(state.scrollbar, 'block', `Bash history scrollbar is hidden: ${JSON.stringify(state)}`);
-  await writeFile(`${output}/results.json`, JSON.stringify({ marker, panelNumber, command, state, historyResponses }, null, 2));
-  console.log(JSON.stringify({ marker, panelNumber, command, state, historyResponses }));
+
+  // Ctrl+Shift+R is a cache-bypassing page reload. The page must use the
+  // viewport anchor recorded above to refill shell history and return to the
+  // same non-bottom reader position, not merely preserve a browser cache.
+  const reloadSession = await page.context().newCDPSession(page);
+  await reloadSession.send('Network.enable');
+  await reloadSession.send('Network.setCacheDisabled', { cacheDisabled: true });
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await reloadSession.detach();
+  let reloadState = null;
+  const reloadDeadline = Date.now() + 15000;
+  while (Date.now() < reloadDeadline) {
+    reloadState = await terminal.evaluate(element => {
+      const viewport = element.querySelector('.xterm-viewport');
+      const scrollbar = element.querySelector('.scrollbar.vertical');
+      const slider = scrollbar?.firstElementChild;
+      const scrollbarBox = scrollbar?.getBoundingClientRect();
+      const sliderBox = slider?.getBoundingClientRect();
+      return viewport ? {
+        top: viewport.scrollTop,
+        max: viewport.scrollHeight - viewport.clientHeight,
+        sliderTop: sliderBox && scrollbarBox ? sliderBox.top - scrollbarBox.top : null,
+        sliderTravel: sliderBox && scrollbarBox ? scrollbarBox.height - sliderBox.height : null,
+      } : null;
+    });
+    if (reloadState && reloadState.sliderTravel > 0 && reloadState.sliderTop < reloadState.sliderTravel) break;
+    await page.waitForTimeout(150);
+  }
+  assert(reloadState && reloadState.sliderTravel > 0 && reloadState.sliderTop < reloadState.sliderTravel,
+    `hard reload returned shell history to bottom: ${JSON.stringify({ state, reloadState, historyResponses })}`);
+  assert(historyResponses.length >= 2,
+    `hard reload did not request the saved shell history: ${JSON.stringify(historyResponses)}`);
+  await writeFile(`${output}/results.json`, JSON.stringify({ marker, panelNumber, command, state, reloadState, historyResponses }, null, 2));
+  console.log(JSON.stringify({ marker, panelNumber, command, state, reloadState, historyResponses }));
 } finally {
   await browser.close();
 }

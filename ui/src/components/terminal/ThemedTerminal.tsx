@@ -519,6 +519,14 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
           const surface = ref.current;
           const screen = term.element?.querySelector<HTMLElement>('.xterm-screen');
           if (!surface || !screen || term.buffer.active.viewportY < term.buffer.active.baseY) return;
+          // This is a deliberate wheel-down back to the live prompt. Unlike
+          // xterm's generic scroll event it cannot be produced by a reload,
+          // a reconnect snapshot, or a resize, so it is safe to discard the
+          // saved reader position here.
+          shellHistoryReaderActiveRef.current = false;
+          const storage = shellHistoryStorageRef.current;
+          const key = shellHistoryStorageKeyRef.current;
+          if (storage && key) clearShellHistoryViewport(storage, key);
           surface.scrollTop = localViewportRevealRow(surface.scrollTop, surface.clientHeight, surface.scrollHeight,
             screen.getBoundingClientRect().height / term.rows, term.buffer.active.cursorY);
         });
@@ -756,9 +764,6 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       if (viewport) {
         shellHistoryReaderActiveRef.current = true;
         saveShellHistoryViewport(storage, key, viewport);
-      } else if (term.buffer.active.type === 'normal' && term.buffer.active.viewportY >= term.buffer.active.baseY) {
-        shellHistoryReaderActiveRef.current = false;
-        clearShellHistoryViewport(storage, key);
       }
     });
 
