@@ -137,4 +137,14 @@ describe("Remote file workbench", () => {
     expect(document.querySelector('.file-workbench')?.classList.contains("is-split")).toBe(true);
     expect(screen.getByText("editor:app.conf:saved locally")).toBeTruthy();
   });
+
+  it("writes the latest workspace state during page unload", () => {
+    setLang("en");
+    render(<DualPaneSftp connections={[{ id: 7, name: "server-7" }]} />);
+    fireEvent.click(screen.getByRole("button", { name: "open-log" }));
+    fireEvent(window, new Event("pagehide"));
+    const saved = JSON.parse(window.localStorage.getItem("webterm:file-workbench:v1") || "null");
+    expect(saved.tabs.map((tab: { name: string }) => tab.name)).toEqual(["app.log"]);
+    expect(saved.active.primary).toBe("file:/var/log/app.log");
+  });
 });

@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import SftpPanel, { type OpenRemoteFile } from "./SftpPanel";
 import CustomSelect from "../common/CustomSelect";
 import Icon from "../common/Icon";
@@ -62,6 +62,17 @@ function loadPersistedWorkbench(): PersistedWorkbench | null {
   }
 }
 
+function writePersistedWorkbench(saved: PersistedWorkbench) {
+  try {
+    window.localStorage.setItem(FILE_WORKBENCH_STORAGE_KEY, JSON.stringify(saved));
+  } catch {
+    // Preserve layout and opened files even if a very large unsaved draft
+    // exceeds browser storage quota.
+    const withoutDrafts = { ...saved, tabs: saved.tabs.map((tab) => ({ ...tab, draft: undefined, dirty: false })) };
+    try { window.localStorage.setItem(FILE_WORKBENCH_STORAGE_KEY, JSON.stringify(withoutDrafts)); } catch { /* Storage is unavailable. */ }
+  }
+}
+
 /** A remote file explorer with movable, split editor groups. */
 export default function DualPaneSftp({ connections }: Props) {
   const [storedWorkbench] = useState(loadPersistedWorkbench);
@@ -75,22 +86,29 @@ export default function DualPaneSftp({ connections }: Props) {
   const [dropTarget, setDropTarget] = useState<string | null>(null);
   const [dropGroup, setDropGroup] = useState<EditorGroup | null>(null);
   const [refreshNonce, setRefreshNonce] = useState(0);
+  const persistedRef = useRef<PersistedWorkbench | null>(storedWorkbench);
 
   const connId = connections.some((connection) => connection.id === selectedConnId)
     ? selectedConnId : connections[0]?.id || null;
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!connId || selectedConnId !== connId) return;
     const saved: PersistedWorkbench = { version: 1, connectionId: connId, tabs, active, focusedGroup, split };
-    try {
-      window.localStorage.setItem(FILE_WORKBENCH_STORAGE_KEY, JSON.stringify(saved));
-    } catch {
-      // Preserve layout and opened files even if a very large unsaved draft
-      // exceeds browser storage quota.
-      const withoutDrafts = { ...saved, tabs: tabs.map((tab) => ({ ...tab, draft: undefined, dirty: false })) };
-      try { window.localStorage.setItem(FILE_WORKBENCH_STORAGE_KEY, JSON.stringify(withoutDrafts)); } catch { /* Storage is unavailable. */ }
-    }
+    persistedRef.current = saved;
+    writePersistedWorkbench(saved);
   }, [active, connId, focusedGroup, selectedConnId, split, tabs]);
+
+  useEffect(() => {
+    const persistBeforeUnload = () => {
+      if (persistedRef.current) writePersistedWorkbench(persistedRef.current);
+    };
+    window.addEventListener("pagehide", persistBeforeUnload);
+    window.addEventListener("beforeunload", persistBeforeUnload);
+    return () => {
+      window.removeEventListener("pagehide", persistBeforeUnload);
+      window.removeEventListener("beforeunload", persistBeforeUnload);
+    };
+  }, []);
 
   const tabsFor = useCallback((group: EditorGroup, source = tabs) => source.filter((tab) => tab.group === group), [tabs]);
   const replaceGroup = (source: EditorTab[], group: EditorGroup, nextGroup: EditorTab[]) => {
