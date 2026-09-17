@@ -146,6 +146,7 @@ export default function FileList(p: Props) {
     [viewportHeight, setViewportHeight] = useState(500);
   const fileInput = useRef<HTMLInputElement>(null),
     uploadTarget = useRef<string | null>(null),
+    uploadRequest = useRef<XMLHttpRequest | null>(null),
     pendingReveal = useRef<string | null>(null),
     listRef = useRef<HTMLDivElement>(null);
   const visible = useMemo(() => {
@@ -229,6 +230,7 @@ export default function FileList(p: Props) {
       const token = localStorage.getItem("token") || "";
       const next = (i: number) => {
         if (i >= items.length) {
+          uploadRequest.current = null;
           setUploading(false);
           setUploadName("");
           onUpload();
@@ -241,11 +243,13 @@ export default function FileList(p: Props) {
         form.append("path", `${dest.replace(/\/$/, "")}/${f.name}`);
         form.append("file", f);
         const x = new XMLHttpRequest();
+        uploadRequest.current = x;
         x.upload.onprogress = (e) => {
           if (e.lengthComputable)
             setProgress(Math.round((e.loaded / e.total) * 100));
         };
         x.onload = () => {
+          uploadRequest.current = null;
           if (x.status >= 200 && x.status < 300) next(i + 1);
           else {
             setUploading(false);
@@ -259,8 +263,14 @@ export default function FileList(p: Props) {
           }
         };
         x.onerror = () => {
+          uploadRequest.current = null;
           setUploading(false);
           flash(t("file_upload_error"));
+        };
+        x.onabort = () => {
+          uploadRequest.current = null;
+          setUploading(false);
+          setUploadName("");
         };
         x.open("POST", "/api/sftp/upload");
         x.setRequestHeader("Authorization", `Bearer ${token}`);
@@ -270,6 +280,9 @@ export default function FileList(p: Props) {
     },
     [connId, currentPath, onUpload, flash],
   );
+  const cancelUpload = useCallback(() => {
+    uploadRequest.current?.abort();
+  }, []);
   const download = async (path: string, name: string) => {
     if (!connId) return;
     const a = document.createElement("a");
@@ -559,19 +572,21 @@ export default function FileList(p: Props) {
             <span>{t("sftp_uploading")}</span>
             <strong>{uploadName}</strong>
             <span>{progress}%</span>
+            <button className="sftp-action" onClick={cancelUpload} aria-label={t("multi_cancel")}>
+              {t("multi_cancel")}
+            </button>
           </div>
           <progress max="100" value={progress} />
         </div>
       )}
-      <div className="sftp-table-head" role="row">
+      <div className="sftp-table-head">
         <span className="sftp-check">{selected.size || ""}</span>
-        <button role="columnheader" onClick={() => toggleSort("name")}>
+        <button onClick={() => toggleSort("name")}>
           {t("file_name")}
           {arrow("name")}
         </button>
         <button
           className="sftp-col-size"
-          role="columnheader"
           onClick={() => toggleSort("size")}
         >
           {t("file_size")}
@@ -579,7 +594,6 @@ export default function FileList(p: Props) {
         </button>
         <button
           className="sftp-col-time"
-          role="columnheader"
           onClick={() => toggleSort("time")}
         >
           {t("file_time")}
@@ -590,6 +604,7 @@ export default function FileList(p: Props) {
         ref={listRef}
         className="sftp-file-list"
         role="listbox"
+        aria-label={t("file_name")}
         aria-multiselectable="true"
         aria-busy={loading}
         onKeyDown={keys}

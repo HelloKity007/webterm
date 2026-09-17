@@ -174,6 +174,19 @@ describe("FileList", () => {
     expect(screen.getByText("10000 items")).toBeTruthy();
   });
 
+  it("keeps the DOM bounded for a 50k-entry directory", () => {
+    render(
+      <FileList
+        files={Array.from({ length: 50_000 }, (_, index) => file(index))}
+        loading={false}
+        currentPath="/"
+        {...handlers()}
+      />,
+    );
+    expect(screen.getAllByRole("option").length).toBeLessThan(200);
+    expect(screen.getByText("50000 items")).toBeTruthy();
+  });
+
   it("copies a selection and pastes only on the same endpoint", () => {
     const actions = handlers();
     const { rerender } = render(
@@ -224,5 +237,36 @@ describe("FileList", () => {
         .disabled,
     ).toBe(true);
     expect(actions.onFileOperation).not.toHaveBeenCalled();
+  });
+
+  it("cancels an in-flight upload without reporting a spurious failure", () => {
+    const abortRequest = vi.fn();
+    class Xhr {
+      upload = {};
+      open = vi.fn();
+      setRequestHeader = vi.fn();
+      send = vi.fn();
+      abort = abortRequest;
+      onload: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      onabort: (() => void) | null = null;
+      status = 0;
+    }
+    vi.stubGlobal("XMLHttpRequest", Xhr);
+    const actions = handlers();
+    render(
+      <FileList
+        files={[]}
+        loading={false}
+        connId={7}
+        currentPath="/tmp"
+        {...actions}
+      />,
+    );
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    fireEvent.change(input, { target: { files: [new File(["payload"], "large.bin")] } });
+    const cancel = screen.getByRole("button", { name: "Cancel" });
+    fireEvent.click(cancel);
+    expect(abortRequest).toHaveBeenCalledOnce();
   });
 });
