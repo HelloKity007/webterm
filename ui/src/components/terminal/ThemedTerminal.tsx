@@ -146,7 +146,6 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
   const [clipboardNotice, setClipboardNotice] = useState('');
   const [historyHelpOpen, setHistoryHelpOpen] = useState(false);
-  const [showHistoryResume, setShowHistoryResume] = useState(false);
   const [, setSelectionCopyArmed] = useState(false);
   const contextSelectionRef = useRef('');
   const mouseStateRef = useRef(createTerminalMouseState());
@@ -743,10 +742,6 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
           // may be taller than this display, so reveal the actual xterm cursor
           // after the CLI has processed that page command. Do not do this for
           // upward history browsing: that would snap the user back to bottom.
-          if (terminalModeRef.current === 'cli') {
-            if (lines < 0) setShowHistoryResume(true);
-            else if (lines > 0) setShowHistoryResume(false);
-          }
           if (lines > 0 && !mobileBrowser) {
             const revealCliCursor = () => {
               const surface = ref.current;
@@ -983,9 +978,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
           // history reader as being at the input bottom. Once the user has
           // wheeled, never let a later fit/title callback snap the xterm
           // viewport back to its live prompt.
-          const restoringShellHistory = shellHistoryRestoreRef.current !== null;
-          const following = (!userOwnsViewport && !shellHistoryReaderActiveRef.current) ||
-            (!viewportInitialized && !restoringShellHistory) ||
+          const following = (!userOwnsViewport && !shellHistoryReaderActiveRef.current) || !viewportInitialized ||
             (terminalModeRef.current === 'cli' && fittedTerminalMode !== 'cli');
           term.resize(exactGrid.cols, exactGrid.rows);
           term.options.fontSize = fittedFont;
@@ -1621,7 +1614,6 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
     const term = termRef.current;
     if (!term) return;
     const disposable = term.onData((data) => {
-      setShowHistoryResume(false);
       if (zmodemActiveRef.current) {
         sendTextAsBinary(data);
         return;
@@ -1705,14 +1697,6 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
           background: colors.bgInput, color: colors.textMuted, cursor: 'pointer',
           fontSize: 10, lineHeight: 1.4, opacity: historyHelpOpen ? 1 : 0.72,
         }}>{t('term_history')}</button>
-      {showHistoryResume && (
-        <button type="button" aria-label={t('term_history_resume_input')} title={t('term_history_resume_input')}
-          onClick={() => { setShowHistoryResume(false); resumeTerminalInput(); }} style={{
-            position: 'absolute', top: 5, right: 76, zIndex: 12,
-            padding: '2px 7px', border: '1px solid var(--c-border)', borderRadius: 4,
-            background: colors.accent, color: colors.bg, cursor: 'pointer', fontSize: 10, lineHeight: 1.4,
-          }}>{t('term_history_resume_input')}</button>
-      )}
       {historyHelpOpen && (
         <TerminalHistoryHelp onClose={() => {
           setHistoryHelpOpen(false);
