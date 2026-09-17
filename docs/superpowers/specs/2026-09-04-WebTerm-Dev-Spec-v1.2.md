@@ -381,7 +381,7 @@ v1.1 的产品方向成立：WebTerm 的近期核心仍是“同一账号、多�
 
 | 指标 | P0 门槛 |
 |---|---|
-| 8 pane 输出 | 每 pane 64 KiB/s、持续 60 秒；桌面 Chrome p95 frame interval ≤ 22.2ms（约 45fps），无白屏/页面错误 |
+| 8 pane 输出 | 每 pane 64 KiB/s、持续 60 秒；目标硬件会话 p95 frame interval ≤ 33.5ms（按 185 主机实测 30Hz 刷新率校准），无白屏/页面错误 |
 | 输入回显 | LAN、100 个带序号 echo，p95 ≤ 100ms |
 | 浏览器内存 | 8 pane 稳态 30 分钟无持续线性增长；末 10 分钟相对前 10 分钟增长 ≤ 10%，同时记录绝对值不伪装跨机器阈值 |
 | 服务端容量 | 3 客户端 × 8 pane = 24 活跃 shell；无数据串线、无 race、无超 transport channel 上限 |
