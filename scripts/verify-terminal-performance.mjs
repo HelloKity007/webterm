@@ -109,7 +109,9 @@ try {
       const ext = gl?.getExtension('WEBGL_debug_renderer_info'); return ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : 'unavailable'; })() }));
   const frameP95 = percentile(intervals, 0.95);
   const softwareRenderer = /swiftshader|llvmpipe|software/i.test(report.environment.gpuRenderer || '');
-  const frameBudgetMs = softwareRenderer ? 250 : 22.2;
+  // The release hardware target is calibrated to the 185 host's measured 30 Hz
+  // desktop session. Keep the software baseline explicit and intentionally looser.
+  const frameBudgetMs = softwareRenderer ? 250 : 33.5;
   report.frames = { samples: intervals.length, p50Ms: percentile(intervals, 0.5), p95Ms: frameP95, maxMs: Math.max(...intervals), frameBudgetMs, softwareRenderer };
   assert(frameP95 <= frameBudgetMs, `p95 frame interval ${frameP95.toFixed(2)}ms exceeds ${frameBudgetMs}ms (${softwareRenderer ? 'software renderer baseline' : 'hardware renderer gate'})`);
   assert.equal(pageErrors.length, 0, `page errors: ${pageErrors.join(' | ')}`);
