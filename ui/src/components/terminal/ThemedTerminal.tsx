@@ -1233,8 +1233,6 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       // fallback when WebGL is unavailable.
       const installWebgl = () => {
         webglSetupTimer = null;
-        const webglEnabled = new URLSearchParams(window.location.search).get('disable-webgl') !== '1';
-        if (!webglEnabled) return;
         if (!termRef.current || termRef.current !== term || webglAddon) return;
         try {
           webglAddon = new WebglAddon();
