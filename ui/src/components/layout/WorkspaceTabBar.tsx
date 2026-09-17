@@ -22,6 +22,8 @@ export default function WorkspaceTabBar({ tabs, activeWorkspaceTabId, onSelect, 
   const [editingName, setEditingName] = useState('');
   const [showCreate, setShowCreate] = useState(false);
   const [createMode, setCreateMode] = useState<WorkspaceCreateMode>('copy');
+  const [filter, setFilter] = useState('');
+  const [sortByName, setSortByName] = useState(false);
   const cancelRenameRef = useRef(false);
 
   const beginRename = (workspace: WorkspaceTab) => {
@@ -40,10 +42,18 @@ export default function WorkspaceTabBar({ tabs, activeWorkspaceTabId, onSelect, 
   };
 
   if (collapsible && !expanded) return null;
+  const visibleTabs = tabs
+    .filter((workspace) => `${workspace.index}: ${workspace.name}`.toLocaleLowerCase().includes(filter.trim().toLocaleLowerCase()))
+    .slice()
+    .sort((a, b) => sortByName ? a.name.localeCompare(b.name) || a.index - b.index : a.index - b.index);
   return (
     <div className="workspace-tabs" style={{ position: 'relative', display: 'flex', alignItems: 'center', height: 38, flexShrink: 0, padding: '0 8px', gap: 4, overflow: 'visible', background: colors.bgDeep, borderBottom: `1px solid ${colors.border}` }}>
+      {tabs.length > 2 && <input aria-label={t('workspace_search')} placeholder={t('workspace_search')} value={filter} onChange={(event) => setFilter(event.target.value)}
+        style={{ width: 150, minWidth: 80, height: 28, flexShrink: 1, border: `1px solid ${colors.border}`, borderRadius: 4, outline: 'none', padding: '0 7px', color: colors.text, background: colors.bgInput, fontSize: font.sm }} />}
+      {tabs.length > 1 && <button type="button" aria-label={t('workspace_sort')} title={t('workspace_sort')} onClick={() => setSortByName((value) => !value)}
+        style={{ width: 28, height: 28, flexShrink: 0, border: `1px solid ${colors.border}`, borderRadius: 5, cursor: 'pointer', color: sortByName ? colors.accent : colors.textMuted2, background: colors.bg, fontSize: font.md }}>{sortByName ? 'A' : '#'}</button>}
       <div role="tablist" aria-label={t('workspace_tabs')} style={{ display: 'flex', alignItems: 'center', gap: 3, minWidth: 0, overflowX: 'auto', scrollbarWidth: 'thin' }}>
-        {tabs.map((workspace) => {
+        {visibleTabs.map((workspace) => {
           const label = `${workspace.index}: ${workspace.name}`;
           const active = workspace.id === activeWorkspaceTabId;
           return editingID === workspace.id ? (

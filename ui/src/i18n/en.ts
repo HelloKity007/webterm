@@ -9,7 +9,7 @@ const en: Record<string, string> = {
   menu_edit: 'Edit', menu_copy: 'Duplicate', menu_delete: 'Delete', menu_move_to: 'Move to Group',
   menu_rename_group: 'Rename Group', menu_delete_group: 'Delete Group',
   tab_new: 'New Tab', tab_no_connections: 'No SSH connections', tab_close: 'Close tab', tab_close_confirm: 'Close this tab and its terminal session?', workspace_close: 'Close workspace', workspace_close_confirm: 'Close this workspace and all Panels? Shell/Claude processes will be terminated. This cannot be undone.', workspace_close_last: 'Keep at least one workspace open.',
-  workspace_tabs: 'Workspace tabs', workspace_name: 'Workspace name', workspace_new: 'New workspace',
+  workspace_tabs: 'Workspace tabs', workspace_name: 'Workspace name', workspace_new: 'New workspace', workspace_search: 'Search workspaces', workspace_sort: 'Sort workspaces',
   workspace_tabs_expand: 'Expand workspace tabs', workspace_tabs_collapse: 'Collapse workspace tabs',
   release_test_short: 'TEST',
   ssh_files_expand: 'Expand SSH files', ssh_files_collapse: 'Collapse SSH files', ssh_files_select: 'Select a connected SSH panel to browse files.',

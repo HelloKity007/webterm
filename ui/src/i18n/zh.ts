@@ -9,7 +9,7 @@ const zh: Record<string, string> = {
   menu_edit: '编辑', menu_copy: '复制', menu_delete: '删除', menu_move_to: '移动到分组',
   menu_rename_group: '重命名分组', menu_delete_group: '删除分组',
   tab_new: '新建标签', tab_no_connections: '暂无 SSH 连接', tab_close: '关闭标签', tab_close_confirm: '关闭此标签及其终端会话？', workspace_close: '关闭工作区', workspace_close_confirm: '关闭此工作区及全部 Panel？其 Shell／Claude 等程序将被终止，无法撤销。', workspace_close_last: '至少保留一个工作区。',
-  workspace_tabs: '工作区标签', workspace_name: '工作区名称', workspace_new: '新建工作区',
+  workspace_tabs: '工作区标签', workspace_name: '工作区名称', workspace_new: '新建工作区', workspace_search: '搜索工作区', workspace_sort: '排序工作区',
   workspace_tabs_expand: '展开工作区标签栏', workspace_tabs_collapse: '收起工作区标签栏',
   release_test_short: '测试',
   ssh_files_expand: '展开 SSH 文件列表', ssh_files_collapse: '收起 SSH 文件列表', ssh_files_select: '请选择已连接的 SSH Panel 查看文件。',

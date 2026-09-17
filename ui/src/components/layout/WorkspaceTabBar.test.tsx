@@ -96,4 +96,21 @@ describe('WorkspaceTabBar', () => {
     fireEvent.click(screen.getByRole('button', { name: /关闭工作区/ }));
     expect(onClose).toHaveBeenLastCalledWith('workspace-1');
   });
+
+  it('filters workspace tabs and toggles deterministic name sorting without changing indexes', () => {
+    const many: WorkspaceTab[] = [
+      ...tabs,
+      { id: 'workspace-2', index: 2, name: 'alpha', layout: emptyPersistedLayout() },
+    ];
+    render(<WorkspaceTabBar tabs={many} activeWorkspaceTabId="workspace-1" onSelect={vi.fn()} onRename={vi.fn()} onCreate={vi.fn()} />);
+    expect(screen.getByRole('tab', { name: '1: workspace' })).toBeTruthy();
+    fireEvent.change(screen.getByRole('textbox', { name: '搜索工作区' }), { target: { value: 'alpha' } });
+    expect(screen.getByRole('tab', { name: '2: alpha' })).toBeTruthy();
+    expect(screen.queryByRole('tab', { name: '1: workspace' })).toBeNull();
+    fireEvent.change(screen.getByRole('textbox', { name: '搜索工作区' }), { target: { value: '' } });
+    fireEvent.click(screen.getByRole('button', { name: '排序工作区' }));
+    const rendered = screen.getAllByRole('tab').map((tab) => tab.getAttribute('aria-label'));
+    expect(rendered[0]).toBe('3: <script>alert(1)</script>');
+    expect(screen.getByRole('tab', { name: '1: workspace' })).toBeTruthy();
+  });
 });
