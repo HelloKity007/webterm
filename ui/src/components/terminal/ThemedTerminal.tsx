@@ -170,6 +170,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
   const outputTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const outputWritePendingRef = useRef(false);
   const outputPumpRef = useRef<() => void>(() => {});
+  const outputScheduledJobRef = useRef<() => void>(() => {});
   const sendRef = useRef<(data: string) => void>(() => {});
   const requestedGridRef = useRef<TerminalGrid | null>(null);
   const inputViewportFollowedRef = useRef(false);
@@ -1291,7 +1292,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
         scheduleTerminalOutput(writeNextOutput);
       };
       const writeNextOutput = () => {
-          const merged = takeTerminalOutput(outputQueueRef.current, 8 * 1024);
+        const merged = takeTerminalOutput(outputQueueRef.current, 8 * 1024);
         if (merged.byteLength === 0) return;
         try {
           if (zsentryRef.current) {
@@ -1312,6 +1313,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
           pumpTerminalOutput();
         }
       };
+      outputScheduledJobRef.current = writeNextOutput;
       outputPumpRef.current = pumpTerminalOutput;
       pumpTerminalOutput();
       setTermKey((k) => k + 1);
@@ -1359,7 +1361,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       if (historyScrollbarFrame !== null) cancelAnimationFrame(historyScrollbarFrame);
       if (outputFrameRef.current !== null) cancelAnimationFrame(outputFrameRef.current);
       if (outputTimerRef.current !== null) clearTimeout(outputTimerRef.current);
-      cancelTerminalOutput(outputPumpRef.current);
+      cancelTerminalOutput(outputScheduledJobRef.current);
       if (webglSetupTimer !== null) {
         if (typeof window.cancelIdleCallback === 'function') window.cancelIdleCallback(webglSetupTimer);
         else clearTimeout(webglSetupTimer);
@@ -1372,6 +1374,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       outputTimerRef.current = null;
       outputWritePendingRef.current = false;
       outputPumpRef.current = () => {};
+      outputScheduledJobRef.current = () => {};
       outputQueueRef.current = [];
       titleDisposable.dispose();
       historyScrollbarDisposable.dispose();
