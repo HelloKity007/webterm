@@ -113,4 +113,16 @@ describe('WorkspaceTabBar', () => {
     expect(rendered[0]).toBe('3: <script>alert(1)</script>');
     expect(screen.getByRole('tab', { name: '1: workspace' })).toBeTruthy();
   });
+
+  it('emits before/after reorder drops, including cross-window transfer payloads', () => {
+    const onReorder = vi.fn();
+    render(<WorkspaceTabBar tabs={[...tabs, { id: 'workspace-2', index: 2, name: 'two', layout: emptyPersistedLayout() }]} activeWorkspaceTabId="workspace-1" onSelect={vi.fn()} onRename={vi.fn()} onCreate={vi.fn()} onReorder={onReorder} />);
+    const source = screen.getByRole('tab', { name: '1: workspace' });
+    const target = screen.getByRole('tab', { name: '2: two' });
+    const dataTransfer = { effectAllowed: '', dropEffect: '', setData: vi.fn(), getData: vi.fn().mockReturnValue('webterm-workspace:workspace-1') };
+    fireEvent.dragStart(source, { dataTransfer });
+    expect(dataTransfer.setData).toHaveBeenCalledWith('text/plain', 'webterm-workspace:workspace-1');
+    fireEvent.drop(target, { dataTransfer, clientX: 9999 });
+    expect(onReorder).toHaveBeenCalledWith('workspace-1', 'workspace-2', false);
+  });
 });
