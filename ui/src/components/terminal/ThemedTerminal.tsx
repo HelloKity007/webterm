@@ -166,6 +166,8 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
   const zsessionRef = useRef<ZSession | null>(null);
   const zmodemActiveRef = useRef(false);
   const outputQueueRef = useRef<Uint8Array[]>([]);
+  const outputQueueBytesRef = useRef(0);
+  const outputQueuePeakRef = useRef(0);
   const outputFrameRef = useRef<number | null>(null);
   const outputTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const outputWritePendingRef = useRef(false);
@@ -194,6 +196,13 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
 
   const enqueueTerminalOutput = useCallback((bytes: Uint8Array) => {
     outputQueueRef.current.push(bytes);
+    outputQueueBytesRef.current += bytes.byteLength;
+    outputQueuePeakRef.current = Math.max(outputQueuePeakRef.current, outputQueueBytesRef.current);
+    const surface = ref.current;
+    if (surface) {
+      surface.dataset.outputQueueBytes = String(outputQueueBytesRef.current);
+      surface.dataset.outputQueuePeakBytes = String(outputQueuePeakRef.current);
+    }
     outputPumpRef.current();
   }, []);
 
@@ -1294,6 +1303,8 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       const writeNextOutput = () => {
         const merged = takeTerminalOutput(outputQueueRef.current, 8 * 1024);
         if (merged.byteLength === 0) return;
+        outputQueueBytesRef.current = Math.max(0, outputQueueBytesRef.current - merged.byteLength);
+        if (ref.current) ref.current.dataset.outputQueueBytes = String(outputQueueBytesRef.current);
         try {
           if (zsentryRef.current) {
             deliverTerminalBytes(term, zsentryRef.current, merged);
@@ -1376,6 +1387,8 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       outputPumpRef.current = () => {};
       outputScheduledJobRef.current = () => {};
       outputQueueRef.current = [];
+      outputQueueBytesRef.current = 0;
+      outputQueuePeakRef.current = 0;
       titleDisposable.dispose();
       historyScrollbarDisposable.dispose();
       shellHistoryScrollDisposable.dispose();
