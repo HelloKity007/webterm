@@ -11,9 +11,11 @@ const outputSeconds = Number(process.env.WEBTERM_PERF_OUTPUT_SECONDS || 60);
 const soakSeconds = Number(process.env.WEBTERM_PERF_SOAK_SECONDS || 1800);
 assert(Number.isFinite(outputSeconds) && outputSeconds >= 10 && Number.isFinite(soakSeconds) && soakSeconds >= outputSeconds);
 await mkdir(output, { recursive: true, mode: 0o700 });
-const browser = await chromium.launch({ executablePath: process.env.WEBTERM_QA_CHROME || '/usr/bin/google-chrome',
-  headless: process.env.WEBTERM_QA_HEADLESS === '1',
-  args: ['--no-sandbox', '--enable-precise-memory-info', ...(process.env.WEBTERM_QA_GL === 'egl' ? ['--use-gl=egl'] : [])] });
+const browser = process.env.WEBTERM_QA_CDP
+  ? await chromium.connectOverCDP(process.env.WEBTERM_QA_CDP)
+  : await chromium.launch({ executablePath: process.env.WEBTERM_QA_CHROME || '/usr/bin/google-chrome',
+    headless: process.env.WEBTERM_QA_HEADLESS === '1',
+    args: ['--no-sandbox', '--enable-precise-memory-info', ...(process.env.WEBTERM_QA_GL === 'egl' ? ['--use-gl=egl'] : [])] });
 const admin = await browser.newContext({ ignoreHTTPSErrors: true });
 const report = { status: 'RUNNING', checks: [], outputSeconds, soakSeconds };
 let adminToken, userToken, fixtureUser, connectionID, context;
