@@ -254,11 +254,10 @@ try {
     await page.locator('.activity-files').click();
     const workspace = page.locator('[data-testid="file-workspace"]');
     await workspace.waitFor({ state: 'visible' });
-    assert.equal(await workspace.locator('.sftp-endpoint').count(), 2, 'unified workspace is not dual-pane');
-    assert.equal(await workspace.locator('.sftp-divider[role="separator"]').count(), 1);
-    pass('Files entry opens the unified dual-pane workspace', { panes: 2, dividers: 1 });
+    assert.equal(await workspace.locator('.sftp-endpoint').count(), 1, 'remote-only file workspace is not mounted');
+    pass('Files entry opens the unified remote file workspace', { panes: 1 });
 
-    const localPane = endpoint(1);
+    const localPane = endpoint(0);
     const listMs = await navigatePane(localPane, localRoot);
     report.performance.localTmpListMs = listMs;
     assert(listMs < Number(process.env.WEBTERM_QA_LIST_BUDGET_MS || 5000), `local /tmp listing took ${listMs}ms`);
