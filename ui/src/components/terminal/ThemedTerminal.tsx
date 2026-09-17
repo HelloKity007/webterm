@@ -1283,11 +1283,15 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
         }
         initialOutputFollow = false;
       };
-      const recordOutputBatch = (bytes: number) => {
+      const recordOutputBatch = (bytes: number, writeMs?: number) => {
         if (!surfaceElement) return;
         surfaceElement.dataset.outputBatches = String(Number(surfaceElement.dataset.outputBatches || 0) + 1);
         surfaceElement.dataset.lastOutputBytes = String(bytes);
         surfaceElement.dataset.lastOutputAt = performance.now().toFixed(3);
+        if (writeMs !== undefined) {
+          surfaceElement.dataset.lastOutputWriteMs = writeMs.toFixed(3);
+          surfaceElement.dataset.peakOutputWriteMs = Math.max(Number(surfaceElement.dataset.peakOutputWriteMs || 0), writeMs).toFixed(3);
+        }
         // A bounded initial snapshot can finish after the first geometry fit.
         // Follow its final cursor once the burst settles, unless the user has
         // already taken ownership of history scrolling.
@@ -1307,14 +1311,16 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
         if (ref.current) ref.current.dataset.outputQueueBytes = String(outputQueueBytesRef.current);
         try {
           if (zsentryRef.current) {
+            const started = performance.now();
             deliverTerminalBytes(term, zsentryRef.current, merged);
-            recordOutputBatch(merged.byteLength);
+            recordOutputBatch(merged.byteLength, performance.now() - started);
             pumpTerminalOutput();
           } else {
             outputWritePendingRef.current = true;
+            const started = performance.now();
             term.write(merged, () => {
               outputWritePendingRef.current = false;
-              recordOutputBatch(merged.byteLength);
+              recordOutputBatch(merged.byteLength, performance.now() - started);
               pumpTerminalOutput();
             });
           }
