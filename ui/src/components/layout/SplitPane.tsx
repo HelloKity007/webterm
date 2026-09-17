@@ -30,6 +30,7 @@ import {
   preserveLocalWorkspaceSelection,
   renameWorkspaceTab,
   removeWorkspaceTab,
+  reorderWorkspaceTabs,
   sharedWorkspaceSnapshot,
   type LocalWorkspaceSelection,
   type PersistedWorkspace,
@@ -185,6 +186,14 @@ function renameWorkspace(workspaceID: string, name: string) {
   const renamed = renameWorkspaceTab(workspaceState, workspaceID, name);
   if (renamed === workspaceState) return;
   workspaceState = renamed;
+  notify();
+}
+
+function reorderWorkspace(sourceID: string, targetID: string, after: boolean) {
+  syncActiveWorkspaceLayout();
+  const reordered = reorderWorkspaceTabs(workspaceState, sourceID, targetID, after);
+  if (reordered === workspaceState) return;
+  workspaceState = reordered;
   notify();
 }
 
@@ -1173,6 +1182,7 @@ export default function SplitPane({ onActiveSshChange }: { onActiveSshChange?: (
       activeWorkspaceTabId={activeWorkspaceTabID}
       onSelect={switchWorkspace}
       onRename={renameWorkspace}
+      onReorder={reorderWorkspace}
       onCreate={addWorkspace}
       closing={closingWorkspace}
       onClose={(workspaceID) => {

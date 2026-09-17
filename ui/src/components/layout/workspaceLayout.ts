@@ -166,6 +166,19 @@ export function renameWorkspaceTab(value: PersistedWorkspace, workspaceID: strin
   };
 }
 
+/** Reorders the shared workspace list while preserving each workspace's stable index. */
+export function reorderWorkspaceTabs(value: PersistedWorkspace, sourceID: string, targetID: string, after = false): PersistedWorkspace {
+  if (sourceID === targetID) return value;
+  const sourceIndex = value.workspaceTabs.findIndex((workspace) => workspace.id === sourceID);
+  const targetIndex = value.workspaceTabs.findIndex((workspace) => workspace.id === targetID);
+  if (sourceIndex < 0 || targetIndex < 0) return value;
+  const next = [...value.workspaceTabs];
+  const [source] = next.splice(sourceIndex, 1);
+  const adjustedTarget = next.findIndex((workspace) => workspace.id === targetID);
+  next.splice(adjustedTarget + (after ? 1 : 0), 0, source);
+  return { workspaceTabs: next };
+}
+
 export function removeWorkspaceTab(value: PersistedWorkspace, workspaceID: string, idFactory: WorkspaceIDFactory = defaultIDFactory): PersistedWorkspace {
   if (!value.workspaceTabs.some(workspace => workspace.id === workspaceID)) return value;
   const remaining = value.workspaceTabs.filter(workspace => workspace.id !== workspaceID);

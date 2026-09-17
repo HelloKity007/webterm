@@ -8,6 +8,7 @@ import {
   preserveLocalWorkspaceSelection,
   renameWorkspaceTab,
   removeWorkspaceTab,
+  reorderWorkspaceTabs,
   sharedWorkspaceSnapshot,
 } from './workspaceLayout';
 import { emptyPersistedLayout } from './layoutPersistence';
@@ -149,5 +150,17 @@ describe('workspace layout schema v2', () => {
     expect(restored.value.workspaceTabs[0].layout.focusedPaneId).toBe('right');
     expect(restored.value.workspaceTabs[0].layout.panes.left.activeTabId).toBe('ssh-left-b');
     expect(restored.value.workspaceTabs[0].layout.panes.right.activeTabId).toBe('ssh-right-a');
+  });
+
+  it('reorders workspace tabs for before/after drops while preserving stable indexes', () => {
+    const value = { workspaceTabs: [
+      { id: 'one', index: 1, name: 'one', layout: emptyPersistedLayout() },
+      { id: 'two', index: 2, name: 'two', layout: emptyPersistedLayout() },
+      { id: 'three', index: 3, name: 'three', layout: emptyPersistedLayout() },
+    ] };
+    expect(reorderWorkspaceTabs(value, 'three', 'one').workspaceTabs.map(tab => tab.id)).toEqual(['three', 'one', 'two']);
+    expect(reorderWorkspaceTabs(value, 'one', 'three', true).workspaceTabs.map(tab => tab.id)).toEqual(['two', 'three', 'one']);
+    expect(reorderWorkspaceTabs(value, 'one', 'missing')).toBe(value);
+    expect(reorderWorkspaceTabs(value, 'three', 'one').workspaceTabs.map(tab => tab.index)).toEqual([3, 1, 2]);
   });
 });

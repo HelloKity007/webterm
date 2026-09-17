@@ -12,11 +12,12 @@ interface Props {
   onRename: (id: string, name: string) => void;
   onCreate: (mode: WorkspaceCreateMode) => void;
   onClose?: (id: string) => void;
+  onReorder?: (sourceID: string, targetID: string, after: boolean) => void;
   collapsible?: boolean;
   closing?: boolean;
 }
 
-export default function WorkspaceTabBar({ tabs, activeWorkspaceTabId, onSelect, onRename, onCreate, onClose, collapsible = false, closing = false }: Props) {
+export default function WorkspaceTabBar({ tabs, activeWorkspaceTabId, onSelect, onRename, onCreate, onClose, onReorder, collapsible = false, closing = false }: Props) {
   const expanded = useWorkspaceChromeStore(s => s.expanded);
   const [editingID, setEditingID] = useState<string | null>(null);
   const [editingName, setEditingName] = useState('');
@@ -85,11 +86,26 @@ export default function WorkspaceTabBar({ tabs, activeWorkspaceTabId, onSelect, 
             <div
               key={workspace.id}
               role="tab"
+              draggable={!!onReorder}
               aria-selected={active}
               aria-label={label}
               title={label}
               onClick={() => onSelect(workspace.id)}
               onDoubleClick={() => beginRename(workspace)}
+              onDragStart={(event) => {
+                if (!onReorder) return;
+                event.dataTransfer.effectAllowed = 'move';
+                event.dataTransfer.setData('text/plain', `webterm-workspace:${workspace.id}`);
+              }}
+              onDragOver={(event) => { if (onReorder) { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; } }}
+              onDrop={(event) => {
+                if (!onReorder) return;
+                event.preventDefault();
+                const sourceID = event.dataTransfer.getData('text/plain').replace(/^webterm-workspace:/, '');
+                if (!sourceID) return;
+                const bounds = event.currentTarget.getBoundingClientRect();
+                onReorder(sourceID, workspace.id, event.clientX > bounds.left + bounds.width / 2);
+              }}
               style={{ height: 30, maxWidth: 260, minWidth: 90, padding: '0 6px 0 12px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', border: `1px solid ${active ? colors.accent : 'transparent'}`, borderRadius: 5, cursor: 'pointer', color: active ? colors.bg : colors.textMuted2, background: active ? colors.accent : 'transparent', fontSize: font.md, display: 'flex', alignItems: 'center', gap: 6 }}
             >
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</span>
