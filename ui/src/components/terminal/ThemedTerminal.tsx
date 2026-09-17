@@ -1233,6 +1233,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       // fallback when WebGL is unavailable.
       const installWebgl = () => {
         webglSetupTimer = null;
+        if (false) return;
         if (!termRef.current || termRef.current !== term || webglAddon) return;
         try {
           webglAddon = new WebglAddon();
@@ -1250,7 +1251,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
           webglAddon = null;
         }
       };
-      if (typeof window.requestIdleCallback === 'function') {
+      if (false && typeof window.requestIdleCallback === 'function') {
         webglSetupTimer = window.requestIdleCallback(installWebgl, { timeout: 1200 });
       } else {
         webglSetupTimer = window.setTimeout(installWebgl, 80);
