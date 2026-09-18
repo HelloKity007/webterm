@@ -1,6 +1,8 @@
 package sftpmgr
 
 import (
+	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"io"
@@ -10,6 +12,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
@@ -124,6 +127,126 @@ func (c *Client) WriteFileFromReader(path string, reader io.Reader) error {
 		return copyErr
 	}
 	return closeErr
+}
+
+// UploadAtomic requires OpenSSH POSIX rename and a writable parent directory.
+// Cancellation closes only this SFTP channel, never the shared SSH transport.
+// There is no destructive rename fallback and no automatic retry.
+func (c *Client) UploadAtomic(ctx context.Context, destination string, reader io.Reader) (result error) {
+	defer func() {
+		if result != nil && ctx.Err() != nil {
+			result = errors.Join(ctx.Err(), result)
+		}
+	}()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if _, ok := c.conn.HasExtension("posix-rename@openssh.com"); !ok {
+		return errors.New("atomic upload requires posix-rename@openssh.com; destination unchanged")
+	}
+	id := make([]byte, 16)
+	if _, err := rand.Read(id); err != nil {
+		return err
+	}
+	temporary := path.Join(path.Dir(destination), fmt.Sprintf(".webterm-upload-%x.partial", id))
+	done, stopped := make(chan struct{}), make(chan struct{})
+	go func() {
+		defer close(stopped)
+		select {
+		case <-ctx.Done():
+			_ = c.conn.Close()
+		case <-done:
+		}
+	}()
+	defer func() { close(done); <-stopped }()
+	var mode os.FileMode = 0600
+	info, err := c.conn.Lstat(destination)
+	if err == nil {
+		if !info.Mode().IsRegular() {
+			return errors.New("atomic upload refuses symlink or non-regular destination")
+		}
+		mode = info.Mode().Perm()
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	f, err := c.conn.OpenFile(temporary, os.O_CREATE|os.O_EXCL|os.O_WRONLY)
+	if err != nil {
+		return err
+	}
+	committed := false
+	defer func() {
+		if committed {
+			return
+		}
+		cleanupErr := c.removeUploadPartial(temporary)
+		if cleanupErr != nil {
+			result = errors.Join(result, fmt.Errorf("upload partial cleanup failed (%s): %w", temporary, cleanupErr))
+		}
+	}()
+	// Restrict the empty partial before the first sensitive content byte.
+	if err := f.Chmod(0600); err != nil {
+		_ = f.Close()
+		return err
+	}
+	_, copyErr := io.Copy(f, reader)
+	closeErr := f.Close()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if copyErr != nil {
+		return copyErr
+	}
+	if closeErr != nil {
+		return closeErr
+	}
+	if err := c.conn.Chmod(temporary, mode); err != nil {
+		return err
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := c.conn.PosixRename(temporary, destination); err != nil {
+		return errors.Join(ctx.Err(), fmt.Errorf("atomic upload commit not confirmed; inspect destination before retry: %w", err))
+	}
+	committed = true
+	return nil
+}
+
+// Cleanup is bounded even when cancellation has closed the upload channel.
+// The separately opened cleanup channel shares, but never closes, SSH.
+func (c *Client) removeUploadPartial(name string) error {
+	finished := make(chan error, 1)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	go func() {
+		conn := c.conn
+		if c.sshCli != nil {
+			var err error
+			conn, err = sftp.NewClient(c.sshCli)
+			if err != nil {
+				finished <- err
+				return
+			}
+			defer conn.Close()
+		}
+		if ctx.Err() != nil {
+			finished <- ctx.Err()
+			return
+		}
+		stop := context.AfterFunc(ctx, func() { _ = conn.Close() })
+		defer stop()
+		err := conn.Remove(name)
+		if os.IsNotExist(err) {
+			err = nil
+		}
+		finished <- err
+	}()
+	select {
+	case err := <-finished:
+		return err
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 func (c *Client) Delete(path string) error {

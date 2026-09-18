@@ -47,7 +47,7 @@ const zh: Record<string, string> = {
   file_external_change: '文件已在编辑器外发生变化，是否重新加载？', file_reload: '重新加载', file_keep_draft: '保留草稿',
   file_refresh_mode_prompt: '请选择当前打开文件的刷新方式。', file_auto_refresh: '开启自动刷新', file_manual_refresh: '使用手动刷新', file_pause_auto_refresh: '暂停自动刷新',
   file_save_conflict: '服务器文件在打开后已发生变化，未执行保存。', file_cancel_save: '放弃保存', file_force_save: '强制保存',
-  file_remote_files: '远程文件', file_open_files: '已打开的文件', file_unsaved: '未保存的修改', file_close_unsaved: '放弃未保存的修改并关闭此文件？', file_split_editor: '分栏编辑器', file_close_split: '关闭分栏编辑器', file_move_to_other_editor: '将当前文件移到另一编辑栏', file_scroll_tabs_left: '向左滚动标签', file_scroll_tabs_right: '向右滚动标签', file_editor_empty_title: '打开远程文件开始编辑', file_editor_empty_hint: '从左侧文件列表选择文件，已打开文件会保留为标签。', file_editor_split_hint: '从左侧选择文件，或将已打开标签移到此编辑栏。',
+  file_remote_files: '远程文件', file_open_files: '已打开的文件', file_unsaved: '未保存的修改', file_close_unsaved: '放弃未保存的修改并关闭此文件？', file_split_editor: '分栏编辑器', file_close_split: '关闭分栏编辑器', file_move_to_other_editor: '将当前文件移到另一编辑栏', file_scroll_tabs_left: '向左滚动标签', file_scroll_tabs_right: '向右滚动标签', file_editor_empty_title: '打开远程文件开始编辑', file_editor_empty_hint: '从左侧文件列表选择文件，已打开文件会保留为标签。', file_editor_split_hint: '从左侧选择文件，或将已打开标签移到此编辑栏。', file_tab_transfer_connection_mismatch: '该文件属于另一远程连接，未移动。', file_tab_transfer_dirty_conflict: '目标窗口的同名文件有未保存修改，未移动。',
   file_browser: '文件浏览器', file_filter: '筛选文件', file_filter_clear: '清除筛选',
   file_empty: '此目录为空', file_empty_hint: '可上传文件或新建文件夹', file_no_matches: '没有匹配的文件',
   file_selected_count: '项已选择', file_item_count: '项', file_hidden_count: '项已隐藏',

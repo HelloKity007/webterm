@@ -83,12 +83,37 @@ lan_start_caddy() {
   )
 }
 
+lan_validate_production_tmux() {
+  local binary="${WEBTERM_PRODUCTION_TMUX_BINARY:-}"
+  local socket="${WEBTERM_PRODUCTION_TMUX_SOCKET:-}"
+  [[ -n "$binary" || -n "$socket" ]] || return 0
+  [[ "$binary" =~ ^/[a-zA-Z0-9_./-]+$ && "$socket" =~ ^webterm-production-[a-zA-Z0-9_-]+$ ]] ||
+    lan_die "production tmux requires paired absolute shell-safe binary and production-scoped socket"
+  [[ -x "$binary" ]] || lan_die "missing pinned production tmux executable"
+  [[ "$("$binary" -V)" == "tmux 3.7c" ]] || lan_die "production tmux must be pinned to 3.7c"
+}
+
+lan_preflight_production_binary() {
+  local candidate_binary="$1"
+  [[ -x "$candidate_binary" ]] || lan_die "missing production binary: $candidate_binary"
+  lan_validate_production_tmux
+  if [[ -n "${WEBTERM_PRODUCTION_TMUX_BINARY:-}" ]]; then
+    local binary_help
+    binary_help="$("$candidate_binary" -help 2>&1)" || lan_die "cannot inspect production binary flags"
+    [[ "$binary_help" == *"-tmux-binary"* && "$binary_help" == *"-tmux-socket"* ]] ||
+      lan_die "production binary does not support pinned tmux; restore matching launcher configuration for rollback"
+  fi
+}
+
 lan_start_production() {
-  [[ -x "$LAN_BINARY" ]] || lan_die "missing production binary: $LAN_BINARY"
+  lan_preflight_production_binary "$LAN_BINARY"
   if [[ -f "$LAN_RUNTIME_DIR/webterm.pid" ]] && lan_pid_running "$(<"$LAN_RUNTIME_DIR/webterm.pid")"; then
     lan_die "production webterm is already running"
   fi
   local start_args=(-config "$LAN_CONFIG")
+  if [[ -n "${WEBTERM_PRODUCTION_TMUX_BINARY:-}" ]]; then
+    start_args+=(-tmux-binary "$WEBTERM_PRODUCTION_TMUX_BINARY" -tmux-socket "$WEBTERM_PRODUCTION_TMUX_SOCKET")
+  fi
   # Release-aware binaries support explicit database/environment flags. Keep
   # rollback compatible with the pre-release binary, which used the config and
   # default webterm.db path but did not yet define those flags.

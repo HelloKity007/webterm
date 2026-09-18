@@ -30,6 +30,9 @@ type WSHandler struct {
 	Store     *store.Store
 	Pool      *sshmgr.Pool
 	AESCipher *crypto.AESCipher
+	// Environment is durable terminal-instance identity. It prevents a
+	// release-test reservation from being attached through production.
+	Environment string
 	// PreserveTerminalSessions makes a release-test environment safe to use
 	// with production tmux names: closing a test tab removes only test layout
 	// state and never kills the shared remote session.
@@ -108,7 +111,10 @@ func applyPanelSessionName(command string, userID, connectionID int64, terminalI
 		return command
 	}
 	command = strings.ReplaceAll(command, legacy, current)
-	migrate := fmt.Sprintf("(tmux has-session -t %s 2>/dev/null || (tmux has-session -t %s 2>/dev/null && tmux rename-session -t %s %s) || true) && ", current, legacy, legacy, current)
+	// A missing current and legacy session is an attach failure, never a reason
+	// to execute a downstream create fallback. -N also prevents a lost tmux
+	// server from being revived merely to evaluate this migration probe.
+	migrate := fmt.Sprintf("(tmux -N has-session -t %s 2>/dev/null || (tmux -N has-session -t %s 2>/dev/null && tmux -N rename-session -t %s %s)) && ", current, legacy, legacy, current)
 	return migrate + command
 }
 
@@ -229,11 +235,33 @@ func (h *WSHandler) CloseTerminalSession(w http.ResponseWriter, r *http.Request)
 		_, _ = w.Write([]byte(`{"status":"preserved"}`))
 		return
 	}
-	command = applyPanelSessionName(command, user.UserID, connID, terminalID, r.URL.Query().Get("workspace_index"), r.URL.Query().Get("panel_number"))
-	command = scopeTmuxCommand(command, h.TmuxSocket, h.TmuxBinary)
+	instance, err := h.Store.GetTerminalInstance(user.UserID, connID, terminalID)
+	if err != nil || !h.terminalInstanceMatchesEndpoint(instance, connection) {
+		http.Error(w, `{"error":"terminal identity is missing, inactive, or no longer matches this connection","code":"TERMINAL_IDENTITY_UNAVAILABLE"}`, http.StatusConflict)
+		return
+	}
+	// Retrying a partially completed workspace close must not convert the
+	// already-closed tombstone into a generic identity fault. This is an
+	// acknowledgement only: it never probes, attaches, recreates, or revives
+	// the remote session, and all non-closed states remain fail-closed.
+	if instance.State == store.TerminalClosed {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status":"already_closed"}`))
+		return
+	}
+	if instance.State != store.TerminalActive {
+		http.Error(w, `{"error":"terminal identity is missing, inactive, or no longer matches this connection","code":"TERMINAL_IDENTITY_UNAVAILABLE"}`, http.StatusConflict)
+		return
+	}
+	baseName, _ := persistentTerminalSessionName(user.UserID, connID, terminalID)
+	command = scopeTmuxCommand(strings.ReplaceAll(command, baseName, instance.CanonicalName), h.TmuxSocket, h.TmuxBinary)
 	lifecycle := h.terminalLifecycle.entry(terminalKeyFor(user.UserID, connID, terminalID))
 	if err := lifecycle.close(func() error { return h.runTerminalCommand(connection, command) }); err != nil {
 		http.Error(w, `{"error":"failed to close terminal"}`, http.StatusBadGateway)
+		return
+	}
+	if closed, err := h.Store.CompareAndSwapTerminalInstanceState(user.UserID, connID, terminalID, instance.Incarnation, store.TerminalActive, store.TerminalClosed); err != nil || !closed {
+		http.Error(w, `{"error":"terminal closed remotely but lifecycle state could not be recorded","code":"TERMINAL_CLOSE_UNCERTAIN"}`, http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -347,26 +375,30 @@ func (h *WSHandler) HandleSSH(conn *websocket.Conn) {
 	outbound := newWSOutbound(conn, h.Registry)
 	defer outbound.Close()
 	terminalID := conn.Request().URL.Query().Get("terminal_id")
-	tmuxCommand, err := persistentTerminalCommand(user.UserID, connID, terminalID)
+	if conn.Request().URL.Query().Get("control") != "1" {
+		_ = outbound.Send(map[string]string{"type": "error", "code": "TERMINAL_CONTROL_REQUIRED", "error": "terminal identity verification requires control mode"})
+		return
+	}
+	instance, err := h.verifiedTerminalInstance(user.UserID, connID, terminalID, connInfo)
+	if err != nil {
+		_ = outbound.Send(map[string]string{"type": "error", "code": "TERMINAL_IDENTITY_UNAVAILABLE", "error": "terminal identity is missing, inactive, or no longer matches this connection"})
+		return
+	}
+	attachSpec := terminalIdentityAttachSpec{Binary: h.TmuxBinary, Socket: h.TmuxSocket, Session: instance.CanonicalName, Incarnation: instance.Incarnation, Nonce: terminalAttachNonce()}
+	if attachSpec.Binary == "" {
+		attachSpec.Binary = "tmux"
+	}
+	tmuxCommand, err := attachSpec.command()
 	if err != nil {
 		sendOutboundErr(outbound, err.Error())
 		return
 	}
-	controlMode := conn.Request().URL.Query().Get("control") == "1"
-	if controlMode {
-		tmuxCommand, err = persistentTerminalControlCommand(user.UserID, connID, terminalID)
-		if err != nil {
-			sendOutboundErr(outbound, err.Error())
-			return
-		}
-	}
+	controlMode := true
 	clearCommand, err := persistentTerminalClearCommand(user.UserID, connID, terminalID)
 	if err != nil {
 		sendOutboundErr(outbound, err.Error())
 		return
 	}
-	workspaceIndex := conn.Request().URL.Query().Get("workspace_index")
-	panelNumber := conn.Request().URL.Query().Get("panel_number")
 	codexScrollableCommand, err := persistentTerminalCodexScrollableCommand(user.UserID, connID, terminalID)
 	if err != nil {
 		sendOutboundErr(outbound, err.Error())
@@ -387,18 +419,15 @@ func (h *WSHandler) HandleSSH(conn *websocket.Conn) {
 		sendOutboundErr(outbound, err.Error())
 		return
 	}
-	tmuxCommand = applyPanelSessionName(tmuxCommand, user.UserID, connID, terminalID, workspaceIndex, panelNumber)
-	clearCommand = applyPanelSessionName(clearCommand, user.UserID, connID, terminalID, workspaceIndex, panelNumber)
-	codexScrollableCommand = applyPanelSessionName(codexScrollableCommand, user.UserID, connID, terminalID, workspaceIndex, panelNumber)
-	resumeInputCommand = applyPanelSessionName(resumeInputCommand, user.UserID, connID, terminalID, workspaceIndex, panelNumber)
-	claudeTranscriptCommand = applyPanelSessionName(claudeTranscriptCommand, user.UserID, connID, terminalID, workspaceIndex, panelNumber)
-	followInputCommand = applyPanelSessionName(followInputCommand, user.UserID, connID, terminalID, workspaceIndex, panelNumber)
-	tmuxCommand = scopeTmuxCommand(tmuxCommand, h.TmuxSocket, h.TmuxBinary)
-	clearCommand = scopeTmuxCommand(clearCommand, h.TmuxSocket, h.TmuxBinary)
-	codexScrollableCommand = scopeTmuxCommand(codexScrollableCommand, h.TmuxSocket, h.TmuxBinary)
-	resumeInputCommand = scopeTmuxCommand(resumeInputCommand, h.TmuxSocket, h.TmuxBinary)
-	claudeTranscriptCommand = scopeTmuxCommand(claudeTranscriptCommand, h.TmuxSocket, h.TmuxBinary)
-	followInputCommand = scopeTmuxCommand(followInputCommand, h.TmuxSocket, h.TmuxBinary)
+	baseName, _ := persistentTerminalSessionName(user.UserID, connID, terminalID)
+	scopeManagedCommand := func(command string) string {
+		return scopeTmuxCommand(strings.ReplaceAll(command, baseName, instance.CanonicalName), h.TmuxSocket, h.TmuxBinary)
+	}
+	clearCommand = scopeManagedCommand(clearCommand)
+	codexScrollableCommand = scopeManagedCommand(codexScrollableCommand)
+	resumeInputCommand = scopeManagedCommand(resumeInputCommand)
+	claudeTranscriptCommand = scopeManagedCommand(claudeTranscriptCommand)
+	followInputCommand = scopeManagedCommand(followInputCommand)
 
 	terminalKey := terminalKeyFor(user.UserID, connID, terminalID)
 	releaseTerminal, err := h.terminalSessions.acquire(terminalKey, persistentTerminalSessionLimit)
@@ -510,20 +539,12 @@ func (h *WSHandler) HandleSSH(conn *websocket.Conn) {
 		inputSession = &tmuxControlTerminalSession{base: session, writer: stdinPipe}
 	}
 	// A quiet, already-running pane may not emit a %output notification when a
-	// control client attaches. Seed the browser with a real capture of the
-	// current screen so restored Claude/Bash sessions are immediately visible.
-	if controlMode {
-		captureTarget, _ := persistentTerminalSessionName(user.UserID, connID, terminalID)
-		if ws, wsErr := strconv.ParseInt(workspaceIndex, 10, 64); wsErr == nil {
-			if pn, pnErr := strconv.ParseInt(panelNumber, 10, 64); pnErr == nil {
-				if panelTarget, panelErr := persistentTerminalPanelSessionName(user.UserID, ws, pn, terminalID); panelErr == nil {
-					captureTarget = panelTarget
-				}
-			}
-		}
-		targetName := captureTarget
+	// control client attaches. Call this only after the framed identity guard is
+	// ready, so a capture can never make an unverified replacement look usable.
+	seedControlSnapshot := func() {
+		targetName := instance.CanonicalName
 		captureCommand := initialTerminalScreenCaptureCommand(targetName, h.TmuxSocket, h.TmuxBinary)
-		paneCommand := scopeTmuxCommand("tmux display-message -p -t "+targetName+" '#{pane_id}\t#{pane_current_command}\t#{pane_width}\t#{pane_height}\t#{cursor_x}\t#{cursor_y}\t#{alternate_on}'", h.TmuxSocket, h.TmuxBinary)
+		paneCommand := scopeTmuxCommand("tmux display-message -p -t "+targetName+" '#{pane_id}\t#{pane_current_command}\t#{pane_width}\t#{pane_height}\t#{cursor_x}\t#{cursor_y}\t#{alternate_on}\t#{mouse_standard_flag}\t#{mouse_button_flag}\t#{mouse_any_flag}\t#{mouse_utf8_flag}\t#{mouse_sgr_flag}'", h.TmuxSocket, h.TmuxBinary)
 		go func() {
 			captureClient, captureErr := newSSHClient()
 			if captureErr != nil {
@@ -551,7 +572,7 @@ func (h *WSHandler) HandleSSH(conn *websocket.Conn) {
 					controlTracker.setTarget(strings.TrimSpace(parts[0]))
 					mode := "unknown"
 					if len(parts) >= 2 {
-						mode = terminalModeForPane(parts[1], len(parts) == 7 && parts[6] == "1")
+						mode = terminalModeForPane(parts[1], len(parts) >= 7 && parts[6] == "1")
 					}
 					_ = outbound.Send(map[string]string{"type": "terminal_mode", "mode": mode})
 				}
@@ -570,62 +591,95 @@ func (h *WSHandler) HandleSSH(conn *websocket.Conn) {
 		}()
 	}
 
-	go func() {
-		pumpTerminalInputWithErrors(func(raw *json.RawMessage) error {
-			err := receiveWebSocketJSON(conn, raw)
-			if err == nil {
-				var control struct {
-					Action string `json:"action"`
+	startTerminalInput := func() {
+		go func() {
+			pumpTerminalInputWithErrors(func(raw *json.RawMessage) error {
+				err := receiveWebSocketJSON(conn, raw)
+				if err == nil {
+					var control struct {
+						Action string `json:"action"`
+					}
+					if json.Unmarshal(*raw, &control) == nil && control.Action == "ping" {
+						_ = outbound.Send(map[string]string{"type": "pong"})
+					}
 				}
-				if json.Unmarshal(*raw, &control) == nil && control.Action == "ping" {
-					_ = outbound.Send(map[string]string{"type": "pong"})
+				return err
+			}, inputSession, inputWriter, func(action string) error {
+				var command string
+				switch action {
+				case "clear_history":
+					command = clearCommand
+				case "launch_codex_scrollable":
+					command = codexScrollableCommand
+				case "resume_terminal_input":
+					command = resumeInputCommand
+				case "open_claude_transcript":
+					command = claudeTranscriptCommand
+				case "follow_terminal_input":
+					command = followInputCommand
+				default:
+					return fmt.Errorf("unsupported terminal action: %s", action)
 				}
-			}
-			return err
-		}, inputSession, inputWriter, func(action string) error {
-			var command string
-			switch action {
-			case "clear_history":
-				command = clearCommand
-			case "launch_codex_scrollable":
-				command = codexScrollableCommand
-			case "resume_terminal_input":
-				command = resumeInputCommand
-			case "open_claude_transcript":
-				command = claudeTranscriptCommand
-			case "follow_terminal_input":
-				command = followInputCommand
-			default:
-				return fmt.Errorf("unsupported terminal action: %s", action)
-			}
-			controlClient, err := newSSHClient()
-			if err != nil {
-				return err
-			}
-			defer controlClient.Close()
-			controlSession, err := controlClient.NewSession()
-			if err != nil {
-				return err
-			}
-			defer controlSession.Close()
-			return controlSession.Run(command)
-		}, func(code, message string) {
-			_ = outbound.Send(map[string]interface{}{"type": "error", "code": code, "error": message})
-		})
-	}()
+				controlClient, err := newSSHClient()
+				if err != nil {
+					return err
+				}
+				defer controlClient.Close()
+				controlSession, err := controlClient.NewSession()
+				if err != nil {
+					return err
+				}
+				defer controlSession.Close()
+				return controlSession.Run(command)
+			}, func(code, message string) {
+				_ = outbound.Send(map[string]interface{}{"type": "error", "code": code, "error": message})
+			})
+		}()
+	}
 
-	if controlMode {
-		go pumpTmuxControlOutput(stdoutPipe, "", controlOutput.output, func(event tmuxControlEvent) error {
+	// The server starts pumping control output before input, then releases the
+	// browser-to-terminal direction only after an exact framed readiness marker
+	// and the tmux-assigned session-change event have both been observed.
+	guard := newTerminalIdentityAttachGuard(attachSpec)
+	ready := make(chan error, 1)
+	var readyOnce sync.Once
+	signalReady := func(err error) { readyOnce.Do(func() { ready <- err }) }
+	go func() {
+		err := pumpTmuxControlOutputWithRaw(stdoutPipe, "", controlOutput.output, func(event tmuxControlEvent) error {
 			controlTracker.observe(event)
 			if grid := terminalGridFromLayout(event, controlTracker.target()); len(grid) > 0 {
 				return controlOutput.grid(grid)
 			}
 			return nil
+		}, func(line string) error {
+			isReady, observeErr := guard.observeLine(line)
+			if observeErr != nil {
+				signalReady(observeErr)
+				return observeErr
+			}
+			if isReady {
+				signalReady(nil)
+			}
+			return nil
 		})
-		io.Copy(&recordingWSWriter{wsWriter: wsWriter{outbound: outbound}, history: history}, stderrPipe)
+		if err != nil {
+			signalReady(err)
+			return
+		}
+		signalReady(io.ErrUnexpectedEOF)
+	}()
+	select {
+	case attachErr := <-ready:
+		if attachErr != nil {
+			_ = outbound.Send(map[string]string{"type": "error", "code": "TERMINAL_IDENTITY_MISMATCH", "error": "terminal session is missing or was replaced; input was not attached"})
+			return
+		}
+	case <-time.After(5 * time.Second):
+		_ = outbound.Send(map[string]string{"type": "error", "code": "TERMINAL_IDENTITY_TIMEOUT", "error": "terminal identity verification timed out; input was not attached"})
 		return
 	}
-	go io.Copy(&recordingWSWriter{wsWriter: wsWriter{outbound: outbound}, history: history}, stdoutPipe)
+	seedControlSnapshot()
+	startTerminalInput()
 	io.Copy(&recordingWSWriter{wsWriter: wsWriter{outbound: outbound}, history: history}, stderrPipe)
 }
 

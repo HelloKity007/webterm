@@ -145,7 +145,7 @@ func (h *SftpHandler) Upload(w http.ResponseWriter, r *http.Request) {
 	}
 	defer sftpClient.Close()
 
-	if err := sftpClient.WriteFileFromReader(remotePath, tmp); err != nil {
+	if err := sftpClient.UploadAtomic(r.Context(), remotePath, tmp); err != nil {
 		http.Error(w, fmt.Sprintf(`{"error":"upload: %s"}`, err.Error()), http.StatusInternalServerError)
 		return
 	}

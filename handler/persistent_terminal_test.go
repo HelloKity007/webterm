@@ -1,9 +1,14 @@
 package handler
 
 import (
+	"context"
+	"fmt"
+	"os"
+	"os/exec"
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestPersistentTerminalPanelSessionNameIncludesUserTabAndPanel(t *testing.T) {
@@ -18,7 +23,7 @@ func TestPersistentTerminalPanelSessionNameIncludesUserTabAndPanel(t *testing.T)
 
 func TestApplyPanelSessionNameMigratesLegacyName(t *testing.T) {
 	command := applyPanelSessionName("tmux kill-session -t wt-1-2-fe257cc3cbdcf77f 2>/dev/null || true", 1, 2, "terminal-a", "1", "2")
-	if !strings.Contains(command, "wt01-01-02-") || !strings.Contains(command, "tmux rename-session") {
+	if !strings.Contains(command, "wt01-01-02-") || !strings.Contains(command, "tmux -N rename-session") {
 		t.Fatalf("command = %q, want new panel name and legacy migration", command)
 	}
 }
@@ -28,8 +33,13 @@ func TestPersistentTerminalCommandIsStableIsolatedAndShellSafe(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !regexp.MustCompile(`^tmux start-server \\; set-option -g history-limit 200000 && \(tmux has-session -t wt-7-12-[a-f0-9]{16} 2>/dev/null \|\| tmux new-session -d -s wt-7-12-[a-f0-9]{16}\)`).MatchString(command) {
-		t.Fatalf("command = %q, want a shell-safe persistent tmux command with 200000 history lines", command)
+	if !regexp.MustCompile(`^tmux -N has-session -t wt-7-12-[a-f0-9]{16} 2>/dev/null && tmux -N set-option -g history-limit 200000`).MatchString(command) {
+		t.Fatalf("command = %q, want a shell-safe noncreating tmux attach command with 200000 history lines", command)
+	}
+	for _, forbidden := range []string{"new-session", "start-server", "||"} {
+		if strings.Contains(command, forbidden) {
+			t.Fatalf("ordinary attach may not create or recover a session: %q", command)
+		}
 	}
 	for _, fragment := range []string{
 		"window-size largest",
@@ -45,7 +55,7 @@ func TestPersistentTerminalCommandIsStableIsolatedAndShellSafe(t *testing.T) {
 		"@webterm_mouse_passthrough on",
 		`#{&&:#{@webterm_mouse_passthrough},#{mouse_any_flag}}`,
 		`if-shell -F "#{pane_in_mode}" "send-keys -M" "copy-mode -e; send-keys -M"`,
-		"exec tmux attach-session",
+		"exec tmux -N attach-session",
 	} {
 		if !strings.Contains(command, fragment) {
 			t.Fatalf("command = %q, missing %q", command, fragment)
@@ -74,13 +84,43 @@ func TestPersistentTerminalControlCommandOptsIntoControlMode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(command, "exec tmux -C attach-session") || strings.Contains(command, "exec tmux attach-session") {
+	if !strings.Contains(command, "exec tmux -N -C attach-session") || strings.Contains(command, "new-session") || strings.Contains(command, "start-server") {
 		t.Fatalf("command = %q, want only control-mode attach", command)
 	}
 	for _, hook := range []string{"client-attached", "client-resized", "window-resized"} {
-		if !strings.Contains(command, "set-hook -u -t wt-7-12-") || !strings.Contains(command, hook) {
+		if !strings.Contains(command, "-N set-hook -u -t wt-7-12-") || !strings.Contains(command, hook) {
 			t.Fatalf("command = %q, want stale %s hook cleanup", command, hook)
 		}
+	}
+}
+
+// This is an opt-in integration test because the repository's pinned tmux is
+// supplied by the release-test harness. It exercises the generated ordinary
+// attach command, not just its string shape: a lost tmux server must stay
+// absent after a stale tab tries to reconnect.
+func TestPersistentTerminalAttachMissingNeverStartsTmuxServer(t *testing.T) {
+	binary := os.Getenv("WEBTERM_QA_TMUX")
+	if binary == "" {
+		t.Skip("set WEBTERM_QA_TMUX to the isolated release-test tmux binary")
+	}
+	socket := fmt.Sprintf("qa-no-recreate-%d", time.Now().UnixNano())
+	command, err := persistentTerminalCommand(91, 92, "missing-session")
+	if err != nil {
+		t.Fatal(err)
+	}
+	command = scopeTmuxCommand(command, socket, binary)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if output, err := exec.CommandContext(ctx, "sh", "-c", command).CombinedOutput(); err == nil {
+		t.Fatalf("missing attach unexpectedly succeeded: %s", output)
+	}
+	if ctx.Err() != nil {
+		t.Fatal("missing attach timed out")
+	}
+	ctx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if output, err := exec.CommandContext(ctx, binary, "-N", "-L", socket, "list-sessions").CombinedOutput(); err == nil {
+		t.Fatalf("stale attach recreated a tmux server: %s", output)
 	}
 }
 

@@ -16,12 +16,26 @@ import (
 // pane output events. Protocol notifications remain available to callers via
 // the returned event callback, while data is delivered in decoded batches.
 func pumpTmuxControlOutput(reader io.Reader, pane string, write func([]byte) error, event func(tmuxControlEvent) error) error {
+	return pumpTmuxControlOutputWithRaw(reader, pane, write, event, nil)
+}
+
+// pumpTmuxControlOutputWithRaw exposes each protocol line to a startup guard
+// before ordinary parsing discards framed command-response bodies. The raw
+// callback is for control-plane verification only; it must never inspect or
+// authorize decoded pane output.
+func pumpTmuxControlOutputWithRaw(reader io.Reader, pane string, write func([]byte) error, event func(tmuxControlEvent) error, raw func(string) error) error {
 	scanner := bufio.NewScanner(reader)
 	// A redraw event can be large; tmux control mode is line framed but not
 	// limited to Scanner's small default token size.
 	scanner.Buffer(make([]byte, 32*1024), 2*1024*1024)
 	for scanner.Scan() {
-		frame, ok := parseTmuxControlLine(scanner.Text())
+		line := scanner.Text()
+		if raw != nil {
+			if err := raw(line); err != nil {
+				return err
+			}
+		}
+		frame, ok := parseTmuxControlLine(line)
 		if !ok {
 			continue
 		}
@@ -256,7 +270,7 @@ func terminalCaptureBytes(captured []byte) []byte {
 }
 
 func terminalScreenSnapshot(captured []byte, state []string) []byte {
-	if len(state) != 7 {
+	if len(state) < 7 {
 		return terminalCaptureBytes(captured)
 	}
 	cols, e1 := strconv.Atoi(state[2])
@@ -274,6 +288,20 @@ func terminalScreenSnapshot(captured []byte, state []string) []byte {
 	// absolutely: trailing capture newlines must not scroll a full screen.
 	var out bytes.Buffer
 	fmt.Fprintf(&out, "\x1b]2;webterm-grid:%dx%d\x07%s\x1b[0m\x1b[2J\x1b[H", cols, rows, mode)
+	if len(state) >= 12 {
+		// A quiet application need not re-emit DECSET after a control-mode
+		// attachment. Restore the pane's actual mouse protocol, not merely its
+		// pixels; otherwise native CLI controls appear but cannot be clicked.
+		mouseModes := []int{1000, 1002, 1003, 1005, 1006}
+		for _, mouseMode := range mouseModes {
+			fmt.Fprintf(&out, "\x1b[?%dl", mouseMode)
+		}
+		for index, mouseMode := range mouseModes {
+			if state[7+index] == "1" {
+				fmt.Fprintf(&out, "\x1b[?%dh", mouseMode)
+			}
+		}
+	}
 	lines := bytes.Split(bytes.TrimSuffix(captured, []byte("\n")), []byte("\n"))
 	if state[6] == "0" {
 		// Restore shell scrollback too, so reconnecting does not discard the

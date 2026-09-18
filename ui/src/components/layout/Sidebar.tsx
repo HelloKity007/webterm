@@ -8,6 +8,7 @@ import DbConnectionForm from '../config/DbConnectionForm';
 import ContextMenu from '../common/ContextMenu';
 import CustomSelect from '../common/CustomSelect';
 import { apiPost, apiPut, apiDelete } from '../../api/client';
+import { createTerminalSession } from '../../api/terminalSessions';
 import { t, getLang, setLang } from '../../i18n';
 import Icon from '../common/Icon';
 import HeaderSearch from './HeaderSearch';
@@ -72,12 +73,17 @@ export default function Sidebar({ collapsed, width }: { collapsed: boolean; widt
     }
   }, [activeModule, fetchConnections, fetchDbConnections, fetchGroups, isSshConnectionModule, token]);
 
-  const handleDblClick = (conn: Connection) => {
+  const handleDblClick = async (conn: Connection) => {
     // The sidebar lives outside every pane, so restore a valid target before
     // queuing the tab. This is particularly important after a synced layout
     // was restored without its browser-local focus state.
     setFocusedPane('root');
-    requestTab({ id: newTabID('ssh', conn.id), type: 'ssh', title: conn.name, connId: conn.id });
+    try {
+      const terminalID = await createTerminalSession(conn.id);
+      requestTab({ id: terminalID, type: 'ssh', title: conn.name, connId: conn.id });
+    } catch (error) {
+      console.error('Failed to create terminal session:', error);
+    }
   };
 
   const handleCreateGroup = async (name: string) => {

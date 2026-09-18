@@ -22,6 +22,10 @@ mkdir -p "$RELEASE_PRODUCTION_DIR"
 next_binary="$RELEASE_PRODUCTION_DIR/webterm.next"
 cp "$LAN_RELEASE_BINARY" "$next_binary"
 chmod 700 "$next_binary"
+lan_preflight_production_binary "$next_binary"
+# Refuse before stopping if automatic rollback would be incompatible with the
+# selected launcher configuration. Never silently discard socket isolation.
+lan_preflight_production_binary "$LAN_BINARY"
 if [[ -x "$LAN_BINARY" ]]; then
   cp "$LAN_BINARY" "$RELEASE_PREVIOUS_BINARY"
   "$LAN_BINARY" -version | awk '{print $2}' >"$RELEASE_PREVIOUS_VERSION"

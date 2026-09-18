@@ -43,6 +43,29 @@ describe("FileList", () => {
   });
   afterEach(cleanup);
 
+  it('blocks file input and drop uploads until the directory is ready', () => {
+    const xhr = vi.spyOn(window, 'XMLHttpRequest');
+    const view = render(<FileList files={[]} loading={false} connId={2} currentPath="/owned"
+      uploadReady={false} {...handlers()} />);
+    const input = view.container.querySelector('input[type=file]') as HTMLInputElement;
+    expect(input.disabled).toBe(true);
+    fireEvent.change(input, { target: { files: [new File(['data'], 'test.txt')] } });
+    fireEvent.drop(view.container.querySelector('.sftp-file-list')!, { dataTransfer: { files: [new File(['data'], 'test.txt')], types: ['Files'] } });
+    expect(xhr).not.toHaveBeenCalled();
+    expect(view.container.textContent).toContain('上传未发送');
+  });
+
+  it("sorts natural names without recreating locale comparison options per pair", () => {
+    const compare = vi.spyOn(String.prototype, "localeCompare");
+    const names = ["item-10.log", "item-2.log", "item-1.log"];
+    const view = render(<FileList files={names.map((name, index) => ({ ...file(index), name, path: `/${name}` }))}
+      loading={false} currentPath="/" {...handlers()} />);
+    const text = view.container.textContent || "";
+    expect(text.indexOf("item-1.log")).toBeLessThan(text.indexOf("item-2.log"));
+    expect(text.indexOf("item-2.log")).toBeLessThan(text.indexOf("item-10.log"));
+    expect(compare.mock.calls.filter(call => call.length > 1)).toHaveLength(0);
+  });
+
   it("formats large sizes and invalid timestamps safely", () => {
     expect(sizeFormat(3 * 1024 ** 3)).toBe("3.0 GB");
     expect(timeFormat("invalid")).toBe("—");

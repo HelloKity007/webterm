@@ -17,7 +17,7 @@ import { websocketTicketURL, webSocketClientID } from '../../api/wsTicket';
 import { shouldPersistLayout } from './layoutSave';
 import { useWebSocket } from '../../hooks/useWebSocket';
 import { panelGrid, presetDestinationID, replaceLeafWithEightPaneGrid } from './layoutPresets';
-import { closeTerminalSession } from '../../api/terminalSessions';
+import { closeTerminalSession, createTerminalSession } from '../../api/terminalSessions';
 import WorkspaceTabBar from './WorkspaceTabBar';
 import { getSharedTerminalGrid, setSharedTerminalGrid } from '../terminal/terminalGridCache';
 import { discardPersistentTerminal } from '../terminal/persistentTerminalStore';
@@ -208,7 +208,11 @@ async function closeWorkspace(workspaceID: string) {
   const cleanupResults = await Promise.all(terminalIDs.map(async ({ connId, tabId, panelNumber }) => {
     try {
       const result = await closeTerminalSession(connId, tabId, workspace.index, panelNumber, true) as { status?: string };
-      if (result?.status !== 'ok') throw new Error('Remote session was not terminated');
+      // A retry after a partial close may encounter a durable tombstone for a
+      // sibling Panel that was already terminated in the first attempt. It is
+      // safe to acknowledge that exact closed identity; no unknown/missing
+      // identity is accepted here.
+      if (result?.status !== 'ok' && result?.status !== 'already_closed') throw new Error('Remote session was not terminated');
       discardPersistentTerminal(tabId);
       return true;
     } catch (error) {
@@ -232,7 +236,7 @@ async function closeWorkspace(workspaceID: string) {
   notify();
 }
 
-function addWorkspace(mode: WorkspaceCreateMode) {
+async function addWorkspace(mode: WorkspaceCreateMode) {
   syncActiveWorkspaceLayout();
   const sourceWorkspace = workspaceState.workspaceTabs.find((workspace) => workspace.id === activeWorkspaceTabID);
   const { connections, dbConnections } = useConnectionStore.getState();
@@ -242,6 +246,19 @@ function addWorkspace(mode: WorkspaceCreateMode) {
   ]);
   const created = createWorkspaceTab(workspaceState, activeWorkspaceTabID, mode, nextLayoutID,
     (tab) => connectionNames.get(`${tab.type}:${tab.connId}`) || (tab.type === 'ssh' ? 'SSH' : 'Database'));
+  // A copied workspace is a new set of terminal processes. Reserve every SSH
+  // tab before exposing the layout so WebSocket attach never becomes a create
+  // authority for browser-generated IDs.
+  try {
+    for (const pane of Object.values(created.workspace.layout.panes)) {
+      for (const tab of pane.tabs) {
+        if (tab.type === 'ssh' && tab.connId) tab.id = await createTerminalSession(tab.connId);
+      }
+    }
+  } catch (error) {
+    console.error('Failed to create terminal sessions for copied workspace:', error);
+    return;
+  }
   if (mode === 'copy' && sourceWorkspace) {
     const sourceByLabel = new Map<number, string>();
     for (const pane of Object.values(sourceWorkspace.layout.panes)) {
@@ -500,17 +517,25 @@ function assignTabLabelNumbers(tabs: Tab[]): Tab[] {
   });
 }
 
-function doEightPaneSplit(targetID: string, activeTab: Tab): boolean {
+async function doEightPaneSplit(targetID: string, activeTab: Tab): Promise<boolean> {
+  if (activeTab.type !== 'ssh' || !activeTab.connId) return false;
   const newPaneIDs = Array.from({ length: 7 }, () => nextLayoutID('pane'));
   const nextRoot = replaceLeafWithEightPaneGrid(layoutRoot, targetID, [targetID, ...newPaneIDs]);
   if (!nextRoot) return false;
-
-  for (const paneID of newPaneIDs) {
-    const newTab: Tab = {
-      ...activeTab,
-      id: nextLayoutID(`${activeTab.type}-${activeTab.connId}`),
-      labelNumber: nextTabLabelNumber(),
-    };
+  const firstLabel = nextTabLabelNumber();
+  const newTabs: Tab[] = [];
+  try {
+    for (let index = 0; index < newPaneIDs.length; index++) {
+      const terminalID = await createTerminalSession(activeTab.connId);
+      newTabs.push({ ...activeTab, id: terminalID, labelNumber: firstLabel + index });
+    }
+  } catch (error) {
+    console.error('Failed to create all terminal sessions for an eight-panel layout:', error);
+    return false;
+  }
+  for (let index = 0; index < newPaneIDs.length; index++) {
+    const paneID = newPaneIDs[index];
+    const newTab = newTabs[index];
     allPaneIds.add(paneID);
     paneTabsCache.set(paneID, [newTab]);
     paneActiveCache.set(paneID, newTab.id);
@@ -622,11 +647,18 @@ function LeafPane({ nodeId, restoreVersion, onActiveSshChange, isInSplit, worksp
     setActiveTabId(tab.id);
     tabMoveListeners.forEach(listener => listener(tab.id, nodeId));
   };
-  const addConnectionTab = (connId: number) => {
+  const addConnectionTab = async (connId: number) => {
     const connection = connections.find((conn) => conn.id === connId);
     if (!connection) return;
+    let terminalID: string;
+    try {
+      terminalID = await createTerminalSession(connection.id);
+    } catch (error) {
+      console.error('Failed to create terminal session:', error);
+      return;
+    }
     const tab: Tab = {
-      id: nextLayoutID(`ssh-${connection.id}`),
+      id: terminalID,
       type: 'ssh',
       title: connection.name,
       connId: connection.id,
@@ -664,12 +696,19 @@ function LeafPane({ nodeId, restoreVersion, onActiveSshChange, isInSplit, worksp
   const renameTab = (id: string, title: string) => {
     setTabs((prev) => prev.map((tab) => tab.id === id ? { ...tab, title } : tab));
   };
-  const handleSplit = (dir: Direction) => {
+  const handleSplit = async (dir: Direction) => {
     const activeTab = tabs.find((t) => t.id === activeTabId);
     if (!activeTab?.connId) return;
 
+    let terminalID: string;
+    try {
+      terminalID = await createTerminalSession(activeTab.connId);
+    } catch (error) {
+      console.error('Failed to create terminal session for split:', error);
+      return;
+    }
     const newPaneId = nextLayoutID('pane');
-    const newTab: Tab = { ...activeTab, id: nextLayoutID(`${activeTab.type}-${activeTab.connId}`), labelNumber: nextTabLabelNumber() };
+    const newTab: Tab = { ...activeTab, id: terminalID, labelNumber: nextTabLabelNumber() };
     // Pre-cache tab BEFORE doSplit so the new LeafPane finds it on first mount
     paneTabsCache.set(newPaneId, [newTab]);
     paneActiveCache.set(newPaneId, newTab.id);
@@ -677,14 +716,22 @@ function LeafPane({ nodeId, restoreVersion, onActiveSshChange, isInSplit, worksp
     if (resultId) setTimeout(() => setFocusedPane(resultId), 100);
   };
   const handleClosePane = () => { if (isInSplit) doRemovePane(nodeId); };
-  const handleQuadSplit = () => {
+  const handleQuadSplit = async () => {
     const activeTab = tabs.find((t) => t.id === activeTabId);
     if (!activeTab?.connId) return;
+    let firstTerminalID: string;
+    let secondTerminalID: string;
+    try {
+      [firstTerminalID, secondTerminalID] = await Promise.all([createTerminalSession(activeTab.connId), createTerminalSession(activeTab.connId)]);
+    } catch (error) {
+      console.error('Failed to create terminal sessions for quad split:', error);
+      return;
+    }
     const vId1 = nextLayoutID('pane');
     const vId2 = nextLayoutID('pane');
-    const tab1: Tab = { ...activeTab, id: nextLayoutID(`${activeTab.type}-${activeTab.connId}`), labelNumber: nextTabLabelNumber() };
+    const tab1: Tab = { ...activeTab, id: firstTerminalID, labelNumber: nextTabLabelNumber() };
     paneTabsCache.set(vId1, [tab1]);
-    const tab2: Tab = { ...activeTab, id: nextLayoutID(`${activeTab.type}-${activeTab.connId}`), labelNumber: nextTabLabelNumber() };
+    const tab2: Tab = { ...activeTab, id: secondTerminalID, labelNumber: nextTabLabelNumber() };
     paneTabsCache.set(vId2, [tab2]);
     paneActiveCache.set(vId1, tab1.id);
     paneActiveCache.set(vId2, tab2.id);
@@ -695,10 +742,10 @@ function LeafPane({ nodeId, restoreVersion, onActiveSshChange, isInSplit, worksp
       doSplit(horizId, 'vertical', vId2);
     }, 0);
   };
-  const handleEightPaneSplit = () => {
+  const handleEightPaneSplit = async () => {
     const activeTab = tabs.find((tab) => tab.id === activeTabId);
     if (!activeTab?.connId) return;
-    doEightPaneSplit(nodeId, activeTab);
+    await doEightPaneSplit(nodeId, activeTab);
   };
 
   const activeTab = tabs.find((t) => t.id === activeTabId);
@@ -941,8 +988,9 @@ function SessionWelcome() {
     setQuickConnectError('');
     try {
       const data = await apiPost('/api/quick-connect/local', {});
+      const terminalID = await createTerminalSession(data.connection.id);
       requestTab({
-        id: `ssh-${data.connection.id}-${Date.now()}`,
+        id: terminalID,
         type: 'ssh',
         title: data.connection.name,
         connId: data.connection.id,

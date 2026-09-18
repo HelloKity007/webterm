@@ -79,6 +79,11 @@ export default function MobileTerminalReader({ terminalRef, revision, fontSize, 
   }, [terminalRef, revision]);
   if (!snapshot) return null;
   if (!reading) return <button className="mobile-reader-open" onClick={() => {
+    // xterm's blur() normally forwards to its helper textarea, but a page
+    // reload can leave that textarea as document.activeElement while the
+    // reader button remounts. Explicitly blur the active DOM control too, so
+    // returning to reading mode reliably dismisses the mobile keyboard.
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
     terminalRef.current?.blur();
     setReading(true);
   }}>换行阅读</button>;

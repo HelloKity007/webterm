@@ -51,11 +51,13 @@ try {
   await filesToggle.click();
   const files = page.locator('[data-testid="file-workspace"]');
   await files.waitFor();
-  assert.equal(await files.locator('.sftp-endpoint').count(), 2);
-  assert.equal(await files.locator('.sftp-divider[role="separator"]').count(), 1);
+  assert.equal(await files.locator('.file-explorer').count(), 1);
+  assert.equal(await files.locator('.file-explorer .sftp-shell').count(), 1);
+  assert.equal(await files.locator('.file-editor-workspace').count(), 1);
+  assert.equal(await files.locator('.sftp-divider[role="separator"]').count(), 0);
   await page.locator('.activity-ssh').click();
   await page.locator('.terminal-grid').waitFor();
-  check('Unified dual-pane file workspace replaces the legacy mobile SSH file drawer', true);
+  check('Remote-only explorer/editor workspace replaces the legacy mobile SSH file drawer', true);
   const fonts = [];
   for (let n = 1; n <= 8; n++) {
     await digits.filter({ hasText: new RegExp(`^${n}$`) }).click();

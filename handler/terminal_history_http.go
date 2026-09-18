@@ -53,8 +53,8 @@ func (h *WSHandler) ReplayTerminalHistory(w http.ResponseWriter, r *http.Request
 	snapshot, err := h.captureTerminalOutput(connection, command)
 	if err == nil {
 		// capture-pane is line-oriented, unlike the live PTY stream. Convert
-		// LF to CRLF before returning it to xterm so every replayed history row
-		// returns to column zero and contributes to normal-buffer scrollback.
+		// LF to CRLF between logical lines. Soft-wrapped rows are joined by -J
+		// so xterm can reflow them if grid negotiation changes the column count.
 		snapshot = terminalCaptureBytes(snapshot)
 	} else {
 		// A just-closed remote tmux session may still have transport output in
@@ -89,7 +89,7 @@ func terminalHistoryCaptureTarget(userID, connectionID int64, terminalID, worksp
 }
 
 func terminalHistoryCaptureCommand(targetName, socket, binary string) string {
-	return scopeTmuxCommand("tmux capture-pane -p -e -S -"+strconv.Itoa(terminalHistoryReplayLines)+" -t "+targetName, socket, binary)
+	return scopeTmuxCommand("tmux capture-pane -p -e -J -S -"+strconv.Itoa(terminalHistoryReplayLines)+" -t "+targetName, socket, binary)
 }
 
 func terminalKeyFor(userID, connectionID int64, terminalID string) string {

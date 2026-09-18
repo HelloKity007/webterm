@@ -11,6 +11,24 @@ import (
 	"github.com/xufanchn/webterm/store"
 )
 
+func reserveActiveTerminalForClose(t *testing.T, st *store.Store, userID, connectionID int64, terminalID, environment, socket string) {
+	t.Helper()
+	name, err := persistentTerminalSessionName(userID, connectionID, terminalID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	instance, won, err := st.ReserveTerminalInstance(store.TerminalInstance{
+		UserID: userID, ConnectionID: connectionID, TerminalID: terminalID,
+		Environment: environment, Host: "127.0.0.1", Port: 22, SSHUser: "tester", Socket: socket, CanonicalName: name,
+	})
+	if err != nil || !won {
+		t.Fatalf("reserve terminal: won=%v err=%v", won, err)
+	}
+	if active, err := st.CompareAndSwapTerminalInstanceState(userID, connectionID, terminalID, instance.Incarnation, store.TerminalReserved, store.TerminalActive); err != nil || !active {
+		t.Fatalf("activate terminal: active=%v err=%v", active, err)
+	}
+}
+
 func TestScopeTmuxCommandUsesEnvironmentSocketEverywhere(t *testing.T) {
 	command := `tmux start-server \; tmux set-option -t wt mouse on && tmux run-shell "tmux list-clients -t wt"`
 	want := `tmux -L webterm-release-test start-server \; tmux -L webterm-release-test set-option -t wt mouse on && tmux -L webterm-release-test run-shell "tmux -L webterm-release-test list-clients -t wt"`
@@ -57,6 +75,7 @@ func TestCloseTerminalSessionKillsOnlyTheRequestedTabsTmuxSession(t *testing.T) 
 			return nil
 		},
 	}
+	reserveActiveTerminalForClose(t, st, userID, connectionID, "ssh-1-pane-a; rm -rf /", "production", "default")
 	req := httptest.NewRequest(http.MethodDelete, "/api/terminal-sessions/1?terminal_id=ssh-1-pane-a%3B+rm+-rf+%2F", nil)
 	req.SetPathValue("conn_id", "1")
 	req.Header.Set("Authorization", "Bearer "+testJWT(t, userID, "user"))
@@ -72,6 +91,18 @@ func TestCloseTerminalSessionKillsOnlyTheRequestedTabsTmuxSession(t *testing.T) 
 	wantCommand := fmt.Sprintf("tmux kill-session -t wt-%d-%d-fe257cc3cbdcf77f 2>/dev/null || true", userID, connectionID)
 	if ranCommand != wantCommand {
 		t.Fatalf("command = %q, want an idempotent, shell-safe kill scoped to the requested tab", ranCommand)
+	}
+
+	// A retry after a partial workspace close acknowledges the exact durable
+	// tombstone without sending another remote command or reviving the shell.
+	ranCommand = ""
+	res = httptest.NewRecorder()
+	auth.Middleware(http.HandlerFunc(h.CloseTerminalSession)).ServeHTTP(res, req)
+	if res.Code != http.StatusOK || res.Body.String() != `{"status":"already_closed"}` {
+		t.Fatalf("repeat close status = %d, body = %s", res.Code, res.Body.String())
+	}
+	if ranCommand != "" {
+		t.Fatalf("repeat close sent remote command: %q", ranCommand)
 	}
 }
 
@@ -93,11 +124,14 @@ func TestReleaseEnvironmentClosePreservesSharedTmuxSession(t *testing.T) {
 	h := &WSHandler{
 		Store:                    st,
 		PreserveTerminalSessions: true,
+		Environment:              "release-test",
+		TmuxSocket:               "webterm-release-test-fixed",
 		RunTerminalCommand: func(*store.Connection, string) error {
 			runCalled = true
 			return nil
 		},
 	}
+	reserveActiveTerminalForClose(t, st, userID, 1, "shared-tab", "release-test", "webterm-release-test-fixed")
 	req := httptest.NewRequest(http.MethodDelete, "/api/terminal-sessions/1?terminal_id=shared-tab", nil)
 	req.SetPathValue("conn_id", "1")
 	req.Header.Set("Authorization", "Bearer "+testJWT(t, userID, "user"))

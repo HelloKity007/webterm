@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import SftpPanel, { type OpenRemoteFile } from "./SftpPanel";
 import CustomSelect from "../common/CustomSelect";
 import Icon from "../common/Icon";
@@ -32,16 +32,67 @@ type PersistedWorkbench = {
 
 const tabIdFor = (path: string) => `file:${path}`;
 const FILE_WORKBENCH_STORAGE_KEY = "webterm:file-workbench:v1";
+const FILE_TAB_TRANSFER_MIME = "application/x-webterm-file-tab+json";
+const FILE_TAB_TRANSFER_CHANNEL = "webterm:file-tab-transfer:v1";
+const FILE_WORKBENCH_WINDOW_PREFIX = "webterm-file-workbench:";
 const otherGroup = (group: EditorGroup): EditorGroup => group === "primary" ? "secondary" : "primary";
 const tabElement = (id: string) => [...document.querySelectorAll<HTMLElement>("[data-editor-tab-id]")]
   .find((element) => element.dataset.editorTabId === id) || null;
 const isEditorGroup = (value: unknown): value is EditorGroup => value === "primary" || value === "secondary";
 const isRefreshMode = (value: unknown): value is "auto" | "manual" | null => value === "auto" || value === "manual" || value === null;
 
-function loadPersistedWorkbench(): PersistedWorkbench | null {
+type ExternalFileTab = Pick<EditorTab, "path" | "name" | "revision" | "refreshMode" | "dirty" | "draft">;
+type ExternalFileTabTransfer = { version: 1; transferId: string; sourceWindowId: string; connectionId: number; tab: ExternalFileTab };
+
+function newOpaqueId() {
+  return typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+    ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function workbenchWindowId() {
+  if (typeof window === "undefined") return "server";
+  // sessionStorage is per top-level browser tab. A window.open child can clone
+  // it, so a window name created by this component is the stable tie-breaker.
+  const named = window.name.startsWith(FILE_WORKBENCH_WINDOW_PREFIX)
+    ? window.name.slice(FILE_WORKBENCH_WINDOW_PREFIX.length) : "";
+  if (named) return named;
+  // A caller may deliberately name a popup. That name identifies the browsing
+  // context, while its sessionStorage may have been cloned from the opener.
+  // Use it rather than the inherited value so source and target remain distinct.
+  if (window.name) return `named-${window.name}`;
+  const stored = window.sessionStorage.getItem("webterm:file-workbench-window-id");
+  const id = stored || newOpaqueId();
+  window.sessionStorage.setItem("webterm:file-workbench-window-id", id);
+  if (!window.name) window.name = FILE_WORKBENCH_WINDOW_PREFIX + id;
+  return id;
+}
+
+const storageKeyFor = (windowId: string) => `${FILE_WORKBENCH_STORAGE_KEY}:${windowId}`;
+
+function parseExternalFileTab(raw: string): ExternalFileTabTransfer | null {
+  try {
+    const value = JSON.parse(raw) as Partial<ExternalFileTabTransfer>;
+    const tab = value.tab;
+    if (value.version !== 1 || typeof value.transferId !== "string" || !value.transferId ||
+      typeof value.sourceWindowId !== "string" || !value.sourceWindowId ||
+      typeof value.connectionId !== "number" || !Number.isInteger(value.connectionId) || !tab ||
+      typeof tab.path !== "string" || !tab.path || typeof tab.name !== "string" || !tab.name ||
+      !isRefreshMode(tab.refreshMode) || typeof tab.dirty !== "boolean") return null;
+    const draft = tab.draft && typeof tab.draft.content === "string"
+      ? { content: tab.draft.content, baseRevision: typeof tab.draft.baseRevision === "string" ? tab.draft.baseRevision : undefined } : undefined;
+    if (tab.dirty && !draft) return null;
+    return { version: 1, transferId: value.transferId, sourceWindowId: value.sourceWindowId, connectionId: value.connectionId,
+      tab: { path: tab.path, name: tab.name, revision: typeof tab.revision === "string" ? tab.revision : undefined, refreshMode: tab.refreshMode, dirty: tab.dirty, draft } };
+  } catch { return null; }
+}
+
+function loadPersistedWorkbench(windowId: string): PersistedWorkbench | null {
   if (typeof window === "undefined") return null;
   try {
-    const saved = JSON.parse(window.localStorage.getItem(FILE_WORKBENCH_STORAGE_KEY) || "null") as Partial<PersistedWorkbench> | null;
+    // The old unscoped key is read once for migration. Per-window saves avoid
+    // one browser window overwriting another after a native cross-window move.
+    const encoded = window.localStorage.getItem(storageKeyFor(windowId)) || window.localStorage.getItem(FILE_WORKBENCH_STORAGE_KEY);
+    const saved = JSON.parse(encoded || "null") as Partial<PersistedWorkbench> | null;
     if (!saved || saved.version !== 1 || typeof saved.connectionId !== "number") return null;
     const tabs = Array.isArray(saved.tabs) ? saved.tabs.flatMap((tab): EditorTab[] => {
       if (!tab || typeof tab.path !== "string" || typeof tab.name !== "string" || !isEditorGroup(tab.group) || !isRefreshMode(tab.refreshMode)) return [];
@@ -62,20 +113,23 @@ function loadPersistedWorkbench(): PersistedWorkbench | null {
   }
 }
 
-function writePersistedWorkbench(saved: PersistedWorkbench) {
+function writePersistedWorkbench(windowId: string, saved: PersistedWorkbench) {
   try {
-    window.localStorage.setItem(FILE_WORKBENCH_STORAGE_KEY, JSON.stringify(saved));
+    window.localStorage.setItem(storageKeyFor(windowId), JSON.stringify(saved));
   } catch {
     // Preserve layout and opened files even if a very large unsaved draft
     // exceeds browser storage quota.
     const withoutDrafts = { ...saved, tabs: saved.tabs.map((tab) => ({ ...tab, draft: undefined, dirty: false })) };
-    try { window.localStorage.setItem(FILE_WORKBENCH_STORAGE_KEY, JSON.stringify(withoutDrafts)); } catch { /* Storage is unavailable. */ }
+    try { window.localStorage.setItem(storageKeyFor(windowId), JSON.stringify(withoutDrafts)); } catch { /* Storage is unavailable. */ }
   }
 }
 
 /** A remote file explorer with movable, split editor groups. */
 export default function DualPaneSftp({ connections }: Props) {
-  const [storedWorkbench] = useState(loadPersistedWorkbench);
+  const [windowId] = useState(workbenchWindowId);
+  const accessibilityId = useId();
+  const tabDomId = (group: EditorGroup, id: string) => `${accessibilityId}-${group}-${encodeURIComponent(id)}`;
+  const [storedWorkbench] = useState(() => loadPersistedWorkbench(windowId));
   const [selectedConnId, setSelectedConnId] = useState<number | null>(storedWorkbench?.connectionId || connections[0]?.id || null);
   const [socket, setSocket] = useState<WebSocket | null>(null);
   const [tabs, setTabs] = useState<EditorTab[]>(storedWorkbench?.tabs || []);
@@ -86,7 +140,9 @@ export default function DualPaneSftp({ connections }: Props) {
   const [dropTarget, setDropTarget] = useState<string | null>(null);
   const [dropGroup, setDropGroup] = useState<EditorGroup | null>(null);
   const [refreshNonce, setRefreshNonce] = useState(0);
+  const [transferNotice, setTransferNotice] = useState("");
   const persistedRef = useRef<PersistedWorkbench | null>(storedWorkbench);
+  const transferChannelRef = useRef<BroadcastChannel | null>(null);
 
   const connId = connections.some((connection) => connection.id === selectedConnId)
     ? selectedConnId : connections[0]?.id || null;
@@ -98,12 +154,12 @@ export default function DualPaneSftp({ connections }: Props) {
     if (!connId) return;
     const saved: PersistedWorkbench = { version: 1, connectionId: connId, tabs, active, focusedGroup, split };
     persistedRef.current = saved;
-    writePersistedWorkbench(saved);
-  }, [active, connId, focusedGroup, split, tabs]);
+    writePersistedWorkbench(windowId, saved);
+  }, [active, connId, focusedGroup, split, tabs, windowId]);
 
   useEffect(() => {
     const persistBeforeUnload = () => {
-      if (persistedRef.current) writePersistedWorkbench(persistedRef.current);
+      if (persistedRef.current) writePersistedWorkbench(windowId, persistedRef.current);
     };
     window.addEventListener("pagehide", persistBeforeUnload);
     window.addEventListener("beforeunload", persistBeforeUnload);
@@ -111,7 +167,27 @@ export default function DualPaneSftp({ connections }: Props) {
       window.removeEventListener("pagehide", persistBeforeUnload);
       window.removeEventListener("beforeunload", persistBeforeUnload);
     };
-  }, []);
+  }, [windowId]);
+
+  useEffect(() => {
+    if (typeof BroadcastChannel === "undefined") return;
+    const channel = new BroadcastChannel(FILE_TAB_TRANSFER_CHANNEL);
+    transferChannelRef.current = channel;
+    channel.onmessage = (event: MessageEvent<unknown>) => {
+      const message = event.data as { type?: string; sourceWindowId?: string; transferId?: string } | null;
+      if (!message || message.type !== "accepted" || message.sourceWindowId !== windowId || typeof message.transferId !== "string") return;
+      setTabs((current) => {
+        const removed = current.filter((tab) => tab.id !== message.transferId);
+        if (removed.length === current.length) return current;
+        setActive((selected) => ({
+          primary: selected.primary === message.transferId ? removed.filter((tab) => tab.group === "primary").at(-1)?.id || null : selected.primary,
+          secondary: selected.secondary === message.transferId ? removed.filter((tab) => tab.group === "secondary").at(-1)?.id || null : selected.secondary,
+        }));
+        return removed;
+      });
+    };
+    return () => { channel.close(); transferChannelRef.current = null; };
+  }, [windowId]);
 
   const tabsFor = useCallback((group: EditorGroup, source = tabs) => source.filter((tab) => tab.group === group), [tabs]);
   const replaceGroup = (source: EditorTab[], group: EditorGroup, nextGroup: EditorTab[]) => {
@@ -168,6 +244,39 @@ export default function DualPaneSftp({ connections }: Props) {
     setFocusedGroup(destination);
   }, []);
 
+  const receiveExternalTab = useCallback((transfer: ExternalFileTabTransfer, destination: EditorGroup, beforeId?: string) => {
+    if (transfer.connectionId !== connId) {
+      setTransferNotice(t("file_tab_transfer_connection_mismatch"));
+      return;
+    }
+    const id = tabIdFor(transfer.tab.path);
+    const alreadyOpen = tabs.find((tab) => tab.id === id);
+    if (alreadyOpen?.dirty || (alreadyOpen && transfer.tab.dirty)) {
+      setTransferNotice(t("file_tab_transfer_dirty_conflict"));
+      return;
+    }
+    setTabs((current) => {
+      const existing = current.find((tab) => tab.id === id);
+      // Never discard either window's unsaved draft merely because two windows
+      // happen to have the same remote path open.
+      if (existing?.dirty || (existing && transfer.tab.dirty)) return current;
+      const moving: EditorTab = existing || { ...transfer.tab, id, group: destination };
+      const without = current.filter((tab) => tab.id !== id);
+      const destinationTabs = without.filter((tab) => tab.group === destination);
+      const found = beforeId ? destinationTabs.findIndex((tab) => tab.id === beforeId) : -1;
+      const nextDestination = [...destinationTabs];
+      nextDestination.splice(found < 0 ? nextDestination.length : found, 0, { ...moving, group: destination });
+      return replaceGroup(without, destination, nextDestination);
+    });
+    setTransferNotice("");
+    setActive((selected) => ({
+      ...selected,
+      [destination]: id,
+    }));
+    setFocusedGroup(destination);
+    transferChannelRef.current?.postMessage({ type: "accepted", sourceWindowId: transfer.sourceWindowId, transferId: transfer.transferId });
+  }, [connId, tabs]);
+
   const createSplit = () => {
     setSplit(true);
     setFocusedGroup("secondary");
@@ -203,7 +312,9 @@ export default function DualPaneSftp({ connections }: Props) {
     const moveDroppedTab = (event: React.DragEvent<HTMLElement>, beforeId?: string) => {
       event.preventDefault();
       event.stopPropagation();
-      moveTab(event.dataTransfer.getData("text/plain") || draggedTabId || "", group, beforeId);
+      const external = parseExternalFileTab(event.dataTransfer.getData(FILE_TAB_TRANSFER_MIME));
+      if (external && external.sourceWindowId !== windowId) receiveExternalTab(external, group, beforeId);
+      else moveTab(event.dataTransfer.getData("text/plain") || draggedTabId || "", group, beforeId);
       setDraggedTabId(null);
       setDropTarget(null);
       setDropGroup(null);
@@ -214,18 +325,29 @@ export default function DualPaneSftp({ connections }: Props) {
         onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node)) setDropGroup(null); }}
         onDrop={(event) => moveDroppedTab(event)}>
         <div className="file-editor-tab-strip">
+          {/* Own only tabs, not their sibling close buttons. Keeping close
+              controls outside the tablist's accessibility tree preserves both
+              valid tab semantics and independently accessible close actions. */}
+          {groupTabs.length > 0 && <div role="tablist" aria-label={t("file_open_files")} aria-owns={groupTabs.map((tab) => tabDomId(group, tab.id)).join(" ")} />}
           <button className="file-editor-scroll" aria-label={t("file_scroll_tabs_left")} title={t("file_scroll_tabs_left")} onClick={() => scrollTabs(group, -1)}><Icon name="chevron-left" size={15} /></button>
-          <div className="file-editor-tabs" role="tablist" aria-label={t("file_open_files")}
+          <div className="file-editor-tabs"
             onWheel={(event) => { if (Math.abs(event.deltaY) > Math.abs(event.deltaX)) { event.preventDefault(); event.currentTarget.scrollLeft += event.deltaY; } }}
             onDrop={(event) => moveDroppedTab(event)}>
             {groupTabs.map((tab) => (
               <div key={tab.id} data-editor-tab-id={tab.id} draggable className={`file-editor-tab${tab.id === activeId ? " is-active" : ""}${draggedTabId === tab.id ? " is-dragging" : ""}${dropTarget === tab.id ? " is-drop-target" : ""}`}
-                onDragStart={(event) => { event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", tab.id); setDraggedTabId(tab.id); }}
+                onDragStart={(event) => {
+                  event.dataTransfer.effectAllowed = "move";
+                  event.dataTransfer.setData("text/plain", tab.id);
+                  event.dataTransfer.setData(FILE_TAB_TRANSFER_MIME, JSON.stringify({ version: 1, transferId: tab.id, sourceWindowId: windowId, connectionId: connId, tab: {
+                    path: tab.path, name: tab.name, revision: tab.revision, refreshMode: tab.refreshMode, dirty: tab.dirty, draft: tab.draft,
+                  } satisfies ExternalFileTab }));
+                  setDraggedTabId(tab.id);
+                }}
                 onDragEnd={() => { setDraggedTabId(null); setDropTarget(null); setDropGroup(null); }}
                 onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "move"; setDropTarget(tab.id); }}
                 onDragLeave={() => setDropTarget(null)}
                 onDrop={(event) => moveDroppedTab(event, tab.id)}>
-                <button role="tab" tabIndex={tab.id === activeId ? 0 : -1} aria-selected={tab.id === activeId} onKeyDown={(event) => onTabKeys(event, group, tab.id)} onClick={() => activate(group, tab.id)}>
+                <button id={tabDomId(group, tab.id)} role="tab" aria-controls={`${tabDomId(group, tab.id)}-panel`} tabIndex={tab.id === activeId ? 0 : -1} aria-selected={tab.id === activeId} onKeyDown={(event) => onTabKeys(event, group, tab.id)} onClick={() => activate(group, tab.id)}>
                   <Icon name="file" size={14} /><span title={tab.path}>{tab.name}</span>{tab.dirty && <i aria-label={t("file_unsaved")} />}
                 </button>
                 <button className="file-editor-tab-close" aria-label={`${t("tab_close")} ${tab.name}`} onClick={() => closeTab(tab.id)}><Icon name="x" size={13} /></button>
@@ -241,7 +363,7 @@ export default function DualPaneSftp({ connections }: Props) {
         <div className="file-editor-stack">
           {!groupTabs.length && <div className="file-editor-empty"><Icon name="file" size={30} /><strong>{t("file_editor_empty_title")}</strong><span>{split ? t("file_editor_split_hint") : t("file_editor_empty_hint")}</span></div>}
           {groupTabs.map((tab) => (
-            <div key={tab.id} className="file-editor-page" hidden={tab.id !== activeId}>
+            <div key={tab.id} id={`${tabDomId(group, tab.id)}-panel`} role="tabpanel" aria-labelledby={tabDomId(group, tab.id)} className="file-editor-page" hidden={tab.id !== activeId}>
               <Suspense fallback={<div className="sftp-state">Loading…</div>}>
                 <FileEditor embedded filePath={tab.path} fileName={tab.name} revision={tab.revision} ws={socket} refreshMode={tab.refreshMode}
                   onRefreshModeChange={(refreshMode) => setTabs((current) => current.map((item) => item.id === tab.id ? { ...item, refreshMode } : item))}
@@ -262,11 +384,14 @@ export default function DualPaneSftp({ connections }: Props) {
     <div className={`file-workbench${split ? " is-split" : ""}`}>
       <aside className="file-explorer" aria-label={t("file_browser")}>
         <div className="file-explorer-head"><Icon name="monitor" size={15} /><span>{t("file_remote_files")}</span>
-          <CustomSelect value={String(connId || "")} onChange={(value) => setSelectedConnId(Number(value) || null)}>{connections.map((connection) => <option key={connection.id} value={String(connection.id)}>{connection.name}</option>)}</CustomSelect>
+          <CustomSelect label={t("file_remote_files")} value={String(connId || "")} onChange={(value) => setSelectedConnId(Number(value) || null)}>{connections.map((connection) => <option key={connection.id} value={String(connection.id)}>{connection.name}</option>)}</CustomSelect>
         </div>
         {connId ? <SftpPanel key={connId} connId={connId} endpointId={`remote:${connId}`} refreshNonce={refreshNonce} onSocketChange={setSocket} onOpenFile={openFile} /> : <div className="sftp-endpoint-empty">{t("sftp_select_conn")}</div>}
       </aside>
-      <main className="file-editor-workspace" aria-label={selectedConnectionName || t("file_remote_files")}>{renderGroup("primary")}{split && renderGroup("secondary")}</main>
+      <main className="file-editor-workspace" aria-label={selectedConnectionName || t("file_remote_files")}>
+        {transferNotice && <div className="sftp-state" role="status">{transferNotice}</div>}
+        {renderGroup("primary")}{split && renderGroup("secondary")}
+      </main>
     </div>
   );
 }

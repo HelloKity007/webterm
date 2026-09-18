@@ -89,7 +89,10 @@ export default function SftpPanel({
     revision?: string;
     refreshMode: "auto" | "manual" | null;
   } | null>(null);
-  const sessionKey = tabId || String(connId);
+  const sessionKey = `${connId}:${tabId || ''}`;
+  const activeSessionKeyRef = useRef(sessionKey);
+  useEffect(() => { activeSessionKeyRef.current = sessionKey; }, [sessionKey]);
+  const [confirmedDirectory, setConfirmedDirectory] = useState<{ key: string; path: string; socket: WebSocket } | null>(null);
   const cacheRef = useRef<Map<string, { path: string; files: SftpFile[] }>>(
     new Map(),
   );
@@ -104,7 +107,6 @@ export default function SftpPanel({
   const [wsNonce, setWsNonce] = useState(0);
   const reconnectAttemptsRef = useRef(0);
   const pathRef = useRef(path);
-  const prevKeyRef = useRef(sessionKey);
   const filesRef = useRef(files);
   const listingFilesRef = useRef<SftpFile[]>([]);
   const listingHadFilesRef = useRef(false);
@@ -121,20 +123,14 @@ export default function SftpPanel({
     filesRef.current = files;
   }, [files]);
 
-  // Save cache for old session before switching to new one.
-  useEffect(() => {
-    if (prevKeyRef.current !== sessionKey) {
-      if (prevKeyRef.current != null) {
-        cacheRef.current.set(prevKeyRef.current, { path, files });
-      }
-      prevKeyRef.current = sessionKey;
-    }
-  }, [files, path, sessionKey]);
+  // Cache only server-confirmed directories, under connection + tab identity.
+  // Reconnect must not replace the current directory with defaultPath/getwd.
 
   const fetchDir = useCallback((dirPath: string, force = false) => {
     const socket = wsRef.current;
     if (!socket || socket.readyState !== WebSocket.OPEN) return;
     if (!force && dirPath === pathRef.current) return;
+    setConfirmedDirectory(null);
     // Mutations refresh the current directory in the background. Keeping the
     // existing rows mounted preserves the user's virtual-list scroll context.
     if (!force) setLoading(true);
@@ -193,6 +189,7 @@ export default function SftpPanel({
       setWsNonce((value) => value + 1);
     };
     const pauseOffline = () => {
+      setConfirmedDirectory(null);
       clearTimeout(retryTimer);
       retryTimer = undefined;
       wsRef.current?.close();
@@ -209,6 +206,7 @@ export default function SftpPanel({
       wsRef.current = existing;
       setEditorSocket(existing);
       setDisconnected(false);
+      setConfirmedDirectory(null);
       const cached = cacheRef.current.get(sessionKey);
       const cdPaths = useLayoutStore.getState().sftpCdPaths;
       const trackedPath = tabId ? cdPaths[tabId] : undefined;
@@ -217,6 +215,7 @@ export default function SftpPanel({
       setPath(initPath);
       setLoading(!cached);
       startHeartbeat(existing);
+      existing.send(JSON.stringify(cached ? { action: 'list', path: initPath } : { action: 'getwd' }));
       return () => {
         cancelled = true;
         clearInterval(heartbeat);
@@ -237,6 +236,7 @@ export default function SftpPanel({
     }
 
     setDisconnected(false);
+    setConfirmedDirectory(null);
     const cached = cacheRef.current.get(sessionKey);
     const cdPaths = useLayoutStore.getState().sftpCdPaths;
     const trackedPath = tabId ? cdPaths[tabId] : undefined;
@@ -269,12 +269,14 @@ export default function SftpPanel({
       socket.onclose = () => {
         clearInterval(heartbeat);
         if (cancelled) return;
+        setConfirmedDirectory(null);
         setDisconnected(true);
         setLoading(false);
         retry();
       };
       socket.onerror = () => socket.close();
       socket.onmessage = (event) => {
+        if (wsRef.current !== socket) return;
         try {
           const msg = JSON.parse(event.data);
           if (msg.type === "pong" || msg.type === "ping") return;
@@ -283,7 +285,10 @@ export default function SftpPanel({
             setFiles(msg.files || []);
             setPath(msg.path || pathRef.current);
             setLoading(false);
+            cacheRef.current.set(activeSessionKeyRef.current, { path: msg.path || pathRef.current, files: msg.files || [] });
+            setConfirmedDirectory({ key: activeSessionKeyRef.current, path: msg.path || pathRef.current, socket });
           } else if (msg.type === "file_list_start") {
+            setConfirmedDirectory(null);
             if (listingFrameRef.current !== null) {
               cancelAnimationFrame(listingFrameRef.current);
               listingFrameRef.current = null;
@@ -308,6 +313,8 @@ export default function SftpPanel({
             }
             setFiles([...listingFilesRef.current]);
             setLoading(false);
+            cacheRef.current.set(activeSessionKeyRef.current, { path: msg.path || pathRef.current, files: [...listingFilesRef.current] });
+            setConfirmedDirectory({ key: activeSessionKeyRef.current, path: msg.path || pathRef.current, socket });
           } else if (msg.type === "file_stat") {
             setEditFile((current) => {
               if (!current || current.path !== msg.path) return current;
@@ -686,6 +693,7 @@ export default function SftpPanel({
             key={path}
             files={files}
             loading={loading}
+            uploadReady={confirmedDirectory?.key === sessionKey && confirmedDirectory.path === path && confirmedDirectory.socket === editorSocket && editorSocket?.readyState === WebSocket.OPEN}
             onNavigate={handleNavigate}
             onDelete={handleDelete}
             onRename={handleRename}

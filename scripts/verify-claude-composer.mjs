@@ -18,7 +18,13 @@ try {
     page.on('pageerror', e => errors.push(String(e)));
     await page.goto('https://192.168.11.87:9444/', { waitUntil: 'networkidle' });
     await visualReloadPhase(page);
-    const panel = page.locator('.terminal-surface:visible').nth(5);
+    // DOM order follows the responsive grid, not a stable Panel number. In a
+    // multi-row layout the sixth mounted terminal can be an unrelated Bash
+    // pane, which would make this a false Claude/composer result. Resolve the
+    // actual Panel 6 tab and then its owning grid cell.
+    const claudeTab = page.locator('[data-tab-id]').filter({ hasText: /^6:/ }).first();
+    await claudeTab.click();
+    const panel = claudeTab.locator('xpath=ancestor::*[contains(@class,"terminal-grid-cell")]').locator('.terminal-surface:visible');
     await panel.waitFor();
     assert.equal(await page.locator('.app-statusbar').count(), 0);
     assert.equal(await page.locator('.workspace-tabs').count(), 0);
@@ -38,8 +44,12 @@ try {
     await filesToggle.click();
     const files = page.locator('[data-testid="file-workspace"]');
     await files.waitFor();
-    assert.equal(await files.locator('.sftp-endpoint').count(), 2);
-    assert.equal(await files.locator('.sftp-divider[role="separator"]').count(), 1);
+    // Accepted remote-only workbench: one explorer beside the editor groups.
+    // The removed host-local/SFTP dual endpoints are not the current contract.
+    assert.equal(await files.locator('.file-explorer').count(), 1);
+    assert.equal(await files.locator('.file-explorer .sftp-shell').count(), 1);
+    assert.equal(await files.locator('.file-editor-workspace').count(), 1);
+    assert.equal(await files.locator('.sftp-divider[role="separator"]').count(), 0);
     await page.screenshot({ path: `${output}/${width}-files-open.png` });
     await page.locator('.activity-ssh').click();
     await page.locator('.terminal-grid').waitFor();

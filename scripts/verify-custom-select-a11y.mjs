@@ -1,0 +1,33 @@
+import assert from 'node:assert/strict';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
+import { execFileSync } from 'node:child_process';
+import { createServer } from '../ui/node_modules/vite/dist/node/index.js';
+import { chromium } from '../ui/node_modules/playwright/index.mjs';
+const baseline = process.env.WEBTERM_QA_BASELINE === '1';
+const output = `runtime/incident-20260917-production-tmux/custom-select-a11y-${baseline ? 'baseline' : 'fixed'}`;
+await mkdir(output, { recursive: true, mode: 0o700 });
+const componentPath = resolve('ui/src/components/common/CustomSelect.tsx');
+const entry = `import React,{useState} from 'react';import{createRoot}from'react-dom/client';import CustomSelect from '/src/components/common/CustomSelect.tsx';function App(){const[v,set]=useState('a');return React.createElement('main',null,React.createElement('h1',null,'Select accessibility QA'),React.createElement(CustomSelect,{label:'Connection',value:v,onChange:set,style:{width:240}},React.createElement('option',{value:'a'},'Alpha'),React.createElement('option',{value:'b'},'Beta')),React.createElement('button',null,'Next'));}createRoot(document.getElementById('root')).render(React.createElement(App));`;
+const vite = await createServer({ root: resolve('ui'), configFile: false, server: { host: '127.0.0.1', port: 0 }, plugins: [{ name: 'select-fixture', enforce: 'pre', resolveId(id) { if(id==='/qa.js')return '\0qa.js'; }, load(id) { if(id==='\0qa.js')return entry;if(baseline&&id===componentPath)return execFileSync('git',['show','HEAD:ui/src/components/common/CustomSelect.tsx'],{encoding:'utf8'}); }, configureServer(server) { server.middlewares.use((req,res,next)=>{if(req.url!=='/')return next();res.setHeader('Content-Type','text/html');res.end('<html lang="en"><head><title>Select QA</title></head><body><div id="root"></div><script type="module" src="/qa.js"></script></body></html>');}); } }] });
+await vite.listen();
+const browser=await chromium.launch();const page=await browser.newPage({recordVideo:{dir:`${output}/video`}});let failure;const steps=[];
+try{
+ await page.goto(`http://127.0.0.1:${vite.httpServer.address().port}`);
+ await page.getByRole('heading').waitFor();
+ await page.addScriptTag({path:resolve('ui/node_modules/axe-core/axe.min.js')});
+ const control=page.locator('[tabindex="0"]').first();await control.focus();
+ const semantics=await control.evaluate(e=>({role:e.getAttribute('role'),expanded:e.getAttribute('aria-expanded'),label:e.getAttribute('aria-label')}));
+ steps.push({semantics});await page.screenshot({path:`${output}/before.png`});
+ assert.equal(semantics.role,'combobox');assert.equal(semantics.label,'Connection');
+ await page.keyboard.press('Enter');await page.getByRole('listbox').waitFor();
+ await page.keyboard.press('ArrowDown');
+ assert.equal(await control.getAttribute('aria-activedescendant'),await page.getByRole('option',{name:'Beta'}).getAttribute('id'));
+ await page.keyboard.press('Space');assert((await control.textContent()).includes('Beta'));assert(await control.evaluate(e=>e===document.activeElement));steps.push({selectBySpace:'PASS'});
+ await page.keyboard.press('ArrowUp');await page.getByRole('listbox').waitFor();await page.keyboard.press('Home');await page.keyboard.press('Enter');assert((await control.textContent()).includes('Alpha'));steps.push({homeEnter:'PASS'});
+ await page.keyboard.press('Space');await page.keyboard.press('End');await page.keyboard.press('Escape');assert((await control.textContent()).includes('Alpha'));assert.equal(await page.getByRole('listbox').count(),0);assert(await control.evaluate(e=>e===document.activeElement));steps.push({escapeNoChange:'PASS'});
+ await page.keyboard.press('Enter');await page.keyboard.press('Tab');assert(await page.getByRole('button',{name:'Next'}).evaluate(e=>e===document.activeElement));assert.equal(await page.getByRole('listbox').count(),0);steps.push({tabExit:'PASS'});
+ await control.click();const audit=await page.evaluate(()=>window.axe.run(document,{runOnly:{type:'rule',values:['aria-required-children','aria-required-parent','aria-input-field-name','aria-valid-attr-value','aria-allowed-attr']}}));await writeFile(`${output}/axe.json`,JSON.stringify(audit,null,2),{mode:0o600});assert.deepEqual(audit.violations,[]);
+ await page.getByRole('option',{name:'Beta'}).click();assert(await control.evaluate(e=>e===document.activeElement));steps.push({pointerRestoresFocus:'PASS'});await page.screenshot({path:`${output}/after.png`});
+}catch(e){failure=String(e);}finally{await writeFile(`${output}/report.json`,JSON.stringify({baseline,status:failure?'FAIL':'PASS',failure,steps,scope:'Local actual CustomSelect in Chromium; semantic rules only, not full contrast audit'},null,2),{mode:0o600});await page.close();await browser.close();await vite.close();}
+if(failure){console.error(failure);process.exitCode=1;}else console.log('PASS real-browser select keyboard and ARIA semantics');

@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
-import { mkdir } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
+import { browserSmokeStatus } from './browser-smoke-result.mjs';
 
 const require = createRequire(import.meta.url);
 const { chromium, firefox, webkit } = require('../ui/node_modules/playwright');
@@ -27,11 +28,14 @@ for (const [name, engine] of Object.entries(engines)) {
     results.push({ browser: name, status: 'PASS', endpoints: await workspace.locator('.sftp-endpoint').count() });
   } catch (error) {
     const message = String(error?.message || error);
-    if (/executable doesn't exist|browserType\.launch/i.test(message)) results.push({ browser: name, status: 'NOT_RUN', reason: 'Playwright browser binary is not installed' });
-    else throw error;
+    if (/executable doesn't exist/i.test(message)) results.push({ browser: name, status: 'NOT_RUN', reason: 'Playwright browser binary is not installed' });
+    else results.push({ browser: name, status: 'FAIL', reason: message.replace(/([?&]ticket=)[^&\s']+/g, '$1[redacted]') });
   } finally {
     await browser?.close();
   }
 }
-assert(results.some((result) => result.status === 'PASS'), 'no browser engine completed the visual smoke test');
-console.log(JSON.stringify({ status: 'PASS', results, output }));
+const status = browserSmokeStatus(results);
+const report = { status, scope: 'File workspace visibility smoke only; not comparative visual acceptance', results, output };
+await writeFile(resolve(output, 'report.json'), JSON.stringify(report, null, 2), { mode: 0o600 });
+console.log(JSON.stringify(report));
+if (status !== 'PASS') process.exitCode = 1;

@@ -42,8 +42,10 @@ func persistentTerminalPanelSessionName(userID, workspaceIndex, panelNumber int6
 	return fmt.Sprintf("wt%02d-%02d-%02d-%x", userID, workspaceIndex, panelNumber, digest[:8]), nil
 }
 
-// persistentTerminalCommand derives a tmux command without inserting any
-// caller-provided text into the remote shell command line.
+// persistentTerminalCommand attaches to an already-created tmux session
+// without inserting any caller-provided text into the remote shell command
+// line. Reconnecting a stale layout must fail visibly rather than create a
+// replacement shell under a familiar tab; explicit creation is separate.
 func persistentTerminalCommand(userID, connectionID int64, terminalID string) (string, error) {
 	sessionName, err := persistentTerminalSessionName(userID, connectionID, terminalID)
 	if err != nil {
@@ -52,7 +54,7 @@ func persistentTerminalCommand(userID, connectionID int64, terminalID string) (s
 	// Keep the shared tmux grid and mouse behavior, but hide tmux's own status
 	// line: WebTerm already provides the tab/panel chrome and the status line
 	// otherwise appears as an unexplained green bar at the bottom of every pane.
-	command := fmt.Sprintf("tmux start-server \\; set-option -g history-limit %d && (tmux has-session -t %s 2>/dev/null || tmux new-session -d -s %s) && tmux set-option -t %s window-size largest && tmux set-option -t %s status off && tmux set-option -t %s set-titles on && tmux set-option -t %s set-titles-string 'webterm-grid:#{window_width}x#{window_height}' && tmux set-hook -t %s 'client-attached[200]' 'set-option -t %s window-size largest; refresh-client -D -t \"#{hook_client}\" 9999' && tmux set-hook -t %s 'client-resized[200]' 'set-option -t %s window-size largest; refresh-client -D -t \"#{hook_client}\" 9999' && tmux set-hook -w -t %s 'window-resized[200]' 'run-shell \"tmux list-clients -t %s | cut -d: -f1 | xargs -r -I{} tmux refresh-client -D -t {} 9999\"' && tmux set-option -t %s mouse on && tmux set-option -t %s @webterm_mouse_passthrough on && tmux bind-key -n -T root WheelUpPane if-shell -F '#{&&:#{@webterm_mouse_passthrough},#{mouse_any_flag}}' 'send-keys -M' 'if-shell -F \"#{pane_in_mode}\" \"send-keys -M\" \"copy-mode -e; send-keys -M\"' && exec tmux attach-session -t %s", terminalHistoryLines, sessionName, sessionName, sessionName, sessionName, sessionName, sessionName, sessionName, sessionName, sessionName, sessionName, sessionName, sessionName, sessionName, sessionName, sessionName)
+	command := fmt.Sprintf("tmux -N has-session -t %s 2>/dev/null && tmux -N set-option -g history-limit %d && tmux -N set-option -t %s window-size largest && tmux -N set-option -t %s status off && tmux -N set-option -t %s set-titles on && tmux -N set-option -t %s set-titles-string 'webterm-grid:#{window_width}x#{window_height}' && tmux -N set-hook -t %s 'client-attached[200]' 'set-option -t %s window-size largest; refresh-client -D -t \"#{hook_client}\" 9999' && tmux -N set-hook -t %s 'client-resized[200]' 'set-option -t %s window-size largest; refresh-client -D -t \"#{hook_client}\" 9999' && tmux -N set-hook -w -t %s 'window-resized[200]' 'run-shell \"tmux list-clients -t %s | cut -d: -f1 | xargs -r -I{} tmux refresh-client -D -t {} 9999\"' && tmux -N set-option -t %s mouse on && tmux -N set-option -t %s @webterm_mouse_passthrough on && tmux -N bind-key -n -T root WheelUpPane if-shell -F '#{&&:#{@webterm_mouse_passthrough},#{mouse_any_flag}}' 'send-keys -M' 'if-shell -F \"#{pane_in_mode}\" \"send-keys -M\" \"copy-mode -e; send-keys -M\"' && exec tmux -N attach-session -t %s", sessionName, terminalHistoryLines, sessionName, sessionName, sessionName, sessionName, sessionName, sessionName, sessionName, sessionName, sessionName, sessionName, sessionName, sessionName, sessionName)
 	// Control-mode clients do not populate #{hook_client}; guard refresh hooks
 	// so an existing session cannot abort the -C attach during its first redraw.
 	command = strings.ReplaceAll(command, `refresh-client -D -t "#{hook_client}" 9999`, `if-shell -F "#{hook_client}" "refresh-client -D 9999"`)
@@ -71,7 +73,7 @@ func persistentTerminalControlCommand(userID, connectionID int64, terminalID str
 	// format is not populated by -C control clients and can abort attach with a
 	// protocol error. Remove both current and legacy hook variants before the
 	// control attach, then let the browser own its viewport via %refresh-client.
-	return fmt.Sprintf("tmux start-server \\; set-option -g history-limit %d && (tmux has-session -t %s 2>/dev/null || tmux new-session -d -s %s) && tmux set-option -t %s window-size largest && tmux set-option -t %s status off && tmux set-option -t %s set-titles on && tmux set-option -t %s set-titles-string 'webterm-grid:#{window_width}x#{window_height}' && tmux set-option -t %s mouse on && tmux set-option -t %s @webterm_mouse_passthrough on && tmux set-hook -u -t %s client-attached && tmux set-hook -u -t %s client-resized && tmux set-hook -u -t %s window-resized && exec tmux -C attach-session -t %s", terminalHistoryLines, sessionName, sessionName, sessionName, sessionName, sessionName, sessionName, sessionName, sessionName, sessionName, sessionName, sessionName, sessionName), nil
+	return fmt.Sprintf("tmux -N has-session -t %s 2>/dev/null && tmux -N set-option -g history-limit %d && tmux -N set-option -t %s window-size largest && tmux -N set-option -t %s status off && tmux -N set-option -t %s set-titles on && tmux -N set-option -t %s set-titles-string 'webterm-grid:#{window_width}x#{window_height}' && tmux -N set-option -t %s mouse on && tmux -N set-option -t %s @webterm_mouse_passthrough on && tmux -N set-hook -u -t %s client-attached && tmux -N set-hook -u -t %s client-resized && tmux -N set-hook -u -t %s window-resized && exec tmux -N -C attach-session -t %s", sessionName, terminalHistoryLines, sessionName, sessionName, sessionName, sessionName, sessionName, sessionName, sessionName, sessionName, sessionName, sessionName), nil
 }
 
 func persistentTerminalFollowInputCommand(userID, connectionID int64, terminalID string) (string, error) {

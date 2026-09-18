@@ -54,6 +54,25 @@ describe('mobile wrapped terminal reader', () => {
     } finally { terminal.dispose(); }
   });
 
+  it('blurs the active input when returning from terminal input to reading mode', async () => {
+    vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue('Android Mobile');
+    vi.spyOn(window, 'innerWidth', 'get').mockReturnValue(390);
+    const terminal = new Terminal({ cols: 20, rows: 3 });
+    try {
+      terminal.write('reader focus fixture');
+      const { getByText } = render(<MobileTerminalReader terminalRef={{ current: terminal }} revision={1} onHistory={() => {}} />);
+      await waitFor(() => getByText('终端输入'));
+      fireEvent.click(getByText('终端输入'));
+      const input = document.createElement('textarea');
+      document.body.appendChild(input);
+      input.focus();
+      expect(document.activeElement).toBe(input);
+      fireEvent.click(getByText('换行阅读'));
+      expect(document.activeElement).not.toBe(input);
+      input.remove();
+    } finally { terminal.dispose(); }
+  });
+
   it('does not replace the desktop terminal', () => {
     vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue('Desktop Chrome');
     const terminal = new Terminal();

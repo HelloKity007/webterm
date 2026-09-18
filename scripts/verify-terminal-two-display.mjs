@@ -3,6 +3,7 @@ import { createRequire } from 'node:module';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import { visualReloadPhase } from './visual-reload-phase.mjs';
+import { dragTerminalTab } from './terminal-tab-drag.mjs';
 const { chromium } = createRequire(import.meta.url)('../ui/node_modules/playwright');
 const output = process.env.WEBTERM_QA_OUTPUT || 'runtime/terminal-two-display';
 await mkdir(output, { recursive: true });
@@ -61,10 +62,9 @@ try {
         for (let round = 0; round < 5; round++) {
           await second.click(); await page.waitForTimeout(100);
           await first.click(); await first.click();
-          const box = await second.boundingBox();
-          await first.dragTo(second, { targetPosition: { x: box.width - 3, y: box.height / 2 } });
+          await dragTerminalTab(first, second, { after: true });
           await page.waitForTimeout(650);
-          await first.dragTo(second, { targetPosition: { x: 2, y: box.height / 2 } });
+          await dragTerminalTab(first, second);
           await page.waitForTimeout(650);
           assert(await pane.evaluate(e => e.__qaKept?.isConnected), 'Reorder or tab switch replaced the terminal');
         }

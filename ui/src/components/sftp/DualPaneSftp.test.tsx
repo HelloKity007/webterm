@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import DualPaneSftp from "./DualPaneSftp";
 import { setLang } from "../../i18n";
+import axe from "axe-core";
 
 vi.mock("./SftpPanel", () => ({
   default: (props: { endpointId: string; onOpenFile?: (file: { path: string; name: string; revision?: string }) => void }) => (
@@ -18,8 +19,37 @@ vi.mock("../common/FileEditor", () => ({
   default: ({ fileName, initialDraft }: { fileName: string; initialDraft?: { content: string } }) => <div>editor:{fileName}{initialDraft ? `:${initialDraft.content}` : ""}</div>,
 }));
 
+function savedWorkbench() {
+  const key = Object.keys(window.localStorage).find((item) => item.startsWith("webterm:file-workbench:v1:"));
+  return JSON.parse(key ? window.localStorage.getItem(key) || "null" : "null");
+}
+
+function dragTransfer(initial: Record<string, string> = {}) {
+  const values = { ...initial };
+  return {
+    effectAllowed: "", dropEffect: "",
+    setData: (type: string, value: string) => { values[type] = value; },
+    getData: (type: string) => values[type] || "",
+  };
+}
+
 describe("Remote file workbench", () => {
   afterEach(() => { cleanup(); window.localStorage.clear(); vi.restoreAllMocks(); });
+
+  it("exposes valid tab ownership, linked panels, and accessible close buttons", async () => {
+    setLang("en");
+    render(<DualPaneSftp connections={[{ id: 7, name: "server-7" }]} />);
+    fireEvent.click(screen.getByRole("button", { name: "open-log" }));
+    fireEvent.click(screen.getByRole("button", { name: "open-config" }));
+    await screen.findByText("editor:app.conf");
+    const audit = await axe.run(document.body, { runOnly: { type: "rule", values: ["aria-required-children", "aria-required-parent"] } });
+    expect(audit.violations).toEqual([]);
+    const tab = screen.getByRole("tab", { name: /app\.conf/ });
+    const panel = document.getElementById(tab.getAttribute("aria-controls") || "");
+    expect(panel?.getAttribute("role")).toBe("tabpanel");
+    expect(panel?.getAttribute("aria-labelledby")).toBe(tab.id);
+    expect(screen.getByRole("button", { name: /Close.*app\.conf/i }).tabIndex).toBe(0);
+  });
 
   it("selects the first remote endpoint when connections load asynchronously", () => {
     setLang("en");
@@ -69,6 +99,14 @@ describe("Remote file workbench", () => {
     const config = screen.getByRole("tab", { name: /app\.conf/ });
     fireEvent.keyDown(config, { key: "ArrowLeft" });
     expect(screen.getByRole("tab", { name: /app\.log/ }).getAttribute("aria-selected")).toBe("true");
+    const log = screen.getByRole("tab", { name: /app\.log/ });
+    await waitFor(() => expect(document.activeElement).toBe(log));
+    fireEvent.keyDown(log, { key: "End" });
+    await waitFor(() => expect(document.activeElement).toBe(config));
+    expect(config.getAttribute("aria-selected")).toBe("true");
+    fireEvent.keyDown(config, { key: "Home" });
+    await waitFor(() => expect(document.activeElement).toBe(log));
+    expect(log.getAttribute("aria-selected")).toBe("true");
   });
 
   it("reorders tabs by drag and maps vertical wheel input to the tab strip", async () => {
@@ -81,13 +119,7 @@ describe("Remote file workbench", () => {
     fireEvent.wheel(strip, { deltaY: 120, deltaX: 0 });
     expect(strip.scrollLeft).toBe(120);
 
-    const transfer = {
-      effectAllowed: "",
-      dropEffect: "",
-      value: "",
-      setData: (_type: string, value: string) => { transfer.value = value; },
-      getData: () => transfer.value,
-    };
+    const transfer = dragTransfer();
     const log = screen.getByRole("tab", { name: /app\.log/ }).parentElement!;
     const config = screen.getByRole("tab", { name: /app\.conf/ }).parentElement!;
     fireEvent.dragStart(config, { dataTransfer: transfer });
@@ -101,13 +133,7 @@ describe("Remote file workbench", () => {
     render(<DualPaneSftp connections={[{ id: 7, name: "server-7" }]} />);
     fireEvent.click(screen.getByRole("button", { name: "open-log" }));
     fireEvent.click(screen.getByRole("button", { name: "Split editor" }));
-    const transfer = {
-      effectAllowed: "",
-      dropEffect: "",
-      value: "",
-      setData: (_type: string, value: string) => { transfer.value = value; },
-      getData: () => transfer.value,
-    };
+    const transfer = dragTransfer();
     const tab = screen.getByRole("tab", { name: /app\.log/ }).parentElement!;
     const secondary = document.querySelector<HTMLElement>('[data-editor-group="secondary"]')!;
     fireEvent.dragStart(tab, { dataTransfer: transfer });
@@ -115,6 +141,37 @@ describe("Remote file workbench", () => {
     fireEvent.drop(secondary, { dataTransfer: transfer });
     expect(secondary.textContent).toContain("app.log");
     expect(document.querySelector('[data-editor-group="primary"]')?.textContent).not.toContain("app.log");
+  });
+
+  it("accepts a source-only native file tab from another window and preserves its dirty draft", async () => {
+    setLang("en");
+    render(<DualPaneSftp connections={[{ id: 7, name: "server-7" }]} />);
+    fireEvent.click(screen.getByRole("button", { name: "Split editor" }));
+    const transfer = dragTransfer({
+      "application/x-webterm-file-tab+json": JSON.stringify({
+        version: 1, transferId: "file:/source-only.conf", sourceWindowId: "other-window", connectionId: 7,
+        tab: { path: "/source-only.conf", name: "source-only.conf", revision: "r1", refreshMode: "manual", dirty: true, draft: { content: "unsaved source draft", baseRevision: "r1" } },
+      }),
+    });
+    const secondary = document.querySelector<HTMLElement>('[data-editor-group="secondary"]')!;
+    fireEvent.dragOver(secondary, { dataTransfer: transfer });
+    fireEvent.drop(secondary, { dataTransfer: transfer });
+    expect(await screen.findByRole("tab", { name: /source-only\.conf/ })).toBeTruthy();
+    expect(secondary.textContent).toContain("editor:source-only.conf:unsaved source draft");
+  });
+
+  it("rejects an external file tab for a different remote connection without moving it", () => {
+    setLang("en");
+    render(<DualPaneSftp connections={[{ id: 7, name: "server-7" }]} />);
+    const transfer = dragTransfer({
+      "application/x-webterm-file-tab+json": JSON.stringify({
+        version: 1, transferId: "file:/wrong-connection", sourceWindowId: "other-window", connectionId: 8,
+        tab: { path: "/wrong-connection", name: "wrong-connection", refreshMode: "manual", dirty: false },
+      }),
+    });
+    fireEvent.drop(document.querySelector<HTMLElement>('[data-editor-group="primary"]')!, { dataTransfer: transfer });
+    expect(screen.queryByRole("tab", { name: /wrong-connection/ })).toBeNull();
+    expect(screen.getByRole("status").textContent).toMatch(/different remote connection/);
   });
 
   it("restores open files, their groups and active state after a reload", async () => {
@@ -143,7 +200,7 @@ describe("Remote file workbench", () => {
     render(<DualPaneSftp connections={[{ id: 7, name: "server-7" }]} />);
     fireEvent.click(screen.getByRole("button", { name: "open-log" }));
     fireEvent(window, new Event("pagehide"));
-    const saved = JSON.parse(window.localStorage.getItem("webterm:file-workbench:v1") || "null");
+    const saved = savedWorkbench();
     expect(saved.tabs.map((tab: { name: string }) => tab.name)).toEqual(["app.log"]);
     expect(saved.active.primary).toBe("file:/var/log/app.log");
   });
@@ -153,7 +210,7 @@ describe("Remote file workbench", () => {
     const { rerender } = render(<DualPaneSftp connections={[]} />);
     rerender(<DualPaneSftp connections={[{ id: 7, name: "server-7" }]} />);
     fireEvent.click(screen.getByRole("button", { name: "open-log" }));
-    const saved = JSON.parse(window.localStorage.getItem("webterm:file-workbench:v1") || "null");
+    const saved = savedWorkbench();
     expect(saved.connectionId).toBe(7);
     expect(saved.tabs.map((tab: { name: string }) => tab.name)).toEqual(["app.log"]);
   });

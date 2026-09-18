@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { localTerminalFont, localViewportFont, localViewportScroll, localViewportRevealRow } from './localViewport';
 describe('peer-independent local viewport', () => {
+  it('chooses a font that fits fractional cells as well as quantized GPU cells', () => {
+    const measure = (size: number) => ({ width: size * 0.6, height: size * 1.2 });
+    for (const width of [843, 929, 1420]) {
+      const gpu = localViewportFont(16, width, 1, measure);
+      expect(104 * measure(gpu).width).toBeLessThanOrEqual(width - 1.5);
+      expect(104 * Math.floor(measure(gpu).width)).toBeLessThanOrEqual(width - 1.5);
+    }
+  });
   it('reveals early shell input instead of scrolling to unused bottom rows', () => {
     expect(localViewportRevealRow(173, 511, 684, 19, 0)).toBe(0);
     expect(localViewportRevealRow(0, 511, 684, 19, 3)).toBe(0);
@@ -20,10 +28,10 @@ describe('peer-independent local viewport', () => {
   });
   it('fits a local column budget without consulting peer dimensions', () => {
     const measure = (size: number) => ({ width: size * 0.6, height: size * 1.2 });
-    const small = localViewportFont(16, 924, 1, measure, true);
+    const small = localViewportFont(16, 924, 1, measure);
     expect(small).toBeLessThanOrEqual(16);
     expect(104 * Math.floor(measure(small).width)).toBeLessThanOrEqual(922);
-    expect(localViewportFont(16, 924, 1, measure, true)).toBe(small);
-    expect(localViewportFont(16, 1420, 1, measure, true)).toBeGreaterThan(16);
+    expect(localViewportFont(16, 924, 1, measure)).toBe(small);
+    expect(localViewportFont(16, 1420, 1, measure)).toBeGreaterThan(16);
   });
 });

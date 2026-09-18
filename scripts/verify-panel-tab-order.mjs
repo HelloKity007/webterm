@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { mkdir, writeFile } from 'node:fs/promises';
+import { dragTerminalTab } from './terminal-tab-drag.mjs';
 const require = createRequire(import.meta.url);
 const { chromium } = require('../ui/node_modules/playwright');
 const output = 'runtime/panel-tab-order-qa';
@@ -22,8 +23,7 @@ try {
   const source = group.locator(`[data-tab-id="${before[0]}"]`);
   const target = group.locator(`[data-tab-id="${before[1]}"]`);
   await group.scrollIntoViewIfNeeded();
-  const box = await target.boundingBox();
-  await source.dragTo(target, { targetPosition: { x: box.width - 4, y: box.height / 2 } });
+  await dragTerminalTab(source, target, { after: true });
   await page.waitForTimeout(500);
   const expected = [before[1], before[0], ...before.slice(2)];
   try {
@@ -32,7 +32,7 @@ try {
     await group.screenshot({ path: `${output}/reordered.png` });
   } finally {
     // Restore the user's ordering without closing or typing into any session.
-    await source.dragTo(target, { targetPosition: { x: 2, y: box.height / 2 } });
+    await dragTerminalTab(source, target);
     await page.waitForTimeout(500);
   }
   assert.deepEqual(await ids(), before);

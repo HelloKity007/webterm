@@ -13,6 +13,7 @@ previous_version="$(<"$RELEASE_PREVIOUS_VERSION")"
 next_binary="$RELEASE_PRODUCTION_DIR/webterm.rollback"
 cp "$RELEASE_PREVIOUS_BINARY" "$next_binary"
 chmod 700 "$next_binary"
+lan_preflight_production_binary "$next_binary"
 lan_stop_pid webterm
 mv "$next_binary" "$LAN_BINARY"
 lan_start_production

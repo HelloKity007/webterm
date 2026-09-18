@@ -1,3 +1,7 @@
+declare module 'zmodem.js/src/zsession.js' {
+  const Protocol: unknown;
+  export default Protocol;
+}
 declare module 'zmodem.js/src/zmodem_browser.js' {
   const Zmodem: {
     Sentry: new (options: unknown) => unknown;

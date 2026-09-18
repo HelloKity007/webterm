@@ -9,9 +9,13 @@ import (
 var ErrMaxSessions = errors.New("ssh session limit reached")
 var ErrTransportDead = errors.New("ssh transport keepalive failed")
 
-// MaxChannelsPerTransport matches OpenSSH's default MaxSessions. More active
-// terminal panes are sharded across transports instead of overfilling one.
-const MaxChannelsPerTransport = 10
+// MaxChannelsPerTransport deliberately stays below OpenSSH's usual
+// MaxSessions=10. A terminal transport can briefly need an additional channel
+// while a control attachment is being detached/re-established; filling all ten
+// slots makes a hard browser reload race that short-lived channel and yields
+// "ssh: rejected: connect failed (open failed)".  Shard one step earlier and
+// retain two channels of server-side headroom for those lifecycle operations.
+const MaxChannelsPerTransport = 8
 
 const defaultTransportDialLimit = 8
 

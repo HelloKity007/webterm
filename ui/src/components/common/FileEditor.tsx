@@ -64,6 +64,26 @@ export default function FileEditor({ filePath, fileName, ws, revision, refreshMo
   const dirtyChangeRef = useRef(onDirtyChange);
   const draftChangeRef = useRef(onDraftChange);
   const initialDraftRef = useRef(initialDraft);
+  const readNonceRef = useRef(reloadNonce);
+  const manualCleanupRef = useRef<(() => void) | null>(null);
+  const saveCleanupRef = useRef<(() => void) | null>(null);
+  const savePendingRef = useRef(false);
+  useEffect(() => () => {
+    manualCleanupRef.current?.(); manualCleanupRef.current = null;
+    if (savePendingRef.current) {
+      setSaving(false);
+      setError('连接已更换，保存结果未确认；请核对服务器内容后重试。');
+    }
+    saveCleanupRef.current?.(); saveCleanupRef.current = null;
+  }, [ws, filePath]);
+  const sendOpen = useCallback((message: object): boolean => {
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      setError('文件连接尚未就绪，操作未发送，请连接后重试。');
+      return false;
+    }
+    try { ws.send(JSON.stringify(message)); return true; }
+    catch { setError('文件连接已中断，请重试；保存结果需要重新确认。'); return false; }
+  }, [ws]);
 
   useEffect(() => { dirtyChangeRef.current = onDirtyChange; }, [onDirtyChange]);
   useEffect(() => { draftChangeRef.current = onDraftChange; }, [onDraftChange]);
@@ -71,7 +91,14 @@ export default function FileEditor({ filePath, fileName, ws, revision, refreshMo
   // Read file from remote
   useEffect(() => {
     if (!ws) return;
-    ws.send(JSON.stringify({ action: 'read', path: filePath }));
+    const explicitReload = readNonceRef.current !== reloadNonce;
+    readNonceRef.current = reloadNonce;
+    let requested = false;
+    const read = () => {
+      if (requested || ws.readyState !== WebSocket.OPEN) return;
+      requested = true;
+      sendOpen({ action: 'read', path: filePath });
+    };
 
     const handler = (e: MessageEvent) => {
       const msg = JSON.parse(e.data) as RemoteFileMessage;
@@ -80,12 +107,18 @@ export default function FileEditor({ filePath, fileName, ws, revision, refreshMo
         // A restored draft is never written automatically. It remains a
         // dirty buffer against the newly-read server version, so the existing
         // conflict and refresh safeguards still apply after a browser reload.
-        const draft = reloadNonce === 0 ? initialDraftRef.current : undefined;
+        // Read the current buffer at response time: edits made while the
+        // replacement socket was connecting must not be overwritten.
+        const currentText = viewRef.current?.state.doc.toString();
+        const draft = !explicitReload && currentText !== undefined && currentText !== origContentRef.current
+          ? { content: currentText, baseRevision: serverRevisionRef.current }
+          : !explicitReload ? initialDraftRef.current : undefined;
         const restoredDraft = typeof draft?.content === 'string' ? draft.content : serverContent;
         const restoredDirty = restoredDraft !== serverContent;
+        initialDraftRef.current = restoredDirty ? draft : undefined;
         setContent(restoredDraft);
         origContentRef.current = serverContent;
-        serverRevisionRef.current = msg.revision || serverRevisionRef.current;
+        serverRevisionRef.current = restoredDirty && draft ? draft.baseRevision : msg.revision || serverRevisionRef.current;
         lastRevisionRef.current = msg.revision || lastRevisionRef.current;
         dirtyChangeRef.current?.(restoredDirty);
         if (!restoredDirty) draftChangeRef.current?.(null);
@@ -99,9 +132,11 @@ export default function FileEditor({ filePath, fileName, ws, revision, refreshMo
       }
     };
     ws.addEventListener('message', handler);
+    ws.addEventListener('open', read);
+    read();
 
-    return () => ws.removeEventListener('message', handler);
-  }, [filePath, reloadNonce, ws]);
+    return () => { ws.removeEventListener('message', handler); ws.removeEventListener('open', read); };
+  }, [filePath, reloadNonce, sendOpen, ws]);
 
   useEffect(() => {
     const currentRevision = observedRevision || revision;
@@ -121,7 +156,7 @@ export default function FileEditor({ filePath, fileName, ws, revision, refreshMo
   // metadata; the normal change path above decides whether content may reload.
   useEffect(() => {
     if (!ws || refreshMode !== 'auto') return;
-    const stat = () => ws.send(JSON.stringify({ action: 'stat', path: filePath }));
+    const stat = () => { if (ws.readyState === WebSocket.OPEN) sendOpen({ action: 'stat', path: filePath }); };
     const handler = (event: MessageEvent) => {
       const message = JSON.parse(event.data) as RemoteFileMessage;
       if (message.type === 'file_stat' && message.path === filePath) {
@@ -129,13 +164,15 @@ export default function FileEditor({ filePath, fileName, ws, revision, refreshMo
       }
     };
     ws.addEventListener('message', handler);
+    ws.addEventListener('open', stat);
     stat();
     const interval = window.setInterval(stat, 5000);
     return () => {
       window.clearInterval(interval);
       ws.removeEventListener('message', handler);
+      ws.removeEventListener('open', stat);
     };
-  }, [filePath, refreshMode, ws]);
+  }, [filePath, refreshMode, sendOpen, ws]);
 
   const reloadExternalChange = useCallback(() => {
     setExternalChange(false);
@@ -143,9 +180,10 @@ export default function FileEditor({ filePath, fileName, ws, revision, refreshMo
     setReloadNonce((value) => value + 1);
   }, []);
   const requestManualReload = useCallback(() => {
-    if (!ws) return;
+    if (!ws || ws.readyState !== WebSocket.OPEN) { sendOpen({ action: 'stat', path: filePath }); return; }
     // A manual check is still non-destructive: fetch metadata first, then let
     // the operator decide whether to replace the open buffer.
+    manualCleanupRef.current?.();
     const handler = (event: MessageEvent) => {
       const message = JSON.parse(event.data) as RemoteFileMessage;
       if (message.type !== 'file_stat' || message.path !== filePath) return;
@@ -156,8 +194,9 @@ export default function FileEditor({ filePath, fileName, ws, revision, refreshMo
       ws.removeEventListener('message', handler);
     };
     ws.addEventListener('message', handler);
-    ws.send(JSON.stringify({ action: 'stat', path: filePath }));
-  }, [filePath, ws]);
+    manualCleanupRef.current = () => ws.removeEventListener('message', handler);
+    if (!sendOpen({ action: 'stat', path: filePath })) ws.removeEventListener('message', handler);
+  }, [filePath, sendOpen, ws]);
 
   // Create CodeMirror editor
   useEffect(() => {
@@ -167,6 +206,7 @@ export default function FileEditor({ filePath, fileName, ws, revision, refreshMo
 
     const extensions: Extension[] = [
       basicSetup,
+      EditorView.contentAttributes.of({ 'aria-label': fileName, tabindex: '0' }),
       keymap.of([
         ...defaultKeymap,
         { key: 'Ctrl-s', run: () => { saveHandlerRef.current(); return true; } },
@@ -205,6 +245,11 @@ export default function FileEditor({ filePath, fileName, ws, revision, refreshMo
       extensions,
       parent: editorRef.current,
     });
+    // The scroll viewport also needs a keyboard entry point when long lines or
+    // documents overflow; CodeMirror defaults this element to tabindex=-1.
+    view.scrollDOM.tabIndex = 0;
+    view.scrollDOM.setAttribute('role', 'region');
+    view.scrollDOM.setAttribute('aria-label', fileName);
 
     viewRef.current = view;
 
@@ -212,10 +257,18 @@ export default function FileEditor({ filePath, fileName, ws, revision, refreshMo
   }, [content, fileName, loading]);
 
   const handleSave = useCallback((force = false) => {
-    if (!ws || !viewRef.current) return;
+    if (!ws) { setError('文件连接不可用，保存未发送，请连接后重试。'); return; }
+    if (!viewRef.current) return;
+    if (!force && !serverRevisionRef.current) {
+      setError('草稿缺少原始版本，无法安全确认服务器是否已修改；保存未发送。');
+      setSaveConflict(true);
+      return;
+    }
+    saveCleanupRef.current?.();
     const text = viewRef.current.state.doc.toString();
     const bakPath = filePath + '.bak';
     setSaving(true);
+    savePendingRef.current = true;
     setError('');
     setSaveConflict(false);
 
@@ -230,34 +283,49 @@ export default function FileEditor({ filePath, fileName, ws, revision, refreshMo
       if (!embedded) onClose();
     };
 
+    const disconnected = () => {
+      setSaving(false);
+      setError('文件连接已中断，保存结果未确认；请核对服务器内容后重试。');
+      saveCleanupRef.current?.();
+    };
     const handler = (e: MessageEvent) => {
       const msg = JSON.parse(e.data) as RemoteFileMessage;
       if (msg.type === 'write_done' && msg.path === filePath) {
         if (backup) {
           // The guarded write must finish first: creating a .bak cannot mask
           // a concurrent change or leave the editor waiting for a stale reply.
-          ws.send(JSON.stringify({ action: 'write', path: bakPath, content: origContentRef.current, force: true }));
+          if (!sendOpen({ action: 'write', path: bakPath, content: origContentRef.current, force: true })) {
+            setSaving(false); saveCleanupRef.current?.();
+          }
         } else {
           finishSave(msg);
-          ws.removeEventListener('message', handler);
+          saveCleanupRef.current?.();
         }
       } else if (msg.type === 'write_conflict' && msg.path === filePath) {
         setSaving(false);
         setSaveConflict(true);
-        ws.removeEventListener('message', handler);
+        saveCleanupRef.current?.();
       } else if (msg.type === 'error') {
         setError(msg.error || 'Unable to save file');
         setSaving(false);
-        ws.removeEventListener('message', handler);
+        saveCleanupRef.current?.();
       } else if (backup && msg.type === 'write_done' && msg.path === bakPath) {
         finishSave(msg);
-        ws.removeEventListener('message', handler);
+        saveCleanupRef.current?.();
       }
     };
     ws.addEventListener('message', handler);
+    ws.addEventListener('close', disconnected);
+    saveCleanupRef.current = () => {
+      savePendingRef.current = false;
+      ws.removeEventListener('message', handler);
+      ws.removeEventListener('close', disconnected);
+    };
 
-    ws.send(JSON.stringify({ action: 'write', path: filePath, content: text, expected_revision: serverRevisionRef.current, force }));
-  }, [backup, embedded, filePath, onClose, onSaved, ws]);
+    if (!sendOpen({ action: 'write', path: filePath, content: text, expected_revision: serverRevisionRef.current, force })) {
+      setSaving(false); saveCleanupRef.current?.();
+    }
+  }, [backup, embedded, filePath, onClose, onSaved, sendOpen, ws]);
 
   useEffect(() => {
     saveHandlerRef.current = handleSave;

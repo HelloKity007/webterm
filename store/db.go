@@ -102,6 +102,28 @@ func (s *Store) migrate() error {
 		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 		FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
 	);
+
+	-- Keep tombstones even if a user or connection is deleted. Removing either
+	-- must never erase the fact that an immutable terminal ID was already used.
+	CREATE TABLE IF NOT EXISTS terminal_instances (
+		user_id INTEGER NOT NULL CHECK(user_id > 0),
+		connection_id INTEGER NOT NULL CHECK(connection_id > 0),
+		terminal_id TEXT NOT NULL CHECK(length(terminal_id) > 0),
+		environment TEXT NOT NULL,
+		host TEXT NOT NULL,
+		port INTEGER NOT NULL CHECK(port BETWEEN 1 AND 65535),
+		ssh_user TEXT NOT NULL,
+		socket TEXT NOT NULL,
+		canonical_name TEXT NOT NULL,
+		incarnation TEXT NOT NULL UNIQUE,
+		state TEXT NOT NULL CHECK(state IN ('reserved', 'active', 'missing', 'closed')),
+		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		activated_at DATETIME,
+		missing_at DATETIME,
+		closed_at DATETIME,
+		PRIMARY KEY(user_id, connection_id, terminal_id)
+	);
 	`
 	_, err := s.DB.Exec(schema)
 	if err != nil {

@@ -7,9 +7,14 @@ import { downloadTicketURL } from "../../api/wsTicket";
 import "./sftp.css";
 import { sizeFormat, timeFormat } from "./fileFormat";
 
+// Reuse the locale comparator: localeCompare with options constructs expensive
+// collation state for every pair during large-directory sorts.
+const fileNameCollator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
+
 interface Props {
   files: SftpFile[];
   loading: boolean;
+  uploadReady?: boolean;
   connId?: number;
   currentPath: string;
   onNavigate: (p: string) => void;
@@ -157,10 +162,7 @@ export default function FileList(p: Props) {
         if (a.is_dir !== b.is_dir) return a.is_dir ? -1 : 1;
         const c =
           sortKey === "name"
-            ? a.name.localeCompare(b.name, undefined, {
-                numeric: true,
-                sensitivity: "base",
-              })
+            ? fileNameCollator.compare(a.name, b.name)
             : sortKey === "size"
               ? a.size - b.size
               : a.mod_time.localeCompare(b.mod_time);
@@ -222,6 +224,7 @@ export default function FileList(p: Props) {
   }, [selected, visible]);
   const upload = useCallback(
     (items: FileList | File[]) => {
+      if (p.uploadReady === false) { flash('文件连接或目录尚未就绪，上传未发送，请连接后重试。'); return; }
       if (!connId || !items.length) return;
       const dest = uploadTarget.current || currentPath;
       uploadTarget.current = null;
@@ -278,7 +281,7 @@ export default function FileList(p: Props) {
       };
       next(0);
     },
-    [connId, currentPath, onUpload, flash],
+    [connId, currentPath, onUpload, flash, p.uploadReady],
   );
   const cancelUpload = useCallback(() => {
     uploadRequest.current?.abort();
@@ -431,6 +434,7 @@ export default function FileList(p: Props) {
       <input
         ref={fileInput}
         type="file"
+        disabled={p.uploadReady === false}
         multiple
         hidden
         onChange={(e) => {
@@ -467,7 +471,7 @@ export default function FileList(p: Props) {
           </button>
           <button
             className="sftp-action sftp-primary"
-            disabled={!connId}
+            disabled={!connId || p.uploadReady === false}
             onClick={() => fileInput.current?.click()}
           >
             <Icon name="arrow-up" size={14} />

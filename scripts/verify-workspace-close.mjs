@@ -14,17 +14,24 @@ const originalClaude = tmux(['display-message', '-pt', 'wt01-01-06-ee8f330da4330
 const browser = await chromium.launch({ executablePath: '/usr/bin/google-chrome', headless: false, args: ['--no-sandbox'] });
 const admin = await browser.newContext({ ignoreHTTPSErrors: true });
 let fixtureUser, userToken, adminToken;
-const tabIDs = Array.from({ length: 5 }, () => `qa-close-${randomUUID()}`);
+// Terminal identity is intentionally server-issued. Do not manufacture tab
+// IDs in this fixture: doing so should (and now does) produce the read-only
+// R9 safety overlay instead of silently creating a replacement Bash shell.
+const tabIDs = [];
 const fixtureIndices = [0, 1, 2, 3];
+// The fifth identity is deliberately allocated for the concurrent-layout
+// branch.  It is still a test-owned remote session even when that branch is
+// disabled, so teardown must never leave it running.
+const ownedTerminalIndices = [0, 1, 2, 3, 4];
 const panelNumber = i => i === 3 ? 1 : i === 4 ? 4 : i + 1;
-const report = { checks: [], originalClaude, dialogs: [] };
+const report = { checks: [], originalClaude, dialogs: [], closeResponses: [] };
 const api = async (method, path, data, token = userToken) => {
   const response = await admin.request.fetch(origin + path, { method, data, headers: token ? { Authorization: `Bearer ${token}` } : {} });
   assert(response.ok(), `${method} ${path.split('?')[0]} returned ${response.status()}`);
   return response.json();
 };
 const pad = n => String(n).padStart(2, '0');
-const sessionName = i => `wt${pad(fixtureUser)}-${i === 3 ? '02' : '01'}-${pad(panelNumber(i))}-${createHash('sha256').update(tabIDs[i]).digest('hex').slice(0, 16)}`;
+const sessionName = i => `wt-${fixtureUser}-2-${createHash('sha256').update(tabIDs[i]).digest('hex').slice(0, 16)}`;
 const exists = i => { try { tmux(['has-session', '-t', sessionName(i)]); return true; } catch { return false; } };
 const waitFor = async (predicate, message) => {
   for (let i = 0; i < 50; i++) { if (await predicate()) return; await new Promise(resolve => setTimeout(resolve, 200)); }
@@ -38,6 +45,14 @@ try {
   fixtureUser = (await api('POST', '/api/users', { username, password, role: 'admin' }, adminToken)).id;
   assert(fixtureUser > 1);
   const login = await api('POST', '/api/auth/login', { username, password }); userToken = login.token; assert(userToken);
+  // Explicitly allocate all throwaway terminals before inserting them into a
+  // layout. This is the sole new-session authority and gives this close test
+  // the exact durable identities it is allowed to terminate.
+  for (let i = 0; i < 5; i++) {
+    const created = await api('POST', '/api/terminal-sessions/2', {});
+    assert(typeof created.terminal_id === 'string' && created.terminal_id.startsWith('terminal-'));
+    tabIDs.push(created.terminal_id);
+  }
   const tab = i => ({ id: tabIDs[i], type: 'ssh', connId: 2, title: `QA close ${i + 1}`, labelNumber: panelNumber(i) });
   const pane = ids => ({ tabs: ids.map(tab), activeTabId: tabIDs[ids[0]] });
   const layout = { workspaceTabs: [
@@ -51,8 +66,26 @@ try {
   // Suppress only that convenience request; all fixture authentication and
   // layout/session endpoints still use the real server and real fixture JWT.
   await context.route('**/api/auth/test-session', route => route.fulfill({ status: 404, body: '' }));
+  // Release-test preserves all ordinary terminal close requests so broad UI
+  // regressions cannot kill the shared fixture. This runner owns only the
+  // five identities above; map only those UI close requests to the explicit,
+  // isolated-test termination branch. Production UI requests remain unchanged.
+  await context.route('**/api/terminal-sessions/2**', route => {
+    const url = new URL(route.request().url());
+    if (tabIDs.includes(url.searchParams.get('terminal_id')) && !url.searchParams.has('terminate')) {
+      url.searchParams.set('terminate', '1');
+      return route.continue({ url: url.toString() });
+    }
+    return route.continue();
+  });
   await context.addInitScript(({ token, user }) => { localStorage.setItem('token', token); localStorage.setItem('webterm-user', JSON.stringify(user)); }, { token: userToken, user: { id: fixtureUser, username, role: 'admin' } });
   let page = await context.newPage(); await page.goto(origin, { waitUntil: 'networkidle' });
+  page.on('response', response => {
+    const url = new URL(response.url());
+    if (url.pathname !== '/api/terminal-sessions/2' || response.request().method() !== 'DELETE') return;
+    const index = tabIDs.indexOf(url.searchParams.get('terminal_id'));
+    if (index >= 0) report.closeResponses.push({ index, status: response.status(), terminate: url.searchParams.get('terminate') });
+  });
   await visualReloadPhase(page);
   assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('webterm-user')).id), fixtureUser, 'Refusing to operate in a non-fixture account');
   await page.locator('.workspace-tabs-toggle').click();
@@ -164,7 +197,7 @@ try {
 finally {
   // Only the exact throwaway account and terminal IDs created by this runner.
   if (fixtureUser && userToken) {
-    for (const i of fixtureIndices) await api('DELETE', `/api/terminal-sessions/2?terminal_id=${tabIDs[i]}&workspace_index=${i === 3 ? 2 : 1}&panel_number=${panelNumber(i)}&terminate=1`).catch(() => {});
+    for (const i of ownedTerminalIndices) await api('DELETE', `/api/terminal-sessions/2?terminal_id=${tabIDs[i]}&workspace_index=${i === 3 ? 2 : 1}&panel_number=${panelNumber(i)}&terminate=1`).catch(() => {});
     await api('DELETE', `/api/users/${fixtureUser}`, undefined, adminToken);
   }
   await writeFile(`${output}/results.json`, JSON.stringify(report, null, 2));

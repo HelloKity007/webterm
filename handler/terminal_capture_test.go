@@ -4,12 +4,56 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"os/exec"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/xufanchn/webterm/auth"
 	"github.com/xufanchn/webterm/store"
 )
+
+// A physical-row capture turns soft wraps into irreversible CRLF on replay.
+// Exercise the actual command against an isolated tmux server, not a mock of
+// capture-pane, so removing logical-line preservation breaks this test.
+func TestTerminalHistoryCapturePreservesLogicalWrappedLines(t *testing.T) {
+	binary := os.Getenv("WEBTERM_QA_TMUX_BINARY")
+	if binary == "" {
+		var err error
+		binary, err = exec.LookPath("tmux")
+		if err != nil {
+			t.Skip("tmux is required for the real capture integration test")
+		}
+	}
+	socket := "webterm-history-wrap-" + strconv.Itoa(os.Getpid()) + "-" + strconv.FormatInt(time.Now().UnixNano(), 10)
+	longLine := "WRAP_BEGIN_" + strings.Repeat("X", 301) + "_WRAP_END"
+	fixture := "printf '%s\\n' '" + longLine + "' 'SECOND_LOGICAL_LINE'; sleep 60"
+	if output, err := exec.Command(binary, "-L", socket, "new-session", "-d", "-x", "103", "-y", "26", "-s", "fixture", fixture).CombinedOutput(); err != nil {
+		t.Fatalf("start isolated tmux: %v: %s", err, output)
+	}
+	t.Cleanup(func() { _ = exec.Command(binary, "-L", socket, "kill-server").Run() })
+	command := terminalHistoryCaptureCommand("fixture", socket, binary)
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		capture, err := exec.Command("sh", "-c", command).CombinedOutput()
+		if err != nil {
+			t.Fatalf("capture: %v: %s", err, capture)
+		}
+		if strings.Contains(string(capture), "SECOND_LOGICAL_LINE") {
+			replay := string(terminalCaptureBytes(capture))
+			if !strings.Contains(replay, longLine+"\r\nSECOND_LOGICAL_LINE\r\n") {
+				t.Fatalf("soft-wrapped line became hard breaks in replay: %q", replay)
+			}
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("isolated fixture did not print its marker")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
 
 func TestTerminalSnapshotRestoresGridScreenAndCursor(t *testing.T) {
 	got := string(terminalScreenSnapshot([]byte("first\nlast\n"), []string{"%4", "claude", "80", "2", "3", "1", "1"}))
@@ -24,6 +68,29 @@ func TestTerminalSnapshotRestoresGridScreenAndCursor(t *testing.T) {
 	}
 	if !strings.HasSuffix(got, "\x1b[0m\x1b[2;4H") {
 		t.Fatalf("cursor not restored: %q", got)
+	}
+}
+
+func TestTerminalSnapshotRestoresActualPaneMouseProtocol(t *testing.T) {
+	// Claude can remain quiet after attach, so no live DECSET need follow this
+	// snapshot. Its already-enabled protocol must be restored with the screen.
+	state := []string{"%4", "claude", "104", "40", "2", "35", "1", "0", "0", "1", "0", "1"}
+	got := string(terminalScreenSnapshot([]byte("Jump to bottom\n"), state))
+	if !strings.Contains(got, "\x1b[?1003h") || !strings.Contains(got, "\x1b[?1006h") {
+		t.Fatalf("snapshot omitted pane's all-motion SGR mouse protocol: %q", got)
+	}
+	if !strings.Contains(got, "\x1b]2;webterm-grid:104x40\x07") {
+		t.Fatal("extended pane metadata must not discard screen/grid restoration")
+	}
+}
+
+func TestTerminalSnapshotDisablesMouseForPaneWithoutTracking(t *testing.T) {
+	state := []string{"%4", "bash", "104", "40", "2", "35", "0", "0", "0", "0", "0", "0"}
+	got := string(terminalScreenSnapshot([]byte("$ draft\n"), state))
+	for _, mode := range []string{"1000", "1002", "1003", "1005", "1006"} {
+		if !strings.Contains(got, "\x1b[?"+mode+"l") || strings.Contains(got, "\x1b[?"+mode+"h") {
+			t.Fatalf("stale mouse mode %s not cleared for shell snapshot: %q", mode, got)
+		}
 	}
 }
 
@@ -66,7 +133,7 @@ func TestTerminalHistoryCaptureTargetsOnlyTheRequestedPanel(t *testing.T) {
 		t.Fatal(err)
 	}
 	command := terminalHistoryCaptureCommand(target, "release-test", "/opt/tmux")
-	if !strings.Contains(command, "/opt/tmux -L release-test capture-pane -p -e -S -2000 -t wt01-01-05-") {
+	if !strings.Contains(command, "/opt/tmux -L release-test capture-pane -p -e -J -S -2000 -t wt01-01-05-") {
 		t.Fatalf("history capture command = %q", command)
 	}
 	if _, err := terminalHistoryCaptureTarget(1, 22, "shell", "one", "5"); err == nil {
@@ -104,7 +171,7 @@ func TestReplayTerminalHistoryCapturesTmuxOnlyOnExplicitRequest(t *testing.T) {
 	if res.Code != http.StatusOK {
 		t.Fatalf("status=%d body=%s", res.Code, res.Body.String())
 	}
-	if gotConnection != connectionID || !strings.Contains(gotCommand, "capture-pane -p -e -S -2000 -t wt01-01-05-") {
+	if gotConnection != connectionID || !strings.Contains(gotCommand, "capture-pane -p -e -J -S -2000 -t wt01-01-05-") {
 		t.Fatalf("capture target connection=%d command=%q", gotConnection, gotCommand)
 	}
 	var payload struct {

@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import Icon from '../common/Icon';
 import { useLayoutStore } from '../../store/layout';
 import { useConnectionStore } from '../../store/connections';
+import { createTerminalSession } from '../../api/terminalSessions';
 import { colors, font } from '../../theme/tokens';
 
 export default function HeaderSearch() {
@@ -44,9 +45,19 @@ export default function HeaderSearch() {
     return items.slice(0, 8);
   })();
 
-  const open = (item: { type: string; connId: number; label: string }) => {
+  const open = async (item: { type: string; connId: number; label: string }) => {
     setActiveModule(item.type === 'database' ? 'database' : 'ssh');
-    requestTab({ id: `${item.type}-${item.connId}-${Date.now()}`, title: item.label, type: item.type === 'database' ? 'database' : 'ssh', connId: item.connId });
+    if (item.type === 'database') {
+      requestTab({ id: `${item.type}-${item.connId}-${Date.now()}`, title: item.label, type: 'database', connId: item.connId });
+    } else {
+      try {
+        const terminalID = await createTerminalSession(item.connId);
+        requestTab({ id: terminalID, title: item.label, type: 'ssh', connId: item.connId });
+      } catch (error) {
+        console.error('Failed to create terminal session:', error);
+        return;
+      }
+    }
     setQuery('');
     setFocus(false);
     setActiveIdx(0);

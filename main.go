@@ -35,25 +35,59 @@ var version = "dev"
 //go:embed frontend/dist
 var frontendDist embed.FS
 
+func resolveTmuxOptions(environment, binary, socket, testBinary, testSocket string, testExplicit bool) (string, string, error) {
+	if binary != "" || socket != "" {
+		if testExplicit || testBinary != "" || testSocket != "webterm-release-test" {
+			return "", "", errors.New("generic and test tmux overrides cannot be combined")
+		}
+		prefix := ""
+		switch environment {
+		case "production":
+			prefix = `^webterm-production-[a-zA-Z0-9_-]+$`
+		case "release-test":
+			prefix = `^webterm-release-test[a-zA-Z0-9_-]*$`
+		default:
+			return "", "", errors.New("tmux overrides require production or release-test")
+		}
+		if !regexp.MustCompile(`^/[a-zA-Z0-9_./-]+$`).MatchString(binary) || !regexp.MustCompile(prefix).MatchString(socket) {
+			return "", "", errors.New("tmux overrides require paired absolute shell-safe binary and environment-scoped socket")
+		}
+		return binary, socket, nil
+	}
+	if (testBinary != "" || testSocket != "webterm-release-test" || testExplicit) && environment != "release-test" {
+		return "", "", errors.New("test tmux overrides are allowed only in release-test")
+	}
+	if (testBinary != "" && !regexp.MustCompile(`^/[a-zA-Z0-9_./-]+$`).MatchString(testBinary)) || !regexp.MustCompile(`^webterm-release-test[a-zA-Z0-9_-]*$`).MatchString(testSocket) {
+		return "", "", errors.New("test tmux executable/socket must be shell-safe and test-scoped")
+	}
+	if environment == "release-test" {
+		return testBinary, testSocket, nil
+	}
+	return "", "", nil
+}
+
 func main() {
 	configPath := flag.String("config", "config.yaml", "path to config file")
 	listenAddr := flag.String("listen-addr", "", "override loopback listen address")
 	databasePath := flag.String("database", "webterm.db", "path to SQLite database")
 	deploymentEnvironment := flag.String("environment", "production", "deployment environment name")
+	tmuxBinary := flag.String("tmux-binary", "", "absolute remote tmux executable; requires tmux-socket")
+	tmuxSocket := flag.String("tmux-socket", "", "environment-scoped private tmux socket; requires tmux-binary")
 	testTmuxBinary := flag.String("test-tmux-binary", "", "absolute remote tmux path, release-test only")
 	testTmuxSocket := flag.String("test-tmux-socket", "webterm-release-test", "private tmux socket, release-test only")
 	testAutoLogin := flag.Bool("test-auto-login", false, "temporarily allow admin auto-login in release-test only")
 	preserveTerminalSessions := flag.Bool("preserve-terminal-sessions", false, "do not kill shared tmux sessions when tabs close")
 	showVersion := flag.Bool("version", false, "print version and exit")
 	flag.Parse()
-	if *testTmuxBinary != "" || *testTmuxSocket != "webterm-release-test" {
-		if *deploymentEnvironment != "release-test" {
-			log.Fatal("test tmux overrides are allowed only in release-test")
+	testExplicit := false
+	flag.Visit(func(f *flag.Flag) {
+		if f.Name == "test-tmux-binary" || f.Name == "test-tmux-socket" {
+			testExplicit = true
 		}
-	}
-	if (*testTmuxBinary != "" && !regexp.MustCompile(`^/[a-zA-Z0-9_./-]+$`).MatchString(*testTmuxBinary)) ||
-		!regexp.MustCompile(`^webterm-release-test[a-zA-Z0-9_-]*$`).MatchString(*testTmuxSocket) {
-		log.Fatal("test tmux executable/socket must be shell-safe and test-scoped")
+	})
+	resolvedTmuxBinary, resolvedTmuxSocket, tmuxErr := resolveTmuxOptions(*deploymentEnvironment, *tmuxBinary, *tmuxSocket, *testTmuxBinary, *testTmuxSocket, testExplicit)
+	if tmuxErr != nil {
+		log.Fatal(tmuxErr)
 	}
 
 	if *showVersion {
@@ -120,18 +154,14 @@ func main() {
 	wsTicketH := &handler.WSTicketHandler{Store: st, Tickets: wsTickets}
 	wsH := &handler.WSHandler{
 		Store: st, Pool: pool, AESCipher: aesCipher,
+		Environment:              *deploymentEnvironment,
 		Registry:                 wsRegistry,
 		Presence:                 presenceRegistry,
 		PreserveTerminalSessions: *preserveTerminalSessions,
-		TmuxBinary:               *testTmuxBinary,
+		TmuxBinary:               resolvedTmuxBinary,
 		// Release-test gets a private tmux server. Its copied layout may use the
 		// same terminal IDs, but must never resize or mutate production sessions.
-		TmuxSocket: func() string {
-			if *deploymentEnvironment == "release-test" {
-				return *testTmuxSocket
-			}
-			return ""
-		}(),
+		TmuxSocket: resolvedTmuxSocket,
 	}
 
 	mux.Handle("GET /api/connections", auth.Middleware(http.HandlerFunc(connH.List)))
@@ -164,6 +194,8 @@ func main() {
 	mux.Handle("DELETE /api/groups/{id}", auth.Middleware(http.HandlerFunc(groupH.Delete)))
 
 	mux.Handle("/ws/ssh/{conn_id}", handler.TicketWebSocketHandler{Store: st, Tickets: wsTickets, Endpoint: "ssh", Next: websocket.Handler(wsH.HandleSSH)})
+	mux.Handle("POST /api/terminal-sessions/{conn_id}", auth.Middleware(http.HandlerFunc(wsH.CreateTerminalSession)))
+	mux.Handle("POST /api/terminal-sessions/{conn_id}/adopt", auth.Middleware(http.HandlerFunc(wsH.AdoptTerminalSession)))
 	mux.Handle("DELETE /api/terminal-sessions/{conn_id}", auth.Middleware(http.HandlerFunc(wsH.CloseTerminalSession)))
 	mux.Handle("/ws/sftp/{conn_id}", handler.TicketWebSocketHandler{Store: st, Tickets: wsTickets, Endpoint: "sftp", Next: websocket.Handler(wsH.HandleSFTP)})
 	mux.Handle("/ws/db/{conn_id}", handler.TicketWebSocketHandler{Store: st, Tickets: wsTickets, Endpoint: "db", Next: websocket.Handler(wsH.HandleDB)})
@@ -180,6 +212,9 @@ func main() {
 	mux.HandleFunc("/", spaHandler())
 
 	log.Printf("webterm %s starting on %s (%s, database=%s, preserve_terminal_sessions=%t)", version, cfg.ListenAddr, *deploymentEnvironment, *databasePath, *preserveTerminalSessions)
+	if resolvedTmuxBinary != "" {
+		log.Printf("pinned tmux executable=%s socket=%s", resolvedTmuxBinary, resolvedTmuxSocket)
+	}
 	srv := &http.Server{
 		Addr:              cfg.ListenAddr,
 		Handler:           mux,
