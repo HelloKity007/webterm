@@ -288,3 +288,17 @@ the exact source-tab coordinate receives native `pointermove`, `mousedown`,
 `runtime/diagnostic33-native-file-tab-cross-window-down-probe/report.json`.
 This is a test-environment input limitation, not a PASS and not a product
 regression conclusion; a physical native-browser drag remains required by R7.
+
+### Windows 206 isolated editor reload — 2026-09-18
+
+An independently named Edge profile on 206 (not the user's existing Edge) ran
+the real read-only SFTP editor fixture against 9444. Edge 146 completed the
+initial load plus five `page.reload` rounds with one restored file tab each,
+six reads, zero writes, and no page error:
+`runtime/diagnostic33-windows206-editor-reload/report.json`. The verifier
+attached only to its own CDP endpoint and released its isolated browser context
+without closing the browser. Afterwards its exact scheduled task was absent,
+9336 was no longer listening, and its exact temporary profile was removed.
+This increases same-hardware coverage but is not an original persisted-editor
+result and is not a native Ctrl+Shift+R result; R10's original 206 scenario
+remains **NOT RUN**.

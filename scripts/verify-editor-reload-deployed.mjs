@@ -5,15 +5,18 @@ import { chromium, firefox, webkit } from '../ui/node_modules/playwright/index.m
 const engineName = process.env.WEBTERM_QA_BROWSER || 'chromium';
 const engine = { chromium, firefox, webkit }[engineName];
 assert(engine, 'Unsupported browser engine');
+const cdpEndpoint = process.env.WEBTERM_QA_CDP || '';
+assert(!cdpEndpoint || engineName === 'chromium', 'CDP attachment is supported only for Chromium-family browsers');
 const origin = 'https://192.168.11.87:9444';
-const expectedVersion = process.env.WEBTERM_QA_VERSION || 'e388c5a-strict-diagnostic10';
+const expectedVersion = process.env.WEBTERM_QA_VERSION || 'e388c5a-strict-diagnostic33-context-anchor';
 const output = process.env.WEBTERM_QA_OUTPUT || 'runtime/incident-20260917-production-tmux/editor-reload-deployed';
 const filePath = resolve('README.md');
 assert((await readFile(filePath, 'utf8')).startsWith('# WebTerm'));
 const id = `file:${filePath}`;
 await mkdir(output, { recursive: true, mode: 0o700 });
 await chmod(output, 0o700);
-const browser = await engine.launch();
+const browser = cdpEndpoint ? await chromium.connectOverCDP(cdpEndpoint) : await engine.launch();
+const attachedBrowser = Boolean(cdpEndpoint);
 const context = await browser.newContext({ ignoreHTTPSErrors: true, viewport: { width: 1440, height: 1000 }, recordVideo: { dir: `${output}/video` } });
 const errors = [], actions = [], results = [], blocked = [];
 let tickets = 0, candidate, failure;
@@ -84,6 +87,10 @@ try {
 finally {
   await writeFile(`${output}/report.json`, JSON.stringify({ status: failure ? 'FAIL' : 'PASS', browser: browserIdentity, failure, candidate, results, errors, actions, blocked, tickets, reload: 'Playwright page.reload; NOT Windows native Ctrl+Shift+R', delay: '1200ms REST ticket delay; routed WebSocket OPEN semantics are not native handshake delay', isolation: 'fresh context; fixture GET layout; all layout writes intercepted; non-SFTP tickets/sockets blocked; SFTP allowlist read-only' }, null, 2), { mode: 0o600 });
   await chmod(`${output}/report.json`, 0o600);
-  await context.close(); await browser.close();
+  await context.close();
+  // A CDP browser belongs to a named, isolated Windows QA profile. Closing
+  // its Browser object would close that profile (and can never be correct for
+  // an attached user browser), so release only our temporary context.
+  if (!attachedBrowser) await browser.close();
 }
 if (failure) { console.error(failure); process.exitCode = 1; } else console.log('PASS: deployed assets, real read-only SFTP, initial load plus five reloads');
