@@ -8,7 +8,7 @@ import { chromium } from '../ui/node_modules/playwright/index.mjs';
 // pointer button remains down while xdotool moves between two Chrome windows.
 const output = resolve(process.env.WEBTERM_QA_OUTPUT || `runtime/native-file-tab-cross-window-${Date.now()}`);
 const origin = 'https://192.168.11.87:9444';
-const expected = process.env.WEBTERM_QA_EXPECT_VERSION || 'e388c5a-strict-diagnostic13';
+const expected = process.env.WEBTERM_QA_EXPECT_VERSION || 'e388c5a-strict-diagnostic33-context-anchor';
 const filePath = resolve('README.md');
 const fileId = `file:${filePath}`;
 await mkdir(output, { recursive: true, mode: 0o700 }); await chmod(output, 0o700);
@@ -21,7 +21,7 @@ const windowId = (title) => {
   try { return runX('search', '--name', title).split('\n').filter(Boolean).at(-1); }
   catch { throw new Error(`X11 window not found for ${title}; visible=${JSON.stringify(visibleWindowNames())}`); }
 };
-let browser, context;
+let browser, context, source, target;
 try {
   assert(process.env.DISPLAY, 'DISPLAY is required; invoke through xvfb-run with a window manager');
   browser = await chromium.launch({ headless: false, executablePath: process.env.CHROME_PATH || '/usr/bin/google-chrome', args: ['--no-sandbox', '--disable-features=Translate'] });
@@ -31,7 +31,9 @@ try {
     const tabs = target ? [] : [{ id: fileId, path: filePath, name: 'README.md', group: 'primary', refreshMode: 'manual', dirty: false }];
     localStorage.setItem('webterm:file-workbench:v1', JSON.stringify({ version: 1, connectionId: 2, tabs, active: { primary: target ? null : fileId, secondary: null }, focusedGroup: 'primary', split: false }));
     window.__nativeFileDragProbe = [];
+    window.__nativePointerProbe = [];
     for (const type of ['dragstart', 'dragenter', 'dragover', 'drop', 'dragend']) document.addEventListener(type, event => window.__nativeFileDragProbe.push({ type, target: event.target?.className || event.target?.tagName, types: [...(event.dataTransfer?.types || [])] }), true);
+    for (const type of ['pointermove', 'mousemove', 'mousedown', 'mouseup', 'click']) document.addEventListener(type, event => window.__nativePointerProbe.push({ type, target: event.target?.className || event.target?.tagName }), true);
   }, { filePath, fileId });
   const layout = {
     schema_version: 2, revision: 1,
@@ -46,7 +48,7 @@ try {
     return request.endpoint === 'sftp' ? route.continue() : route.fulfill({ status: 403, body: '{}' });
   });
   await context.routeWebSocket(/\/ws\/(?!sftp\/)/, route => route.close());
-  const source = await context.newPage();
+  source = await context.newPage();
   await source.goto(origin, { waitUntil: 'networkidle' });
   assert.equal((await source.evaluate(() => fetch('/api/health').then(r => r.json()))).version, expected);
   await source.locator('.activity-files').click();
@@ -55,7 +57,7 @@ try {
   await source.evaluate(() => { document.title = 'WebTerm native file source'; });
   const popupPromise = source.waitForEvent('popup');
   await source.evaluate(() => window.open(location.href, 'webterm-file-target', 'popup=yes,width=860,height=760'));
-  const target = await popupPromise;
+  target = await popupPromise;
   await target.waitForLoadState('networkidle');
   await target.locator('.activity-files').click();
   await target.locator('[data-testid="file-workspace"]').waitFor();
@@ -90,8 +92,22 @@ try {
     screen: { width: screenWidth, height: screenHeight },
     metrics: await Promise.all([source, target].map(page => page.evaluate(() => ({ screenX, screenY, outerWidth, outerHeight, innerWidth, innerHeight })))),
   };
+  // Verify that the same XTEST input path can deliver a normal source click
+  // before treating a missing drag sequence as an application defect.
+  runX('mousemove', String(sourcePoint.x), String(sourcePoint.y));
+  runX('click', '1');
+  await source.waitForTimeout(180);
+  report.clickDelivery = await source.evaluate(() => window.__nativePointerProbe || []);
+  for (const type of ['mousedown', 'mouseup', 'click']) assert(report.clickDelivery.some(event => event.type === type), `X11 native ${type} did not reach source document`);
+  await source.evaluate(() => { window.__nativePointerProbe = []; });
   runX('mousemove', String(sourcePoint.x), String(sourcePoint.y));
   runX('mousedown', '1');
+  // Let Chromium consume the physical button transition before any move. A
+  // same-tick move can hide an XTEST ordering problem as an apparent app DnD
+  // failure, so record and require the source mousedown explicitly.
+  await source.waitForTimeout(150);
+  report.downDelivery = await source.evaluate(() => window.__nativePointerProbe || []);
+  assert(report.downDelivery.some(event => event.type === 'mousedown'), 'X11 native mousedown did not reach source document before drag movement');
   // Several physical intermediate moves are required for Chromium to promote
   // mouse-down into a native drag and dispatch dragenter/dragover in the other
   // X11 window; a one-hop move is only a click on some window managers.
@@ -104,6 +120,7 @@ try {
   await source.waitForTimeout(700);
   runX('mouseup', '1');
   report.nativeEvents = await Promise.all([source, target].map(page => page.evaluate(() => window.__nativeFileDragProbe)));
+  report.nativePointer = await Promise.all([source, target].map(page => page.evaluate(() => window.__nativePointerProbe || [])));
   await target.locator('[data-editor-tab-id]').first().waitFor({ timeout: 10000 });
   await source.locator('[data-editor-tab-id]').first().waitFor({ state: 'detached', timeout: 10000 });
   report.sourceTabs = await source.locator('[data-editor-tab-id]').count();
@@ -121,6 +138,9 @@ try {
       await page.screenshot({ path: `${output}/failure-${index}.png` });
       report.pages = [...(report.pages || []), { url: page.url(), title: await page.title(), editorTabs: await page.locator('[data-editor-tab-id]').count(), roles: await page.locator('[role="tab"]').count() }];
     } catch { /* evidence best-effort */ }
+  }
+  if (!report.nativePointer && source) {
+    try { report.nativePointer = await source.evaluate(() => window.__nativePointerProbe || []); } catch { /* best effort evidence */ }
   }
 }
 finally { await browser?.close(); await writeFile(`${output}/report.json`, JSON.stringify(report, null, 2), { mode: 0o600 }); await chmod(`${output}/report.json`, 0o600); }

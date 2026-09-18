@@ -276,3 +276,15 @@ The local Android platform tools report only `127.0.0.1:5037` in the `offline`
 state; no usable Android device is attached. No iOS device tooling is installed.
 This is an environment observation, not a mobile result: physical Android/iOS
 IME, reading, keyboard, and visual acceptance remain **NOT RUN**.
+
+### Native cross-window drag input isolation — 2026-09-18
+
+The candidate33 X11 probe now proves the input precondition rather than
+inferring it from a timeout. On a dedicated 1920×1080 Xvfb/Fluxbox display,
+the exact source-tab coordinate receives native `pointermove`, `mousedown`,
+`mouseup`, and `click` through `xdotool click`. After clearing that probe, an
+`xdotool mousedown` at the same coordinate produces no document-level
+`mousedown` within 150ms, so a browser drag cannot begin. The report is
+`runtime/diagnostic33-native-file-tab-cross-window-down-probe/report.json`.
+This is a test-environment input limitation, not a PASS and not a product
+regression conclusion; a physical native-browser drag remains required by R7.
