@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { closeTerminalSession } from './terminalSessions';
+import { ApiError } from './client';
+import { canDismissUnverifiedTerminal, closeTerminalSession } from './terminalSessions';
 
 describe('closeTerminalSession', () => {
   it('explicitly requests cascading termination with exact panel coordinates', async () => {
@@ -30,5 +31,11 @@ describe('closeTerminalSession', () => {
         headers: expect.objectContaining({ Authorization: 'Bearer close-token' }),
       }),
     );
+  });
+
+  it('permits only an unverified identity failure to be dismissed locally', () => {
+    expect(canDismissUnverifiedTerminal(new ApiError('identity unavailable', 409, 'TERMINAL_IDENTITY_UNAVAILABLE'))).toBe(true);
+    expect(canDismissUnverifiedTerminal(new ApiError('adoption uncertain', 409, 'TERMINAL_ADOPTION_UNCERTAIN'))).toBe(false);
+    expect(canDismissUnverifiedTerminal(new Error('network unavailable'))).toBe(false);
   });
 });

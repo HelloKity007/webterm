@@ -1,4 +1,4 @@
-import { apiDelete, apiPost } from './client';
+import { ApiError, apiDelete, apiPost } from './client';
 
 export async function createTerminalSession(connId: number): Promise<string> {
   const result = await apiPost(`/api/terminal-sessions/${encodeURIComponent(connId)}`, {}) as { terminal_id?: unknown };
@@ -11,4 +11,12 @@ export async function createTerminalSession(connId: number): Promise<string> {
 export function closeTerminalSession(connId: number, terminalId: string, workspaceIndex?: number, panelNumber?: number, terminate = false): Promise<unknown> {
   const layoutQuery = workspaceIndex && panelNumber ? `&workspace_index=${workspaceIndex}&panel_number=${panelNumber}` : '';
   return apiDelete(`/api/terminal-sessions/${connId}?terminal_id=${encodeURIComponent(terminalId)}${layoutQuery}${terminate ? '&terminate=1' : ''}`);
+}
+
+// A legacy tab which could not be adopted has no verified terminal identity.
+// It cannot be closed through the remote-session endpoint without weakening
+// the identity guard, but removing it from this browser layout is safe: that
+// operation neither creates, replaces, nor terminates any remote process.
+export function canDismissUnverifiedTerminal(error: unknown): boolean {
+  return error instanceof ApiError && error.code === 'TERMINAL_IDENTITY_UNAVAILABLE';
 }

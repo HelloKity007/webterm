@@ -17,7 +17,7 @@ import { websocketTicketURL, webSocketClientID } from '../../api/wsTicket';
 import { shouldPersistLayout } from './layoutSave';
 import { useWebSocket } from '../../hooks/useWebSocket';
 import { panelGrid, presetDestinationID, replaceLeafWithEightPaneGrid } from './layoutPresets';
-import { closeTerminalSession, createTerminalSession } from '../../api/terminalSessions';
+import { canDismissUnverifiedTerminal, closeTerminalSession, createTerminalSession } from '../../api/terminalSessions';
 import WorkspaceTabBar from './WorkspaceTabBar';
 import { getSharedTerminalGrid, setSharedTerminalGrid } from '../terminal/terminalGridCache';
 import { discardPersistentTerminal } from '../terminal/persistentTerminalStore';
@@ -675,8 +675,14 @@ function LeafPane({ nodeId, restoreVersion, onActiveSshChange, isInSplit, worksp
       try {
         await closeTerminalSession(tab.connId, tab.id, workspaceIndex, tab.labelNumber ?? tabs.findIndex((candidate) => candidate.id === tab.id) + 1);
       } catch (error) {
-        console.error('Failed to close persistent terminal session; keeping tab open:', error);
-        return;
+        if (!canDismissUnverifiedTerminal(error)) {
+          console.error('Failed to close persistent terminal session; keeping tab open:', error);
+          return;
+        }
+        // The server refused to operate on an unverified legacy identity. The
+        // default close does not terminate sessions; remove only the stale
+        // layout entry so the user is not trapped behind its safety guard.
+        console.warn('Dismissed an unverified terminal tab without remote session mutation:', tab.id);
       }
       discardPersistentTerminal(id);
     }
