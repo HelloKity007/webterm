@@ -33,8 +33,13 @@ try {
   }, { token: session.token, user: session.user });
   await context.route('**/api/layout', route => route.fulfill({ json: layout }));
   const replacementID = `terminal-safe-replacement-${Date.now()}`;
+  const menuCreatedID = `terminal-safe-menu-${Date.now()}`;
+  let createRequestCount = 0;
   await context.route('**/api/terminal-sessions/*', route => {
-    if (route.request().method() === 'POST') return route.fulfill({ json: { terminal_id: replacementID } });
+    if (route.request().method() === 'POST') {
+      const terminalID = createRequestCount++ === 0 ? replacementID : menuCreatedID;
+      return route.fulfill({ json: { terminal_id: terminalID } });
+    }
     return route.continue();
   });
   const page = await context.newPage();
@@ -57,10 +62,23 @@ try {
   replacementPage.on('pageerror', error => replacementErrors.push(String(error)));
   await replacementPage.goto(origin, { waitUntil: 'networkidle' });
   await replacementPage.getByRole('alert').waitFor({ timeout: 10000 });
-  await replacementPage.getByRole('button', { name: '新建安全 Panel（保留旧会话）' }).click();
-  await replacementPage.waitForFunction(({ oldID, newID }) => !document.querySelector(`[data-tab-id="${oldID}"]`) && Boolean(document.querySelector(`[data-tab-id="${newID}"]`)), { oldID: blockedTerminalID, newID: replacementID });
+  await replacementPage.getByRole('button', { name: '在当前窗格新建安全 Panel（保留旧会话）' }).click();
+  await replacementPage.waitForFunction(({ oldID, newID }) => Boolean(document.querySelector(`[data-tab-id="${oldID}"]`)) && Boolean(document.querySelector(`[data-tab-id="${newID}"]`)), { oldID: blockedTerminalID, newID: replacementID });
   assert.deepEqual(replacementErrors, []);
-  report.checks.push({ name: 'identity guard offers an explicit mocked safe new Panel path without touching the legacy tab', status: 'PASS' });
+  report.checks.push({ name: 'identity guard adds an explicit mocked safe Panel in the current pane without touching the legacy tab', status: 'PASS' });
+
+  const menuBlockedID = `unverified-add-menu-${Date.now()}`;
+  layout = { schema_version: 2, revision: 3, layout: { workspaceTabs: [{ id: 'dismiss-qa-workspace', index: 98, name: 'Dismiss QA', layout: { tree: { type: 'leaf', id: pane }, panes: { [pane]: { tabs: [{ id: menuBlockedID, type: 'ssh', title: 'Unverified add menu QA', connId: connection.id, labelNumber: 1 }], activeTabId: menuBlockedID } }, focusedPaneId: pane } }] } };
+  const menuPage = await context.newPage();
+  const menuErrors = [];
+  menuPage.on('pageerror', error => menuErrors.push(String(error)));
+  await menuPage.goto(origin, { waitUntil: 'networkidle' });
+  await menuPage.getByRole('alert').waitFor({ timeout: 10000 });
+  await menuPage.getByLabel('新建标签').click();
+  await menuPage.getByRole('menu', { name: '新建标签' }).getByRole('menuitem', { name: connection.name }).click();
+  await menuPage.waitForFunction(({ oldID, newID }) => Boolean(document.querySelector(`[data-tab-id="${oldID}"]`)) && Boolean(document.querySelector(`[data-tab-id="${newID}"]`)), { oldID: menuBlockedID, newID: menuCreatedID });
+  assert.deepEqual(menuErrors, []);
+  report.checks.push({ name: 'the plus-menu remains operable above the identity guard and adds a safe Panel in the current pane', status: 'PASS' });
 } catch (error) {
   failure = String(error);
 } finally {

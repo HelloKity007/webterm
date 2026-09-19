@@ -2056,7 +2056,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
             {identityFault === 'creation-failed' && <div style={{ marginTop: 10, color: colors.dangerBright, fontSize: 12 }}>新建安全 Panel 失败；原会话及当前 Panel 均未被修改。</div>}
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
               {onDismissUnverified && <button type="button" onClick={onDismissUnverified} style={{ padding: '6px 10px', border: `1px solid ${colors.border}`, borderRadius: 4, background: colors.bg, color: colors.text, cursor: 'pointer' }}>从布局移除（保留远端会话）</button>}
-              {onCreateSafeTerminal && <button type="button" disabled={identityFault === 'creating'} onClick={() => { void createSafeTerminal(); }} style={{ padding: '6px 10px', border: '1px solid var(--c-accent)', borderRadius: 4, background: colors.accentFaint, color: colors.accent, cursor: identityFault === 'creating' ? 'wait' : 'pointer' }}>{identityFault === 'creating' ? '正在新建安全 Panel…' : '新建安全 Panel（保留旧会话）'}</button>}
+              {onCreateSafeTerminal && <button type="button" disabled={identityFault === 'creating'} onClick={() => { void createSafeTerminal(); }} style={{ padding: '6px 10px', border: '1px solid var(--c-accent)', borderRadius: 4, background: colors.accentFaint, color: colors.accent, cursor: identityFault === 'creating' ? 'wait' : 'pointer' }}>{identityFault === 'creating' ? '正在新建安全 Panel…' : '在当前窗格新建安全 Panel（保留旧会话）'}</button>}
             </div>
           </div>
         </div>

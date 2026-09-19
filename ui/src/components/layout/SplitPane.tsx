@@ -684,15 +684,17 @@ function LeafPane({ nodeId, restoreVersion, onActiveSshChange, isInSplit, worksp
       return next;
     });
   };
-  const createSafeReplacement = async (tab: Tab) => {
+  const createSafeTabInCurrentPane = async (tab: Tab) => {
     if (!tab.connId) throw new Error('terminal connection is missing');
     const connection = connections.find((candidate) => candidate.id === tab.connId);
     if (!connection) throw new Error('terminal connection is unavailable');
     const terminalID = await createTerminalSession(connection.id);
-    const replacement: Tab = { id: terminalID, type: 'ssh', title: connection.name, connId: connection.id, labelNumber: tab.labelNumber ?? nextTabLabelNumber() };
-    discardPersistentTerminal(tab.id);
-    setTabs((prev) => [...prev.filter((candidate) => candidate.id !== tab.id), replacement]);
-    setActiveTabId(replacement.id);
+    const newTab: Tab = { id: terminalID, type: 'ssh', title: connection.name, connId: connection.id, labelNumber: nextTabLabelNumber() };
+    // Keep the unverified legacy tab intact. The user can subsequently
+    // migrate it or remove only its local layout entry; creating a new
+    // terminal must never be interpreted as authority to replace it.
+    setTabs((prev) => [...prev, newTab]);
+    setActiveTabId(newTab.id);
     setFocusedPane(nodeId);
   };
   const closeTab = async (id: string) => {
@@ -813,7 +815,7 @@ function LeafPane({ nodeId, restoreVersion, onActiveSshChange, isInSplit, worksp
           onReceiveTab={handleReceiveTab} onAddTab={() => setShowAddMenu((open) => !open)} />
         {showAddMenu && (
           <div role="menu" aria-label={t('tab_new')} onClick={(event) => event.stopPropagation()}
-            style={{ position: 'absolute', zIndex: 25, right: 8, top: 34, minWidth: 190, maxWidth: 280, maxHeight: 260, overflowY: 'auto', padding: 6, border: `1px solid ${colors.border}`, borderRadius: 5, boxShadow: '0 8px 24px rgba(0,0,0,.35)', background: colors.bgRaised }}>
+            style={{ position: 'absolute', zIndex: 50, right: 8, top: 34, minWidth: 190, maxWidth: 280, maxHeight: 260, overflowY: 'auto', padding: 6, border: `1px solid ${colors.border}`, borderRadius: 5, boxShadow: '0 8px 24px rgba(0,0,0,.35)', background: colors.bgRaised }}>
             {connections.length === 0 ? (
               <div style={{ padding: '8px 10px', color: colors.textMuted, fontSize: font.md }}>{t('tab_no_connections')}</div>
             ) : connections.map((connection) => (
@@ -830,7 +832,7 @@ function LeafPane({ nodeId, restoreVersion, onActiveSshChange, isInSplit, worksp
           <div key={tab.id} style={{ flex: 1, display: tab.id === activeTabId ? 'flex' : 'none', overflow: 'hidden' }}>
             {tab.type === 'ssh' && tab.connId && (
               <Suspense fallback={<div style={{ padding: 12, fontSize: font.md, color: colors.textMuted }}>Loading…</div>}>
-                <TerminalTab connId={tab.connId} myTabId={tab.id} workspaceIndex={workspaceIndex} panelNumber={tab.labelNumber ?? tabs.findIndex((candidate) => candidate.id === tab.id) + 1} onDismissUnverified={() => dismissUnverifiedTab(tab.id)} onCreateSafeTerminal={() => createSafeReplacement(tab)} extraMenuItems={[
+                <TerminalTab connId={tab.connId} myTabId={tab.id} workspaceIndex={workspaceIndex} panelNumber={tab.labelNumber ?? tabs.findIndex((candidate) => candidate.id === tab.id) + 1} onDismissUnverified={() => dismissUnverifiedTab(tab.id)} onCreateSafeTerminal={() => createSafeTabInCurrentPane(tab)} extraMenuItems={[
                   { label: t('term_split_h'), action: () => handleSplit('horizontal') },
                   { label: t('term_split_v'), action: () => handleSplit('vertical') },
                   { label: t('term_split_quad'), action: handleQuadSplit },
