@@ -669,6 +669,32 @@ function LeafPane({ nodeId, restoreVersion, onActiveSshChange, isInSplit, worksp
     setFocusedPane(nodeId);
     setShowAddMenu(false);
   };
+  const dismissUnverifiedTab = (id: string) => {
+    const tab = tabs.find((candidate) => candidate.id === id);
+    if (tab?.type === 'ssh') discardPersistentTerminal(id);
+    setTabs((prev) => {
+      const next = prev.filter((candidate) => candidate.id !== id);
+      if (next.length === 0 && isInSplit) {
+        setTimeout(() => {
+          doRemovePane(nodeId);
+          setFocusedPane(layoutRoot.type === 'leaf' ? layoutRoot.id : 'root');
+        }, 0);
+      }
+      if (activeTabId === id) setActiveTabId(next.at(-1)?.id || null);
+      return next;
+    });
+  };
+  const createSafeReplacement = async (tab: Tab) => {
+    if (!tab.connId) throw new Error('terminal connection is missing');
+    const connection = connections.find((candidate) => candidate.id === tab.connId);
+    if (!connection) throw new Error('terminal connection is unavailable');
+    const terminalID = await createTerminalSession(connection.id);
+    const replacement: Tab = { id: terminalID, type: 'ssh', title: connection.name, connId: connection.id, labelNumber: tab.labelNumber ?? nextTabLabelNumber() };
+    discardPersistentTerminal(tab.id);
+    setTabs((prev) => [...prev.filter((candidate) => candidate.id !== tab.id), replacement]);
+    setActiveTabId(replacement.id);
+    setFocusedPane(nodeId);
+  };
   const closeTab = async (id: string) => {
     const tab = tabs.find((candidate) => candidate.id === id);
     if (tab?.type === 'ssh' && tab.connId) {
@@ -684,20 +710,8 @@ function LeafPane({ nodeId, restoreVersion, onActiveSshChange, isInSplit, worksp
         // layout entry so the user is not trapped behind its safety guard.
         console.warn('Dismissed an unverified terminal tab without remote session mutation:', tab.id);
       }
-      discardPersistentTerminal(id);
     }
-    setTabs((prev) => {
-      const next = prev.filter((t) => t.id !== id);
-      if (next.length === 0 && isInSplit) {
-          setTimeout(() => {
-            doRemovePane(nodeId);
-            setFocusedPane(layoutRoot.type === 'leaf' ? layoutRoot.id : 'root');
-          }, 0);
-          return next;
-        }
-      if (activeTabId === id) setActiveTabId(next.length > 0 ? next[next.length - 1].id : null);
-      return next;
-    });
+    dismissUnverifiedTab(id);
   };
   const renameTab = (id: string, title: string) => {
     setTabs((prev) => prev.map((tab) => tab.id === id ? { ...tab, title } : tab));
@@ -816,7 +830,7 @@ function LeafPane({ nodeId, restoreVersion, onActiveSshChange, isInSplit, worksp
           <div key={tab.id} style={{ flex: 1, display: tab.id === activeTabId ? 'flex' : 'none', overflow: 'hidden' }}>
             {tab.type === 'ssh' && tab.connId && (
               <Suspense fallback={<div style={{ padding: 12, fontSize: font.md, color: colors.textMuted }}>Loading…</div>}>
-                <TerminalTab connId={tab.connId} myTabId={tab.id} workspaceIndex={workspaceIndex} panelNumber={tab.labelNumber ?? tabs.findIndex((candidate) => candidate.id === tab.id) + 1} extraMenuItems={[
+                <TerminalTab connId={tab.connId} myTabId={tab.id} workspaceIndex={workspaceIndex} panelNumber={tab.labelNumber ?? tabs.findIndex((candidate) => candidate.id === tab.id) + 1} onDismissUnverified={() => dismissUnverifiedTab(tab.id)} onCreateSafeTerminal={() => createSafeReplacement(tab)} extraMenuItems={[
                   { label: t('term_split_h'), action: () => handleSplit('horizontal') },
                   { label: t('term_split_v'), action: () => handleSplit('vertical') },
                   { label: t('term_split_quad'), action: handleQuadSplit },

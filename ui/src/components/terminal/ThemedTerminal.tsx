@@ -73,6 +73,8 @@ interface Props {
   myTabId?: string;
   workspaceIndex?: number;
   panelNumber?: number;
+  onDismissUnverified?: () => void;
+  onCreateSafeTerminal?: () => Promise<void>;
 }
 
 function safeSessionStorage(): Storage | null {
@@ -183,7 +185,7 @@ function highlightText(text: string, rules: HighlightRule[]): string {
   return text;
 }
 
-export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMenuItems, myTabId, workspaceIndex, panelNumber }: Props) {
+export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMenuItems, myTabId, workspaceIndex, panelNumber, onDismissUnverified, onCreateSafeTerminal }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const [termKey, setTermKey] = useState(0);
@@ -1820,6 +1822,17 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
     }
   }, [connId, panelNumber, terminalID, workspaceIndex]);
 
+  const createSafeTerminal = useCallback(async () => {
+    if (!onCreateSafeTerminal) return;
+    setIdentityFault('creating');
+    try {
+      await onCreateSafeTerminal();
+    } catch (error) {
+      console.error('Failed to create a replacement terminal after identity rejection:', error);
+      setIdentityFault('creation-failed');
+    }
+  }, [onCreateSafeTerminal]);
+
   const launchCodexScrollable = useCallback(() => {
     sendRef.current(terminalActionMessage(launchCodexScrollableAction));
     showClipboardNotice(t('term_history_codex_sent'));
@@ -2039,7 +2052,12 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
                 {identityFault === 'adopting' ? '正在验证已有会话…' : '验证并迁移已有会话'}
               </button>
             )}
-            {identityFault === 'adoption-failed' && <div style={{ marginTop: 10, color: colors.dangerBright, fontSize: 12 }}>未找到可安全迁移的旧会话；请新建 Panel，原会话没有被创建、替换或清理。</div>}
+            {identityFault === 'adoption-failed' && <div style={{ marginTop: 10, color: colors.dangerBright, fontSize: 12 }}>未找到可安全迁移的旧会话；可移除该 Panel，或明确新建独立 Panel。原会话不会被创建、替换或清理。</div>}
+            {identityFault === 'creation-failed' && <div style={{ marginTop: 10, color: colors.dangerBright, fontSize: 12 }}>新建安全 Panel 失败；原会话及当前 Panel 均未被修改。</div>}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
+              {onDismissUnverified && <button type="button" onClick={onDismissUnverified} style={{ padding: '6px 10px', border: `1px solid ${colors.border}`, borderRadius: 4, background: colors.bg, color: colors.text, cursor: 'pointer' }}>从布局移除（保留远端会话）</button>}
+              {onCreateSafeTerminal && <button type="button" disabled={identityFault === 'creating'} onClick={() => { void createSafeTerminal(); }} style={{ padding: '6px 10px', border: '1px solid var(--c-accent)', borderRadius: 4, background: colors.accentFaint, color: colors.accent, cursor: identityFault === 'creating' ? 'wait' : 'pointer' }}>{identityFault === 'creating' ? '正在新建安全 Panel…' : '新建安全 Panel（保留旧会话）'}</button>}
+            </div>
           </div>
         </div>
       )}
