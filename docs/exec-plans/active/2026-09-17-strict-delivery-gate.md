@@ -16,7 +16,7 @@ new failing visual evidence), not completion.
 | R2 | Claude history can return to bottom from a visible, clickable hint above composer/statusline | Actual Claude session, 1920/3440 and shared peer; >=5 up/return cycles per size before and after both reload types; native hint not duplicated; fallback tested when native absent; no draft submitted |
 | R3 | Tab switch/reorder/cross-pane move preserves session, order, active selection and viewport | Existing full dynamic checklist; 5 cycles per case, two displays, saved before/after layout plus DOM/socket/session identity and video |
 | R4 | Local font does not jump with peer/renderer/revisit at constant local geometry/DPR; natural spacing and fill | Per-frame font/grid/renderer/screen bounds; small/large displays and DPR 1/1.25; WebGL install and context-loss fallback; no blank frames, no composer clipping, zero added letter spacing |
-| R5 | Entire terminal dynamic matrix passes on the final build | All rows of docs/qa/terminal-visual-release-checklist.md, fresh/normal/hard phases; same/different session peers, refreshing either peer; responsive-browser coverage is retained, but physical Android/iOS hardware is outside the delivery scope by user direction on 2026-09-19; not merely script exit codes—review rendered evidence |
+| R5 | Entire terminal dynamic matrix passes on the final build | All rows of docs/qa/terminal-visual-release-checklist.md, fresh/normal/hard phases; same/different session peers, refreshing either peer; responsive-browser coverage is retained, but physical Android hardware is outside the delivery scope by user direction on 2026-09-19; not merely script exit codes—review rendered evidence |
 | R6 | Existing release gates remain satisfied | Fresh UI tests/lint/build; go test -race ./... -count=1; go vet ./...; diff check; relevant reconnect/performance regression (accepted 33.5ms hardware threshold retained); no ignored failure |
 | R7 | Previously selected five unfinished validations are accounted for, not silently declared done | Real 10k/50k directory benchmarks; large transfers/reconnect/cancel/retry/memory; SSH+lrzsz ZMODEM; axe+cross-browser rendered regression; actual file-tab drag between browser windows. Audit current evidence first, implement missing behavior/tests, preserve failures |
 | R8 | Honest and reproducible handoff | Final candidate identifier/hash, commands, runtime environment, raw artifacts, requirement-by-requirement results, clean scoped changes, versioned known-issues; no hardware/emulation substitution |
@@ -25,7 +25,7 @@ new failing visual evidence), not completion.
 
 Windows physical-browser checks must be recorded separately from Linux
 browsers/emulation. Missing required evidence stays NOT RUN; it is never
-silently waived. Physical phone hardware was explicitly removed from this
+silently waived. Physical Android hardware was explicitly removed from this
 delivery scope by the user on 2026-09-19.
 
 ## Work sequence
@@ -188,7 +188,7 @@ Production remains PID `2003370` and has not been restarted or promoted.
 |---|---|---|
 | R1 | Candidate26 33-case fresh/normal/hard matrix plus Windows 185 native Ctrl+Shift+R, Panel 2/14, 10 each | PARTIAL: not every panel/reload-key combination is native-Windows proven |
 | R2–R4 | Candidate26 matrix includes Claude history/composer, peer font, switch/reorder/cross-pane and dual-display evidence | PASS for automated/browser-rendered scope |
-| R5 | `runtime/diagnostic26-terminal-visual-gate/report.json`: 33/33 PASS; representative artifacts manually reviewed | PASS for the amended scope; physical-phone hardware is not required |
+| R5 | `runtime/diagnostic26-terminal-visual-gate/report.json`: 33/33 PASS; representative artifacts manually reviewed | PASS for the amended scope; physical Android hardware is not required |
 | R6 | 2026-09-18 rerun: UI 49 files/211 tests, lint, build; `go test -race ./...`, `go vet ./...`, diff check all PASS | PASS |
 | R7 | Candidate26 directory, 256MiB transfer/retry/memory, ZMODEM safe flow, axe 0/0, 3-browser smoke PASS | PARTIAL: Windows native cross-window file-tab drag did not emit browser events; retained FAIL |
 | R8 | `runtime/diagnostic26-current-provenance/provenance.json` records candidate, binary SHA-256 `24e2d577…2d0666`, a 225-file source manifest (`cde653ec…6c5`), and 10 built frontend assets (`a749ced9…9933`); remote HTML/main/editor asset hashes were compared with the local build | PARTIAL: 106 working-tree entries remain uncommitted; final clean scoped commit/branch/reproducible release provenance remain required |
@@ -267,7 +267,7 @@ document and all 21 drag events are accepted by Windows, but Edge emits no
 (`diagnostic33-windows185-native-file-tab-drag`). The QA driver now stages its
 large interaction program in a unique temporary file instead of exceeding the
 Task Scheduler command-line limit; the unproven legacy-drag experiment was
-removed. The user subsequently amended the scope: physical phone hardware is
+removed. The user subsequently amended the scope: physical Android hardware is
 not required, and the 206 editor case is replaced by an isolated 185 Edge
 editor case. Cross-window native file-tab drag, plus a clean scoped
 commit/provenance audit, still block final delivery and any production
@@ -276,9 +276,9 @@ promotion.
 ### Physical-device availability check — 2026-09-18 (superseded scope)
 
 The local Android platform tools report only `127.0.0.1:5037` in the `offline`
-state; no usable Android device is attached. No iOS device tooling is installed.
-This remains an environment observation only. Physical phone acceptance is no
-longer a delivery gate following the user's 2026-09-19 scope amendment.
+state; no usable Android device is attached. This remains an environment
+observation only. Physical Android acceptance is no longer a delivery gate
+following the user's 2026-09-19 scope amendment.
 
 ### Native cross-window drag input isolation — 2026-09-18
 
