@@ -18,6 +18,32 @@ release_require_command() {
   command -v "$1" >/dev/null 2>&1 || lan_die "required command not found: $1"
 }
 
+release_candidate_version_prefix() {
+  local candidate="$1"
+  [[ "$candidate" =~ ^[0-9a-f]{40}$ ]] || return 1
+  local canonical
+  canonical="$(git -C "$LAN_ROOT" rev-parse --verify "${candidate}^{commit}" 2>/dev/null)" || return 1
+  [[ "$canonical" == "$candidate" ]] || return 1
+  git -C "$LAN_ROOT" rev-parse --short=7 "$candidate"
+}
+
+release_health_matches() {
+  local body="$1"
+  local expected_environment="$2"
+  local expected_version="$3"
+  [[ "$body" == *'"status":"ok"'* && "$body" == *"\"environment\":\"$expected_environment\""* ]] || return 1
+  # Normal candidates embed the complete commit SHA. Existing independently
+  # built diagnostic candidates embed Git's unambiguous seven-character SHA
+  # followed by a '-' build label. Accept that exact form only after resolving
+  # the full candidate SHA in this repository; do not allow arbitrary prefixes.
+  if [[ "$body" == *"\"version\":\"$expected_version\""* ]]; then
+    return 0
+  fi
+  local prefix
+  prefix="$(release_candidate_version_prefix "$expected_version")" || return 1
+  [[ "$body" == *"\"version\":\"$prefix-"* ]]
+}
+
 release_wait_health() {
   local url="$1"
   local expected_environment="$2"
@@ -26,7 +52,7 @@ release_wait_health() {
   local body=""
   while (( SECONDS < deadline )); do
     body="$(curl --silent --show-error "$url" 2>/dev/null || true)"
-    if [[ "$body" == *'"status":"ok"'* && "$body" == *"\"environment\":\"$expected_environment\""* && "$body" == *"\"version\":\"$expected_version\""* ]]; then
+    if release_health_matches "$body" "$expected_environment" "$expected_version"; then
       return 0
     fi
     sleep 1

@@ -195,6 +195,38 @@ func TestReleaseScriptsHaveValidShellSyntax(t *testing.T) {
 	}
 }
 
+func TestReleaseHealthMatchesExactOrValidatedDiagnosticVersion(t *testing.T) {
+	candidateBytes, err := exec.Command("git", "rev-parse", "HEAD").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidate := strings.TrimSpace(string(candidateBytes))
+	shortBytes, err := exec.Command("git", "rev-parse", "--short=7", candidate).Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	short := strings.TrimSpace(string(shortBytes))
+	validBody := `{"environment":"release-test","status":"ok","version":"` + short + `-diagnostic"}`
+	cases := []struct {
+		name, body, environment, version string
+		want                             bool
+	}{
+		{"exact full SHA", `{"environment":"release-test","status":"ok","version":"` + candidate + `"}`, "release-test", candidate, true},
+		{"validated diagnostic SHA", validBody, "release-test", candidate, true},
+		{"wrong environment", validBody, "production", candidate, false},
+		{"unseparated prefix", `{"environment":"release-test","status":"ok","version":"` + short + `f-diagnostic"}`, "release-test", candidate, false},
+		{"unresolvable candidate", validBody, "release-test", strings.Repeat("a", 40), false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cmd := exec.Command("bash", "-c", `source ./release-lib.sh; release_health_matches "$1" "$2" "$3"`, "release-health", tc.body, tc.environment, tc.version)
+			if err := cmd.Run(); (err == nil) != tc.want {
+				t.Fatalf("release_health_matches() err=%v, want match=%t", err, tc.want)
+			}
+		})
+	}
+}
+
 func TestDualEnvironmentRoutesUseSeparateLoopbackBackends(t *testing.T) {
 	caddyfile, err := os.ReadFile(filepath.Join("..", "Caddyfile"))
 	if err != nil {
