@@ -13,7 +13,7 @@
 | production | `https://192.168.11.87:9443/` | `127.0.0.1:8888` | `webterm` | `webterm.db` |
 | release-test | `https://192.168.11.87:9444/` | `127.0.0.1:8889` | `runtime/release/webterm` | `runtime/release/webterm.db` |
 
-Caddy 对两个入口使用相同证书和 `192.168.11.0/24` allowlist。Go 端口只监听 loopback。
+Caddy 对两个入口使用相同证书和 `192.168.0.0/16` allowlist。Go 端口只监听 loopback。
 release-test 页面顶部必须显示“发布测试环境”和候选 commit 短 SHA；production 不显示该标识，降低误操作环境的风险。
 
 ## 状态与 tmux 边界

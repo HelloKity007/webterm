@@ -6,7 +6,7 @@
 
 ## 1. 产品定位与范围
 
-WebTerm 是部署在 Debian 13 `192.168.11.87` 的个人/小团队 LAN SSH、SFTP 与 MySQL 工具。服务仅对 `192.168.11.0/24` 提供访问，不面向公网，也不交付企业级 RBAC、SSO、审计、计费、Docker/Kubernetes 或前端品牌改造。
+WebTerm 是部署在 Debian 13 `192.168.11.87` 的个人/小团队 LAN SSH、SFTP 与 MySQL 工具。服务仅对私有内网 `192.168.0.0/16` 提供访问，不面向公网，也不交付企业级 RBAC、SSO、审计、计费、Docker/Kubernetes 或前端品牌改造。
 
 保留现有 SSH、多 tab、分屏、广播、SFTP、数据库、OneKey、连接管理和主题能力。本期新增/修正：安全的 HTTPS 部署边界、受管的本机快捷连接，以及按登录用户保存的工作区布局。
 
@@ -17,7 +17,7 @@ WebTerm 是部署在 Debian 13 `192.168.11.87` 的个人/小团队 LAN SSH、SFT
 | 对外入口 | 生产 `https://192.168.11.87:9443/`；发布测试入口见双环境发布 Spec |
 | 现有 Rust WebTerm | 在最终部署切换时停止；本项目独占 `9443` |
 | Go 监听 | 强制 `127.0.0.1:8888`，不暴露到 LAN |
-| Caddy | 本项目独立进程，监听 `0.0.0.0:9443`，只允许 `192.168.11.0/24` |
+| Caddy | 本项目独立进程，监听 `0.0.0.0:9443`，只允许 `192.168.0.0/16` |
 | 本机快捷连接 | 使用本机 Linux 账号 `pgz`；密码仅作为部署 secret 注入，绝不写入仓库、文档或日志 |
 | 快捷连接权限 | 仅 WebTerm `admin`；连接由后端管理，在普通连接管理 UI 隐藏且不能 CRUD |
 | 布局持久化 | SQLite 按 WebTerm `user_id` 保存，可跨浏览器恢复 |
@@ -26,7 +26,7 @@ WebTerm 是部署在 Debian 13 `192.168.11.87` 的个人/小团队 LAN SSH、SFT
 ## 3. 部署架构
 
 ```text
-192.168.11.0/24 browser
+192.168.0.0/16 browser
        │ HTTPS / WSS :9443
        ▼
  Caddy (本项目，LAN allowlist)
@@ -39,7 +39,7 @@ WebTerm 是部署在 Debian 13 `192.168.11.87` 的个人/小团队 LAN SSH、SFT
 ```
 
 - `9444` 现用于隔离的 release-test，详见双环境发布 Spec；两个环境的前端都继续由各自 Go 二进制 `embed.FS` 提供。
-- Caddy 必须使用 IP 直连的 `remote_ip` allowlist，非 `192.168.11.0/24` 一律返回 `403`。WebSocket 升级通过 `reverse_proxy` 处理。
+- Caddy 必须使用 IP 直连的 `remote_ip` allowlist，非 `192.168.0.0/16` 一律返回 `403`。WebSocket 升级通过 `reverse_proxy` 处理。
 - 证书可在本项目 `certs/` 独立生成；证书 SAN 必须包含 `192.168.11.87`。Windows 客户端安装对应 mkcert 根 CA 至「受信任的根证书颁发机构」。
 - 不启动半成品：`lan-up.sh` 预检二进制、Caddyfile、证书、secrets、配置权限、端口和 `127.0.0.1:22`。任何预检失败均非零退出。
 - PID、日志放在 Git 忽略的运行目录；`lan-down.sh` 仅向自己的 PID 发送信号，绝不使用 `pkill` 或终止未知 Caddy 进程。
@@ -98,7 +98,7 @@ user_layouts (
 部署完成必须同时满足：
 
 - [ ] `ss` 证明 Go 仅监听 `127.0.0.1:8888`，Caddy 监听 `0.0.0.0:9443`；`8888` 无 LAN 暴露。
-- [ ] Windows Chrome/Edge 从 `192.168.11.0/24` 打开 HTTPS/WSS 无证书警告；非 allowlist 客户端被 Caddy 拒绝。
+- [ ] Windows Chrome/Edge 从 `192.168.0.0/16` 打开 HTTPS/WSS 无证书警告；非 allowlist 客户端被 Caddy 拒绝。
 - [ ] admin 能登录、能经快捷按钮进入本机 shell 并完成身份命令；普通 user 不显示按钮，直接调用 API 获得 `403`。
 - [ ] 连接管理可新增并连接另一台 LAN Linux；主机密钥不匹配会失败而不是静默接受。
 - [ ] 两个 WebTerm 用户拥有互不影响的布局；同一用户另一浏览器登录后可恢复。

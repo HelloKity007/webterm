@@ -234,7 +234,7 @@
 - 凭据：AES 加密存储（已有），密钥来自 env（`WEBTERM_ENCRYPTION_KEY`）
 - 主机密钥：host key 校验 + known_hosts（已有）
 - 注入防护：tmux session 名由受控字符 + SHA256 生成（已有），保持
-- 传输：Caddy HTTPS + 局域网 IP 白名单（已有，`192.168.11.0/24`）
+- 传输：Caddy HTTPS + 局域网 IP 白名单（已有，`192.168.0.0/16`）
 
 ### 4.4 可扩展性
 - D1 同账号模式：当前以 userID 为维度；未来多账号只需增加 workspace/member 层（表已预留），协议层不变

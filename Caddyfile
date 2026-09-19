@@ -6,7 +6,7 @@
 https://:9443 {
 	tls {$LAN_TLS_CERT} {$LAN_TLS_KEY}
 
-	@lan remote_ip 192.168.11.0/24
+	@lan remote_ip 192.168.0.0/16
 	handle @lan {
 		reverse_proxy 127.0.0.1:8888
 	}
@@ -17,7 +17,7 @@ https://:9443 {
 https://:9444 {
 	tls {$LAN_TLS_CERT} {$LAN_TLS_KEY}
 
-	@lan remote_ip 192.168.11.0/24
+	@lan remote_ip 192.168.0.0/16
 	handle @lan {
 		reverse_proxy 127.0.0.1:8889
 	}

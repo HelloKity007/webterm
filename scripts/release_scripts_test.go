@@ -206,10 +206,17 @@ func TestDualEnvironmentRoutesUseSeparateLoopbackBackends(t *testing.T) {
 		"reverse_proxy 127.0.0.1:8888",
 		"https://:9444",
 		"reverse_proxy 127.0.0.1:8889",
+		"remote_ip 192.168.0.0/16",
 	} {
 		if !strings.Contains(contents, expected) {
 			t.Fatalf("Caddyfile is missing %q", expected)
 		}
+	}
+	if strings.Count(contents, "remote_ip 192.168.0.0/16") != 2 {
+		t.Fatal("Caddyfile must apply the private LAN allowlist to both HTTPS routes")
+	}
+	if strings.Contains(contents, "192.168.11.0/24") {
+		t.Fatal("Caddyfile retains the obsolete single-subnet allowlist")
 	}
 }
 
