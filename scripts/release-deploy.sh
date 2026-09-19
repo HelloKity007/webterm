@@ -30,7 +30,18 @@ go -C "$LAN_ROOT" build -ldflags "-X main.version=$candidate" -o "$next_binary" 
 lan_stop_pid webterm-release
 rm -f "$next_database"
 sqlite3 "$LAN_ROOT/webterm.db" ".backup '$next_database'"
+[[ "$(sqlite3 "$next_database" 'pragma integrity_check;')" == "ok" ]] || lan_die "release-test database snapshot failed integrity check"
 chmod 600 "$next_database"
+snapshot_stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+# A WAL belongs to exactly one database image. Leaving a prior release-test
+# WAL beside a freshly backed-up database makes SQLite replay unrelated pages
+# on startup, which can corrupt the test database and make every terminal
+# creation fail. Archive the complete prior image before installing the new
+# snapshot; production's source database is never altered here.
+for prior in "$LAN_RELEASE_DATABASE" "$LAN_RELEASE_DATABASE-wal" "$LAN_RELEASE_DATABASE-shm"; do
+  [[ -e "$prior" ]] || continue
+  mv "$prior" "$prior.previous-$snapshot_stamp"
+done
 mv "$next_binary" "$LAN_RELEASE_BINARY"
 mv "$next_database" "$LAN_RELEASE_DATABASE"
 printf '%s\n' "$candidate" >"$RELEASE_CANDIDATE_SHA"
