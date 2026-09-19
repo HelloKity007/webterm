@@ -63,8 +63,9 @@ export async function apiPost(path: string, body: unknown) {
   return resp.json();
 }
 
-export async function apiPut(path: string, body: unknown) {
+export async function apiPut(path: string, body: unknown, options: RequestInit = {}) {
   const resp = await apiFetch(path, {
+    ...options,
     method: 'PUT',
     body: JSON.stringify(body),
   });

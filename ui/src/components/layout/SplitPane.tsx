@@ -1173,6 +1173,32 @@ export default function SplitPane({ onActiveSshChange }: { onActiveSshChange?: (
     applyLayout(response);
   }, [applyLayout]);
 
+  const persistCurrentLayout = useCallback((keepalive = false) => {
+    if (layoutMutationPaused) return;
+    const layout = sharedWorkspaceSnapshot(workspaceSnapshot());
+    const serializedLayout = JSON.stringify(layout);
+    if (!shouldPersistLayout(serializedLayout, persistedLayoutRef.current)) return;
+    void apiPut('/api/layout', {
+      schema_version: 2,
+      revision: revisionRef.current,
+      layout,
+    }, keepalive ? { keepalive: true } : undefined).then((response) => {
+      revisionRef.current = response.revision;
+      persistedLayoutRef.current = serializedLayout;
+      setLayoutMessage('');
+    }).catch((error: Error) => {
+      // The browser may already be unloading. A failed keepalive request has
+      // no useful UI surface, while an ordinary save retains conflict repair.
+      if (keepalive) return;
+      if (error instanceof ApiError && error.code === 'LAYOUT_CONFLICT') {
+        setLayoutMessage('布局已在另一端更新，正在同步最新布局。');
+        void loadLayout().catch(() => setLayoutMessage('布局同步失败；请稍后重试。'));
+        return;
+      }
+      setLayoutMessage('布局保存失败；请稍后重试。');
+    });
+  }, [loadLayout]);
+
   useEffect(() => {
     let active = true;
     localSelectionReadyRef.current = false;
@@ -1212,30 +1238,29 @@ export default function SplitPane({ onActiveSshChange }: { onActiveSshChange?: (
 
   useEffect(() => {
     if (!token || !userID) return;
+    // A hard reload can arrive before the normal 500ms debounce expires.
+    // Keep the shared tab/pane shape durable across Ctrl+Shift+R; selection
+    // remains browser-local and is intentionally handled separately above.
+    const flushOnPageHide = () => {
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = null;
+      }
+      persistCurrentLayout(true);
+    };
+    window.addEventListener('pagehide', flushOnPageHide);
+    return () => window.removeEventListener('pagehide', flushOnPageHide);
+  }, [persistCurrentLayout, token, userID]);
+
+  useEffect(() => {
+    if (!token || !userID) return;
     const scheduleSave = () => {
       if (layoutMutationPaused) return;
       if (Date.now() - restoredAtRef.current < 500) return;
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
       saveTimerRef.current = setTimeout(() => {
-        const layout = sharedWorkspaceSnapshot(workspaceSnapshot());
-        const serializedLayout = JSON.stringify(layout);
-        if (!shouldPersistLayout(serializedLayout, persistedLayoutRef.current)) return;
-        void apiPut('/api/layout', {
-          schema_version: 2,
-          revision: revisionRef.current,
-          layout,
-        }).then((response) => {
-          revisionRef.current = response.revision;
-          persistedLayoutRef.current = serializedLayout;
-          setLayoutMessage('');
-        }).catch((error: Error) => {
-          if (error instanceof ApiError && error.code === 'LAYOUT_CONFLICT') {
-            setLayoutMessage('布局已在另一端更新，正在同步最新布局。');
-            void loadLayout().catch(() => setLayoutMessage('布局同步失败；请稍后重试。'));
-            return;
-          }
-          setLayoutMessage('布局保存失败；请稍后重试。');
-        });
+        saveTimerRef.current = null;
+        persistCurrentLayout();
       }, 500);
     };
     const stopLayout = subscribe(scheduleSave);
@@ -1245,7 +1270,7 @@ export default function SplitPane({ onActiveSshChange }: { onActiveSshChange?: (
       stopStore();
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     };
-  }, [loadLayout, token, userID]);
+  }, [persistCurrentLayout, token, userID]);
 
   return <>
     {token && <LayoutSync token={token} onMessage={(raw) => {
