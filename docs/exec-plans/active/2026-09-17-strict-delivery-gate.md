@@ -16,16 +16,17 @@ new failing visual evidence), not completion.
 | R2 | Claude history can return to bottom from a visible, clickable hint above composer/statusline | Actual Claude session, 1920/3440 and shared peer; >=5 up/return cycles per size before and after both reload types; native hint not duplicated; fallback tested when native absent; no draft submitted |
 | R3 | Tab switch/reorder/cross-pane move preserves session, order, active selection and viewport | Existing full dynamic checklist; 5 cycles per case, two displays, saved before/after layout plus DOM/socket/session identity and video |
 | R4 | Local font does not jump with peer/renderer/revisit at constant local geometry/DPR; natural spacing and fill | Per-frame font/grid/renderer/screen bounds; small/large displays and DPR 1/1.25; WebGL install and context-loss fallback; no blank frames, no composer clipping, zero added letter spacing |
-| R5 | Entire terminal dynamic matrix passes on the final build | All rows of docs/qa/terminal-visual-release-checklist.md, fresh/normal/hard phases; mobile portrait/landscape/input/reading/keyboard; same/different session peers, refreshing either peer; not merely script exit codes—review rendered evidence |
+| R5 | Entire terminal dynamic matrix passes on the final build | All rows of docs/qa/terminal-visual-release-checklist.md, fresh/normal/hard phases; same/different session peers, refreshing either peer; responsive-browser coverage is retained, but physical Android/iOS hardware is outside the delivery scope by user direction on 2026-09-19; not merely script exit codes—review rendered evidence |
 | R6 | Existing release gates remain satisfied | Fresh UI tests/lint/build; go test -race ./... -count=1; go vet ./...; diff check; relevant reconnect/performance regression (accepted 33.5ms hardware threshold retained); no ignored failure |
 | R7 | Previously selected five unfinished validations are accounted for, not silently declared done | Real 10k/50k directory benchmarks; large transfers/reconnect/cancel/retry/memory; SSH+lrzsz ZMODEM; axe+cross-browser rendered regression; actual file-tab drag between browser windows. Audit current evidence first, implement missing behavior/tests, preserve failures |
 | R8 | Honest and reproducible handoff | Final candidate identifier/hash, commands, runtime environment, raw artifacts, requirement-by-requirement results, clean scoped changes, versioned known-issues; no hardware/emulation substitution |
 | R9 | Lost persistent sessions cannot silently become new shells | Distinguish initial creation from reconnect after loss, including WebTerm restart; injected loss on disposable private tmux only; explicit actionable UI error, no automatic replacement or draft replay; structured loss evidence; pinned tmux and production/test isolation preflight before stopping a service |
-| R10 | Windows Edge hard reload reliably loads page and terminal content | Native Ctrl+Shift+R on Windows 185 plus original 206 persisted-editor scenario; document/assets/network/console/navigation plus recorded rendered content; restored file tabs and delayed SFTP handshake; distinguish whole-page blank from terminal-only blank; retain failures and report non-reproduction honestly |
+| R10 | Windows Edge hard reload reliably loads page and terminal content | Native Ctrl+Shift+R and isolated persisted-editor reload on Windows 185 (replacing the earlier 206 requirement by user direction on 2026-09-19); document/assets/network/console/navigation plus recorded rendered content; restored file tabs and delayed SFTP handshake; distinguish whole-page blank from terminal-only blank; retain failures and report non-reproduction honestly |
 
-Windows physical-browser and phone hardware checks must be recorded separately
-from Linux browsers/emulation. Missing required evidence stays NOT RUN; it is
-never silently waived. A release decision cannot be made from a narrower matrix.
+Windows physical-browser checks must be recorded separately from Linux
+browsers/emulation. Missing required evidence stays NOT RUN; it is never
+silently waived. Physical phone hardware was explicitly removed from this
+delivery scope by the user on 2026-09-19.
 
 ## Work sequence
 
@@ -187,12 +188,12 @@ Production remains PID `2003370` and has not been restarted or promoted.
 |---|---|---|
 | R1 | Candidate26 33-case fresh/normal/hard matrix plus Windows 185 native Ctrl+Shift+R, Panel 2/14, 10 each | PARTIAL: not every panel/reload-key combination is native-Windows proven |
 | R2–R4 | Candidate26 matrix includes Claude history/composer, peer font, switch/reorder/cross-pane and dual-display evidence | PASS for automated/browser-rendered scope |
-| R5 | `runtime/diagnostic26-terminal-visual-gate/report.json`: 33/33 PASS; representative artifacts manually reviewed | PARTIAL: physical-phone review remains NOT RUN |
+| R5 | `runtime/diagnostic26-terminal-visual-gate/report.json`: 33/33 PASS; representative artifacts manually reviewed | PASS for the amended scope; physical-phone hardware is not required |
 | R6 | 2026-09-18 rerun: UI 49 files/211 tests, lint, build; `go test -race ./...`, `go vet ./...`, diff check all PASS | PASS |
 | R7 | Candidate26 directory, 256MiB transfer/retry/memory, ZMODEM safe flow, axe 0/0, 3-browser smoke PASS | PARTIAL: Windows native cross-window file-tab drag did not emit browser events; retained FAIL |
 | R8 | `runtime/diagnostic26-current-provenance/provenance.json` records candidate, binary SHA-256 `24e2d577…2d0666`, a 225-file source manifest (`cde653ec…6c5`), and 10 built frontend assets (`a749ced9…9933`); remote HTML/main/editor asset hashes were compared with the local build | PARTIAL: 106 working-tree entries remain uncommitted; final clean scoped commit/branch/reproducible release provenance remain required |
 | R9 | Candidate26 identity browser proof confirms explicit create, guarded attach, adoption, and replacement refusal | PASS for isolated test scope |
-| R10 | Windows 185 real Edge Panel 2/14 native hard reload 20/20 PASS | PARTIAL: original 206 persisted-editor and physical phone are NOT RUN |
+| R10 | Windows 185 real Edge Panel 2/14 native hard reload 20/20 PASS; isolated Edge 152 editor initial load plus five reloads PASS, six read-only reads/zero writes/errors | PASS for the amended 185-only Windows scope |
 
 No final delivery or production-promotion claim is valid while any PARTIAL row
 remains. In particular, do not turn the Windows native drag failure into a
@@ -266,16 +267,18 @@ document and all 21 drag events are accepted by Windows, but Edge emits no
 (`diagnostic33-windows185-native-file-tab-drag`). The QA driver now stages its
 large interaction program in a unique temporary file instead of exceeding the
 Task Scheduler command-line limit; the unproven legacy-drag experiment was
-removed. Original 206 persisted-editor Edge and physical Android/iOS IME
-acceptance remain NOT RUN. These hardware gates, plus a clean scoped
-commit/provenance audit, block final delivery and any production promotion.
+removed. The user subsequently amended the scope: physical phone hardware is
+not required, and the 206 editor case is replaced by an isolated 185 Edge
+editor case. Cross-window native file-tab drag, plus a clean scoped
+commit/provenance audit, still block final delivery and any production
+promotion.
 
-### Physical-device availability check — 2026-09-18
+### Physical-device availability check — 2026-09-18 (superseded scope)
 
 The local Android platform tools report only `127.0.0.1:5037` in the `offline`
 state; no usable Android device is attached. No iOS device tooling is installed.
-This is an environment observation, not a mobile result: physical Android/iOS
-IME, reading, keyboard, and visual acceptance remain **NOT RUN**.
+This remains an environment observation only. Physical phone acceptance is no
+longer a delivery gate following the user's 2026-09-19 scope amendment.
 
 ### Native cross-window drag input isolation — 2026-09-18
 
@@ -289,7 +292,19 @@ the exact source-tab coordinate receives native `pointermove`, `mousedown`,
 This is a test-environment input limitation, not a PASS and not a product
 regression conclusion; a physical native-browser drag remains required by R7.
 
-### Windows 206 isolated editor reload — 2026-09-18
+On the user-authorized local physical Xorg desktop, the improved verifier uses
+UUID-named owned windows, records both CDP and X11 geometry, and separately
+proves pointer delivery before a drag. The source document receives a native
+click and a held-button press. The target popup is represented by a distinct
+Xwayland content child and focus container; after focusing that owned
+container, a calibrated root-coordinate target click still reaches neither its
+`mousedown` nor its `click` listener. Raw evidence is
+`runtime/diagnostic33-native-file-tab-cross-window-xorg-container-final/`.
+This is an honest environment-bound **NOT VERIFIED** result: it is neither a
+file-workspace PASS nor a product regression claim, and it remains the R7
+delivery blocker.
+
+### Windows 206 isolated editor reload — 2026-09-18 (supplementary only)
 
 An independently named Edge profile on 206 (not the user's existing Edge) ran
 the real read-only SFTP editor fixture against 9444. Edge 146 completed the
@@ -299,6 +314,21 @@ six reads, zero writes, and no page error:
 attached only to its own CDP endpoint and released its isolated browser context
 without closing the browser. Afterwards its exact scheduled task was absent,
 9336 was no longer listening, and its exact temporary profile was removed.
-This increases same-hardware coverage but is not an original persisted-editor
-result and is not a native Ctrl+Shift+R result; R10's original 206 scenario
-remains **NOT RUN**.
+This is retained as supplementary historical evidence only. It neither stands
+in for nor blocks the amended Windows 185 requirement.
+
+### Windows 185 isolated editor reload — 2026-09-19
+
+Following the user's replacement of 206 with 185, an independently named Edge
+profile on 185 ran the same read-only SFTP editor fixture against 9444. Edge
+152.0.4191.66 completed initial load plus five `page.reload` rounds. Every
+round restored one file tab; the fixture recorded exactly six `read` actions,
+zero writes, and zero page errors:
+`runtime/diagnostic33-windows185-editor-reload/report.json`. The test used a
+fresh attached CDP context, blocked layout writes and every non-read-only-SFTP
+endpoint, and did not close the user's browser. Its exact task,
+`WebTermStrictQA-185-20260919-084548`, temporary profile, dedicated Edge
+process, and port 9337 were then removed and verified absent. Together with
+the 185 native Ctrl+Shift+R middle-history result, this satisfies R10 under
+the amended scope. The editor test is explicitly Playwright `page.reload`, not
+another claim of a native shortcut.
