@@ -16,9 +16,10 @@ interface Props {
   onAddTab?: () => void;
   filterType?: string;
   onlineCounts?: Record<string, number>;
+  shouldConfirmClose?: (tabId: string) => boolean;
 }
 
-export default function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab, onRenameTab, onReceiveTab, onReorderTab, onAddTab, filterType, onlineCounts }: Props) {
+export default function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab, onRenameTab, onReceiveTab, onReorderTab, onAddTab, filterType, onlineCounts, shouldConfirmClose }: Props) {
   const filtered = filterType ? tabs.filter((t) => t.type === filterType) : tabs;
   const [dragOverAdd, setDragOverAdd] = useState(false);
   const [dropTarget, setDropTarget] = useState<{ id: string; after: boolean } | null>(null);
@@ -147,7 +148,13 @@ export default function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab, onR
                 {onlineCounts?.[tab.id]}
               </span>
             </> : `${tab.labelNumber ?? idx + 1}: ${tab.title}`}
-            <TabCloseButton label={t('tab_close')} onClick={() => { if (window.confirm(t('tab_close_confirm'))) onCloseTab(tab.id); }} />
+            <TabCloseButton label={t('tab_close')} onClick={() => {
+              // An identity-guarded tab has never been attached to a remote
+              // session by this browser. Its close path only removes a local
+              // layout entry, so a second native confirmation is misleading
+              // and can leave the safety dialog apparently stuck.
+              if (shouldConfirmClose?.(tab.id) === false || window.confirm(t('tab_close_confirm'))) onCloseTab(tab.id);
+            }} />
           </div>
         </React.Fragment>
       ))}

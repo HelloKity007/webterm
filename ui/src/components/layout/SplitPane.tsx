@@ -596,6 +596,7 @@ function LeafPane({ nodeId, restoreVersion, onActiveSshChange, isInSplit, worksp
   }
   if (activeTabId && !visitedTabs.includes(activeTabId)) setVisitedTabs([...visitedTabs, activeTabId]);
   const [showAddMenu, setShowAddMenu] = useState(false);
+  const [identityGuardedTabIDs, setIdentityGuardedTabIDs] = useState<Set<string>>(() => new Set());
   const drainTabQueue = useLayoutStore((s) => s.drainTabQueue);
   const queuedTabs = useLayoutStore((s) => s.newTabQueue);
   const focusedPaneId = useLayoutStore((s) => s.focusedPaneId);
@@ -672,6 +673,12 @@ function LeafPane({ nodeId, restoreVersion, onActiveSshChange, isInSplit, worksp
   const dismissUnverifiedTab = (id: string) => {
     const tab = tabs.find((candidate) => candidate.id === id);
     if (tab?.type === 'ssh') discardPersistentTerminal(id);
+    setIdentityGuardedTabIDs((previous) => {
+      if (!previous.has(id)) return previous;
+      const next = new Set(previous);
+      next.delete(id);
+      return next;
+    });
     setTabs((prev) => {
       const next = prev.filter((candidate) => candidate.id !== id);
       if (next.length === 0 && isInSplit) {
@@ -684,6 +691,14 @@ function LeafPane({ nodeId, restoreVersion, onActiveSshChange, isInSplit, worksp
       return next;
     });
   };
+  const setIdentityGuarded = useCallback((id: string, guarded: boolean) => {
+    setIdentityGuardedTabIDs((previous) => {
+      if (previous.has(id) === guarded) return previous;
+      const next = new Set(previous);
+      if (guarded) next.add(id); else next.delete(id);
+      return next;
+    });
+  }, []);
   const createSafeTabInCurrentPane = async (tab: Tab) => {
     if (!tab.connId) throw new Error('terminal connection is missing');
     const connection = connections.find((candidate) => candidate.id === tab.connId);
@@ -810,7 +825,7 @@ function LeafPane({ nodeId, restoreVersion, onActiveSshChange, isInSplit, worksp
   return (
     <div className="terminal-pane" onClick={() => setFocusedPane(nodeId)} style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0, minHeight: 0 }}>
       <div style={{ position: 'relative', flexShrink: 0 }}>
-        <TabBar tabs={tabs} activeTabId={activeTabId} onSelectTab={setActiveTabId} onCloseTab={closeTab} onRenameTab={renameTab} filterType="ssh" onlineCounts={presenceCounts}
+        <TabBar tabs={tabs} activeTabId={activeTabId} onSelectTab={setActiveTabId} onCloseTab={closeTab} onRenameTab={renameTab} filterType="ssh" onlineCounts={presenceCounts} shouldConfirmClose={(id) => !identityGuardedTabIDs.has(id)}
           onReorderTab={(source, target, after) => setTabs(prev => reorderTabs(prev, source, target, after))}
           onReceiveTab={handleReceiveTab} onAddTab={() => setShowAddMenu((open) => !open)} />
         {showAddMenu && (
@@ -832,7 +847,7 @@ function LeafPane({ nodeId, restoreVersion, onActiveSshChange, isInSplit, worksp
           <div key={tab.id} style={{ flex: 1, display: tab.id === activeTabId ? 'flex' : 'none', overflow: 'hidden' }}>
             {tab.type === 'ssh' && tab.connId && (
               <Suspense fallback={<div style={{ padding: 12, fontSize: font.md, color: colors.textMuted }}>Loading…</div>}>
-                <TerminalTab connId={tab.connId} myTabId={tab.id} workspaceIndex={workspaceIndex} panelNumber={tab.labelNumber ?? tabs.findIndex((candidate) => candidate.id === tab.id) + 1} onDismissUnverified={() => dismissUnverifiedTab(tab.id)} onCreateSafeTerminal={() => createSafeTabInCurrentPane(tab)} extraMenuItems={[
+                <TerminalTab connId={tab.connId} myTabId={tab.id} workspaceIndex={workspaceIndex} panelNumber={tab.labelNumber ?? tabs.findIndex((candidate) => candidate.id === tab.id) + 1} onDismissUnverified={() => dismissUnverifiedTab(tab.id)} onCreateSafeTerminal={() => createSafeTabInCurrentPane(tab)} onIdentityGuardChange={(guarded) => setIdentityGuarded(tab.id, guarded)} extraMenuItems={[
                   { label: t('term_split_h'), action: () => handleSplit('horizontal') },
                   { label: t('term_split_v'), action: () => handleSplit('vertical') },
                   { label: t('term_split_quad'), action: handleQuadSplit },

@@ -50,6 +50,15 @@ describe('TabBar', () => {
     expect(onCloseTab).toHaveBeenCalledTimes(1);
   });
 
+  it('closes a known identity-guarded tab without a second confirmation', () => {
+    const onCloseTab = vi.fn();
+    const confirm = vi.spyOn(window, 'confirm');
+    render(<TabBar tabs={[{ id: 'legacy-guarded', type: 'ssh', title: '旧会话', connId: 1 }]} activeTabId="legacy-guarded" onSelectTab={() => {}} onCloseTab={onCloseTab} shouldConfirmClose={() => false} />);
+    fireEvent.click(screen.getByLabelText('关闭标签'));
+    expect(onCloseTab).toHaveBeenCalledWith('legacy-guarded');
+    expect(confirm).not.toHaveBeenCalled();
+  });
+
   it('disables native tab dragging on touch devices so the bar can pan horizontally', () => {
     vi.stubGlobal('matchMedia', vi.fn().mockReturnValue({
       matches: true,

@@ -75,6 +75,7 @@ interface Props {
   panelNumber?: number;
   onDismissUnverified?: () => void;
   onCreateSafeTerminal?: () => Promise<void>;
+  onIdentityGuardChange?: (guarded: boolean) => void;
 }
 
 function safeSessionStorage(): Storage | null {
@@ -185,7 +186,7 @@ function highlightText(text: string, rules: HighlightRule[]): string {
   return text;
 }
 
-export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMenuItems, myTabId, workspaceIndex, panelNumber, onDismissUnverified, onCreateSafeTerminal }: Props) {
+export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMenuItems, myTabId, workspaceIndex, panelNumber, onDismissUnverified, onCreateSafeTerminal, onIdentityGuardChange }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const [termKey, setTermKey] = useState(0);
@@ -194,6 +195,13 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
   const [identityFault, setIdentityFault] = useState<string | null>(null);
   const [identityRevision, setIdentityRevision] = useState(0);
   const [historyHelpOpen, setHistoryHelpOpen] = useState(false);
+  const identityGuardChangeRef = useRef(onIdentityGuardChange);
+  useEffect(() => { identityGuardChangeRef.current = onIdentityGuardChange; }, [onIdentityGuardChange]);
+  useEffect(() => {
+    const notify = identityGuardChangeRef.current;
+    notify?.(identityFault !== null);
+    return () => { notify?.(false); };
+  }, [identityFault]);
   const [showHistoryResume, setShowHistoryResume] = useCliHistoryResume(
     JSON.stringify([terminalHistoryUserID(), connId, myTabId || '', workspaceIndex || 0, panelNumber || 0]),
   );
