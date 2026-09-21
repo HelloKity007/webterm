@@ -14,9 +14,8 @@ Web-based SSH/SFTP/Database terminal manager. Single binary, Go backend + React 
 - **Shared sessions** — multiple devices can attach to the same terminal, with presence indicators
 - **Theme** — multiple terminal color schemes, highlight rules
 
-ZMODEM `rz` upload is temporarily disabled until its real SSH+lrzsz release
-gate is complete; use the SFTP file manager for uploads. The `sz` download path
-remains available.
+File transfer is provided through the SFTP file manager. Terminal ZMODEM
+(`sz`/`rz`) is intentionally unsupported.
 
 ## Quick Start
 

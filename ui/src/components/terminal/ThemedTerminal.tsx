@@ -6,8 +6,6 @@ import { SearchAddon } from '@xterm/addon-search';
 import { WebglAddon } from '@xterm/addon-webgl';
 import { websocketTicketURL, webSocketClientID } from '../../api/wsTicket';
 import { apiPost } from '../../api/client';
-import { useHighlightRules } from '../../hooks/useTerminalTheme';
-import type { HighlightRule } from '../../hooks/useTerminalTheme';
 import { useWebSocket } from '../../hooks/useWebSocket';
 import { useLayoutStore } from '../../store/layout';
 import { useConnectionStore } from '../../store/connections';
@@ -16,9 +14,6 @@ import '@xterm/xterm/css/xterm.css';
 import { getTheme } from '../../themes/presets';
 import ContextMenu from '../common/ContextMenu';
 import { colors } from '../../theme/tokens';
-import Zmodem from 'zmodem.js/src/zmodem_browser.js';
-import { isRecoverableZmodemCloseError, receiveZmodemDownload, type ZmodemDownloadOffer } from './zmodemDownload';
-import { deliverTerminalBytes } from './terminalOutput';
 import TerminalHistoryHelp from './TerminalHistoryHelp';
 import CliHistoryResume from './CliHistoryResume';
 import { useCliHistoryResume } from './useCliHistoryResume';
@@ -132,11 +127,6 @@ function restoreShellHistoryViewport(term: Terminal, snapshot: ShellHistoryViewp
   }
 }
 
-type Octets = Uint8Array | ArrayBuffer;
-interface ZSentry { consume: (octets: Uint8Array) => void; }
-type ZTransfer = ZmodemDownloadOffer;
-interface ZSession { type: 'send' | 'receive'; on: (event: string, callback: (value?: ZTransfer) => void) => void; start: () => void; abort: () => void; }
-interface ZDetection { deny: () => void; confirm: () => ZSession; }
 interface PendingLeftGesture {
   anchor: { col: number; row: number };
   clientX: number;
@@ -163,27 +153,6 @@ function terminalGridAnnouncement(bytes: Uint8Array): Uint8Array | null {
   }
   const terminator = bytes.indexOf(0x07, prefix.length);
   return terminator < 0 ? null : bytes.subarray(0, terminator + 1);
-}
-
-function hexToRgb(hex: string): string {
-  const r = parseInt(hex.slice(1, 3), 16);
-  const g = parseInt(hex.slice(3, 5), 16);
-  const b = parseInt(hex.slice(5, 7), 16);
-  return `${r};${g};${b}`;
-}
-
-function highlightText(text: string, rules: HighlightRule[]): string {
-  for (const rule of rules) {
-    if (!rule.keyword) continue;
-    try {
-      const pattern = rule.regex ? rule.keyword : rule.keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const re = new RegExp(`(${pattern})`, 'g');
-      if (!re.test(text)) continue;
-      re.lastIndex = 0;
-      text = text.replace(re, `\x1b[1m\x1b[38;2;${hexToRgb(rule.color)}m$1\x1b[0m`);
-    } catch { /* invalid regex - skip rule */ }
-  }
-  return text;
 }
 
 export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMenuItems, myTabId, workspaceIndex, panelNumber, onDismissUnverified, onCreateSafeTerminal, onIdentityGuardChange }: Props) {
@@ -219,12 +188,6 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
   const globalSelectionUpRef = useRef<(event: MouseEvent) => void>(() => {});
   const selectionSnapshotRef = useRef('');
   const clipboardNoticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const rules = useHighlightRules();
-  const rulesRef = useRef(rules);
-  const zsentryRef = useRef<ZSentry | null>(null);
-  const zsessionRef = useRef<ZSession | null>(null);
-  const zmodemActiveRef = useRef(false);
-  const zmodemCloseRecoveryRef = useRef<(bytes: Uint8Array, error: unknown) => boolean>(() => false);
   const outputQueueRef = useRef<Uint8Array[]>([]);
   const outputQueueBytesRef = useRef(0);
   const outputQueuePeakRef = useRef(0);
@@ -297,10 +260,9 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
   }, []);
 
   useEffect(() => {
-    rulesRef.current = rules;
     onStatusRef.current = onStatus;
     onResizeDimRef.current = onResizeDim;
-  }, [onResizeDim, onStatus, rules]);
+  }, [onResizeDim, onStatus]);
 
   const showClipboardNotice = useCallback((message: string) => {
     if (clipboardNoticeTimerRef.current) clearTimeout(clipboardNoticeTimerRef.current);
@@ -569,20 +531,6 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
   useEffect(() => () => {
     if (clipboardNoticeTimerRef.current) clearTimeout(clipboardNoticeTimerRef.current);
     globalSelectionCleanupRef.current?.();
-  }, []);
-
-  const sendBinary = useCallback((octets: Octets) => {
-    const bytes = octets instanceof Uint8Array ? octets : new Uint8Array(octets);
-    let bin = '';
-    for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
-    sendRef.current(JSON.stringify({ data: btoa(bin), b64: true }));
-  }, []);
-
-  const sendTextAsBinary = useCallback((text: string) => {
-    const bytes = new TextEncoder().encode(text);
-    let bin = '';
-    for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
-    sendRef.current(JSON.stringify({ data: btoa(bin), b64: true }));
   }, []);
 
   const terminalID = myTabId || '';
@@ -1591,28 +1539,16 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
         outputQueueBytesRef.current = Math.max(0, outputQueueBytesRef.current - merged.byteLength);
         if (ref.current) ref.current.dataset.outputQueueBytes = String(outputQueueBytesRef.current);
         try {
-          if (zsentryRef.current) {
-            const started = performance.now();
-            deliverTerminalBytes(term, zsentryRef.current, merged);
+          outputWritePendingRef.current = true;
+          const started = performance.now();
+          term.write(merged, () => {
+            outputWritePendingRef.current = false;
             recordOutputBatch(merged.byteLength, performance.now() - started);
             pumpTerminalOutput();
-          } else {
-            outputWritePendingRef.current = true;
-            const started = performance.now();
-            term.write(merged, () => {
-              outputWritePendingRef.current = false;
-              recordOutputBatch(merged.byteLength, performance.now() - started);
-              pumpTerminalOutput();
-            });
-          }
+          });
         } catch (error) {
           outputWritePendingRef.current = false;
-          if (zmodemCloseRecoveryRef.current(merged, error)) {
-            recordOutputBatch(merged.byteLength);
-            pumpTerminalOutput();
-          } else {
-            console.warn('terminal output delivery:', error);
-          }
+          console.warn('terminal output delivery:', error);
           pumpTerminalOutput();
         }
       };
@@ -1885,103 +1821,11 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
     termRef.current?.focus();
   }, [showClipboardNotice]);
 
-  // ZMODEM (sz/rz) support
-  useEffect(() => {
-    const makeSentry = (): ZSentry => {
-      const sentry = new Zmodem.Sentry({
-        to_terminal: (octets: Octets) => {
-          const term = termRef.current;
-          if (!term) return;
-          const bytes = octets instanceof Uint8Array ? octets : new Uint8Array(octets);
-          try {
-            const str = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
-            term.write(highlightText(str, rulesRef.current));
-          } catch {
-            term.write(bytes);
-          }
-        },
-        sender: (octets: Octets) => sendBinary(octets),
-        on_detect: (detection: ZDetection) => {
-          if (zsessionRef.current) {
-            try { detection.deny(); } catch { /* remote session already ended */ }
-            return;
-          }
-          try {
-            const session = detection.confirm();
-            zsessionRef.current = session;
-            zmodemActiveRef.current = true;
-            if (session.type === 'send') {
-              // Upload is deliberately unavailable until the rz path has a real
-              // SSH+lrzsz end-to-end gate. Abort instead of leaving rz hung.
-              session.on('session_end', () => {
-                zmodemActiveRef.current = false;
-                zsessionRef.current = null;
-                zsentryRef.current = makeSentry();
-              });
-              termRef.current?.write('\r\n\x1b[33m[ZMODEM] 上传暂不可用，请使用 SFTP / upload unavailable; use SFTP\x1b[0m\r\n');
-              session.abort();
-            } else {
-              // Remote ran sz: download offered files
-              session.on('offer', (transfer) => {
-                if (!transfer) return;
-                const xfer = transfer;
-                void receiveZmodemDownload(xfer, Zmodem.Browser.save_to_disk)
-                  .catch(() => {
-                    // The protocol session owns its lifecycle; a download/save
-                    // failure must not abort a newer or unrelated session.
-                    termRef.current?.write('\r\n\x1b[31m[ZMODEM] 下载失败 / download failed\x1b[0m\r\n');
-                  });
-              });
-              session.on('session_end', () => {
-                zmodemActiveRef.current = false;
-                zsessionRef.current = null;
-                zsentryRef.current = makeSentry();
-              });
-              session.start();
-            }
-          } catch (e) {
-            zmodemActiveRef.current = false;
-            zsessionRef.current = null;
-            termRef.current?.write(`\r\n\x1b[31mZMODEM: ${e}\x1b[0m\r\n`);
-            zsentryRef.current = makeSentry();
-          }
-        },
-        on_retract: () => {},
-      });
-      const typedSentry = sentry as ZSentry;
-      zsentryRef.current = typedSentry;
-      return typedSentry;
-    };
-    zmodemCloseRecoveryRef.current = (bytes, error) => {
-      if (!zmodemActiveRef.current || !isRecoverableZmodemCloseError(error)) return false;
-      // The peer has completed ZFIN but omitted OO. The current bytes are the
-      // first real shell output, so render them only after retiring the stale
-      // protocol session and installing a fresh detector for later transfers.
-      zmodemActiveRef.current = false;
-      zsessionRef.current = null;
-      zsentryRef.current = null;
-      makeSentry();
-      termRef.current?.write(bytes);
-      return true;
-    };
-    makeSentry();
-    return () => {
-      zmodemCloseRecoveryRef.current = () => false;
-      zsentryRef.current = null;
-      zsessionRef.current = null;
-      zmodemActiveRef.current = false;
-    };
-  }, [sendBinary]);
-
   useEffect(() => {
     const term = termRef.current;
     if (!term) return;
     const disposable = term.onData((data) => {
       setShowHistoryResume(false);
-      if (zmodemActiveRef.current) {
-        sendTextAsBinary(data);
-        return;
-      }
       if (!inputViewportFollowedRef.current) {
         send(terminalActionMessage(followTerminalInputAction));
         inputViewportFollowedRef.current = true;
@@ -1990,7 +1834,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       send(JSON.stringify({ data }));
     });
     return () => disposable.dispose();
-  }, [send, sendTextAsBinary, setShowHistoryResume, termKey]);
+  }, [send, setShowHistoryResume, termKey]);
 
   const revealInputCursor = useCallback(() => {
     const surface = ref.current;
