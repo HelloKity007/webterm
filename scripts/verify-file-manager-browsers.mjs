@@ -44,6 +44,9 @@ for (const [name, engine] of Object.entries(engines)) {
     const workspace = page.locator('[data-testid="file-workspace"]');
     await workspace.waitFor();
     await workspace.locator('.sftp-shell').waitFor();
+    // Screenshots must represent a settled workspace rather than the transient
+    // loading placeholder, otherwise a visual baseline would be nondeterministic.
+    await workspace.locator('.sftp-file-list:not([aria-busy="true"])').waitFor({ timeout: 15000 });
     const rendered = [];
     for (const viewport of viewports) {
       await page.setViewportSize(viewport);
