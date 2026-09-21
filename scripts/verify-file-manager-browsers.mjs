@@ -18,14 +18,29 @@ for (const [name, engine] of Object.entries(engines)) {
   try {
     browser = await engine.launch({ headless: true });
     const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, ignoreHTTPSErrors: true });
-    if (process.env.WEBTERM_QA_TOKEN) await page.addInitScript((token) => localStorage.setItem('token', token), process.env.WEBTERM_QA_TOKEN);
-    await page.goto(target.origin, { waitUntil: 'networkidle' });
-    assert(await page.locator('.activity-files').count(), 'release-test session is required');
-    await page.locator('.activity-files').click();
+    // Every engine starts with an isolated profile. Obtain a short-lived test
+    // token from the already restricted 9444 candidate rather than relying on
+    // Chromium's incidental persisted login state (which WebKit never has).
+    let token = process.env.WEBTERM_QA_TOKEN;
+    if (!token) {
+      const response = await page.request.post(new URL('/api/auth/test-session', target).href);
+      assert.equal(response.status(), 200, 'release-test did not provide a test session');
+      token = (await response.json()).token;
+      assert.equal(typeof token, 'string');
+    }
+    await page.addInitScript((value) => localStorage.setItem('token', value), token);
+    // Persistent SFTP WebSockets intentionally keep the network busy. Waiting
+    // for networkidle converts a healthy Chromium workspace into a timeout;
+    // the visible workspace and its file shell are the actual readiness gate.
+    await page.goto(target.origin, { waitUntil: 'domcontentloaded' });
+    const filesActivity = page.locator('.activity-files');
+    await filesActivity.waitFor({ timeout: 10000 });
+    await filesActivity.click();
     const workspace = page.locator('[data-testid="file-workspace"]');
     await workspace.waitFor();
+    await workspace.locator('.sftp-shell').waitFor();
     await page.screenshot({ path: resolve(output, `${name}.png`), fullPage: true });
-    results.push({ browser: name, status: 'PASS', endpoints: await workspace.locator('.sftp-endpoint').count() });
+    results.push({ browser: name, status: 'PASS', fileShells: await workspace.locator('.sftp-shell').count() });
   } catch (error) {
     const message = String(error?.message || error);
     if (/executable doesn't exist/i.test(message)) results.push({ browser: name, status: 'NOT_RUN', reason: 'Playwright browser binary is not installed' });
