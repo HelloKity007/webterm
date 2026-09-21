@@ -13,3 +13,9 @@
 终端内 `sz`/`rz` 曾是历史兼容功能。它与 tmux、全屏 CLI 共用 PTY 字节流，
 而 WebTerm 已提供具有上传、下载、取消、重试和完整性保障的 SFTP 文件管理器。
 因此 ZMODEM 运行时代码、依赖和验收脚本已移除；这不是待修复项。
+
+## 2026-09-21 跨浏览器窗口文件标签拖拽尚未完成原生验收
+
+- **产品路径**：文件标签使用独立的可拖拽 `role=tab` 表面，关闭按钮不参与拖拽；源标签的浏览器拖拽事件与同窗口排序有组件和真实浏览器覆盖。
+- **当前证据**：Windows 185 的独立 Edge 153 QA profile 中，普通 HTML `draggable` 元素可收到真实 `dragstart`，但进入第二个 Edge 顶层窗口后目标窗口不接收 `dragover`/`drop`。WebTerm 同一两窗口流程因此不能完成迁移。报告位于 `runtime/windows185-native-html5-drag-edge153/` 与 `runtime/windows185-native-file-tab-drag-9abb846-surface-point/`。
+- **结论与处置**：这证明当前远程 QA 输入链无法验证跨顶层窗口投递，不能将组件测试、CDP 合成事件或源窗口 `dragstart` 作为通过。需要可直接操作的桌面浏览器（或能保留真实跨窗口 OS DnD 的 runner）复验成功后，才可关闭该验收项；生产发布不以此项为通过依据。
