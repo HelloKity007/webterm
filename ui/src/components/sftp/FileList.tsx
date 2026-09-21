@@ -607,10 +607,13 @@ export default function FileList(p: Props) {
       <div
         ref={listRef}
         className="sftp-file-list"
-        role="listbox"
-        aria-label={t("file_name")}
-        aria-multiselectable="true"
-        aria-busy={loading}
+        // A listbox may contain only option-like descendants. While its
+        // content is loading this element contains a live status instead, so
+        // do not expose an invalid listbox/status hierarchy to assistive tech.
+        role={loading ? undefined : "listbox"}
+        aria-label={loading ? undefined : t("file_name")}
+        aria-multiselectable={loading ? undefined : true}
+        aria-busy={loading || undefined}
         onKeyDown={keys}
         onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
         onDoubleClick={(e) => {

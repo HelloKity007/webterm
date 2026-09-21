@@ -14,10 +14,18 @@ await mkdir(output, { recursive: true, mode: 0o700 });
 const browser = await chromium.launch({ headless: true, executablePath: process.env.WEBTERM_QA_CHROME || '/usr/bin/google-chrome', args: ['--no-sandbox'] });
 try {
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, ignoreHTTPSErrors: true });
-  if (process.env.WEBTERM_QA_TOKEN) await page.addInitScript((token) => localStorage.setItem('token', token), process.env.WEBTERM_QA_TOKEN);
-  await page.goto(target.origin, { waitUntil: 'networkidle' });
-  assert(await page.locator('.activity-files').count(), 'release-test session is required');
-  await page.locator('.activity-files').click();
+  let token = process.env.WEBTERM_QA_TOKEN;
+  if (!token) {
+    const response = await page.request.post(new URL('/api/auth/test-session', target).href);
+    assert.equal(response.status(), 200, 'release-test did not provide a test session');
+    token = (await response.json()).token;
+    assert.equal(typeof token, 'string');
+  }
+  await page.addInitScript((value) => localStorage.setItem('token', value), token);
+  await page.goto(target.origin, { waitUntil: 'domcontentloaded' });
+  const filesActivity = page.locator('.activity-files');
+  await filesActivity.waitFor({ timeout: 10000 });
+  await filesActivity.click();
   await page.locator('[data-testid="file-workspace"]').waitFor();
   await page.addScriptTag({ path: axePath });
   const result = await page.evaluate(async () => window.axe.run(document, {
