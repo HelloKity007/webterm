@@ -12,6 +12,11 @@ assert.equal(target.port, '9444');
 const output = resolve(process.env.WEBTERM_QA_OUTPUT || `runtime/file-manager-browsers-${Date.now()}`);
 await mkdir(output, { recursive: true, mode: 0o700 });
 const engines = { chromium, firefox, webkit };
+const viewports = [
+  { name: 'mobile', width: 375, height: 812 },
+  { name: 'tablet', width: 768, height: 1024 },
+  { name: 'desktop', width: 1440, height: 900 },
+];
 const results = [];
 for (const [name, engine] of Object.entries(engines)) {
   let browser;
@@ -39,8 +44,19 @@ for (const [name, engine] of Object.entries(engines)) {
     const workspace = page.locator('[data-testid="file-workspace"]');
     await workspace.waitFor();
     await workspace.locator('.sftp-shell').waitFor();
-    await page.screenshot({ path: resolve(output, `${name}.png`), fullPage: true });
-    results.push({ browser: name, status: 'PASS', fileShells: await workspace.locator('.sftp-shell').count() });
+    const rendered = [];
+    for (const viewport of viewports) {
+      await page.setViewportSize(viewport);
+      await page.waitForTimeout(150);
+      const metrics = await page.evaluate(() => ({
+        viewportWidth: document.documentElement.clientWidth,
+        documentWidth: document.documentElement.scrollWidth,
+      }));
+      assert(metrics.documentWidth <= metrics.viewportWidth, `horizontal document overflow at ${viewport.width}px`);
+      await workspace.screenshot({ path: resolve(output, `${name}-${viewport.name}.png`) });
+      rendered.push({ viewport, ...metrics });
+    }
+    results.push({ browser: name, status: 'PASS', fileShells: await workspace.locator('.sftp-shell').count(), rendered });
   } catch (error) {
     const message = String(error?.message || error);
     if (/executable doesn't exist/i.test(message)) results.push({ browser: name, status: 'NOT_RUN', reason: 'Playwright browser binary is not installed' });
@@ -50,7 +66,7 @@ for (const [name, engine] of Object.entries(engines)) {
   }
 }
 const status = browserSmokeStatus(results);
-const report = { status, scope: 'File workspace visibility smoke only; not comparative visual acceptance', results, output };
+const report = { status, scope: 'Responsive cross-browser workspace smoke and screenshot matrix; not comparative visual acceptance', results, output };
 await writeFile(resolve(output, 'report.json'), JSON.stringify(report, null, 2), { mode: 0o600 });
 console.log(JSON.stringify(report));
 if (status !== 'PASS') process.exitCode = 1;
