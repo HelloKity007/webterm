@@ -681,7 +681,7 @@
 .file-editor-tab.is-active { color: var(--file-text); background: #233128; box-shadow: inset 0 2px var(--file-focus); }
 .file-editor-tab.is-dragging { opacity: 0.45; }
 .file-editor-tab.is-drop-target { box-shadow: inset 3px 0 var(--file-focus); }
-.file-editor-tab > button:first-child {
+.file-editor-tab > [role="tab"] {
   min-width: 0;
   flex: 1;
   display: flex;
@@ -694,7 +694,7 @@
   background: transparent;
   cursor: pointer;
 }
-.file-editor-tab > button:first-child span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.file-editor-tab > [role="tab"] span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .file-editor-tab i { width: 7px; height: 7px; flex: none; border-radius: 50%; background: var(--file-warning); box-shadow: 0 0 0 2px #233128; }
 .file-editor-tab-close, .file-editor-tool, .file-editor-scroll {
   width: 32px;
@@ -711,7 +711,7 @@
 .file-editor-group-actions { flex: none; display: flex; border-inline-start: 1px solid var(--file-border); }
 .file-editor-tool { border-inline-end: 1px solid var(--file-border); }
 .file-editor-tool:last-child { border-inline-end: 0; }
-.file-editor-tab > button:focus-visible, .file-editor-tool:focus-visible, .file-editor-scroll:focus-visible, .file-editor-tab-close:focus-visible { outline: 2px solid var(--file-focus); outline-offset: -2px; }
+.file-editor-tab > [role="tab"]:focus-visible, .file-editor-tool:focus-visible, .file-editor-scroll:focus-visible, .file-editor-tab-close:focus-visible { outline: 2px solid var(--file-focus); outline-offset: -2px; }
 .file-editor-stack { position: relative; min-height: 0; flex: 1; }
 .file-editor-page { position: absolute; inset: 0; min-width: 0; min-height: 0; }
 .file-editor-page[hidden] { display: none; }

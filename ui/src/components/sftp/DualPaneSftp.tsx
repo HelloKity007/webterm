@@ -290,7 +290,7 @@ export default function DualPaneSftp({ connections }: Props) {
   const scrollTabs = (group: EditorGroup, direction: number) => document
     .querySelector<HTMLElement>(`[data-editor-group="${group}"] .file-editor-tabs`)
     ?.scrollBy?.({ left: direction * 180, behavior: "smooth" });
-  const onTabKeys = (event: React.KeyboardEvent<HTMLButtonElement>, group: EditorGroup, tabId: string) => {
+  const onTabKeys = (event: React.KeyboardEvent<HTMLElement>, group: EditorGroup, tabId: string) => {
     const groupTabs = tabsFor(group);
     const index = groupTabs.findIndex((tab) => tab.id === tabId);
     let next = -1;
@@ -301,7 +301,7 @@ export default function DualPaneSftp({ connections }: Props) {
     if (next >= 0) {
       event.preventDefault();
       activate(group, groupTabs[next].id);
-      requestAnimationFrame(() => tabElement(groupTabs[next].id)?.querySelector<HTMLButtonElement>("button")?.focus());
+      requestAnimationFrame(() => tabElement(groupTabs[next].id)?.querySelector<HTMLElement>('[role="tab"]')?.focus());
     }
   };
 
@@ -338,7 +338,7 @@ export default function DualPaneSftp({ connections }: Props) {
                 onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "move"; setDropTarget(tab.id); }}
                 onDragLeave={() => setDropTarget(null)}
                 onDrop={(event) => moveDroppedTab(event, tab.id)}>
-                <button id={tabDomId(group, tab.id)} role="tab" draggable aria-controls={`${tabDomId(group, tab.id)}-panel`} tabIndex={tab.id === activeId ? 0 : -1} aria-selected={tab.id === activeId}
+                <div id={tabDomId(group, tab.id)} role="tab" draggable aria-controls={`${tabDomId(group, tab.id)}-panel`} tabIndex={tab.id === activeId ? 0 : -1} aria-selected={tab.id === activeId}
                   onDragStart={(event) => {
                     event.dataTransfer.effectAllowed = "move";
                     event.dataTransfer.setData("text/plain", tab.id);
@@ -350,7 +350,7 @@ export default function DualPaneSftp({ connections }: Props) {
                   onDragEnd={() => { setDraggedTabId(null); setDropTarget(null); setDropGroup(null); }}
                   onKeyDown={(event) => onTabKeys(event, group, tab.id)} onClick={() => activate(group, tab.id)}>
                   <Icon name="file" size={14} /><span title={tab.path}>{tab.name}</span>{tab.dirty && <i aria-label={t("file_unsaved")} />}
-                </button>
+                </div>
                 <button className="file-editor-tab-close" aria-label={`${t("tab_close")} ${tab.name}`} onClick={() => closeTab(tab.id)}><Icon name="x" size={13} /></button>
               </div>
             ))}
