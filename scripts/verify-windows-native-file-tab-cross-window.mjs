@@ -92,7 +92,10 @@ try {
   await targetWindow.session.send('Browser.setWindowBounds', { windowId: targetWindow.windowId, bounds: { left: 920, top: 40, width: 840, height: 760 } });
   await target.waitForTimeout(500);
 
-  const sourceBox = await source.locator('[data-editor-tab-id]').first().boundingBox();
+  // Measure the actual draggable tab surface, not its wrapper (which also
+  // contains the independent close button).  Centering the OS pointer in the
+  // wrapper can land on the close control at narrow widths.
+  const sourceBox = await source.locator('[data-editor-tab-id] [role="tab"]').first().boundingBox();
   const targetBox = await target.locator('[data-editor-group="primary"] .file-editor-tabs').boundingBox();
   assert(sourceBox && targetBox, 'source tab or target editor strip is not visible');
   const sourcePoint = await pointFor(source, sourceBox, sourceBox.width / 2);
