@@ -334,20 +334,21 @@ export default function DualPaneSftp({ connections }: Props) {
             onWheel={(event) => { if (Math.abs(event.deltaY) > Math.abs(event.deltaX)) { event.preventDefault(); event.currentTarget.scrollLeft += event.deltaY; } }}
             onDrop={(event) => moveDroppedTab(event)}>
             {groupTabs.map((tab) => (
-              <div key={tab.id} data-editor-tab-id={tab.id} draggable className={`file-editor-tab${tab.id === activeId ? " is-active" : ""}${draggedTabId === tab.id ? " is-dragging" : ""}${dropTarget === tab.id ? " is-drop-target" : ""}`}
-                onDragStart={(event) => {
-                  event.dataTransfer.effectAllowed = "move";
-                  event.dataTransfer.setData("text/plain", tab.id);
-                  event.dataTransfer.setData(FILE_TAB_TRANSFER_MIME, JSON.stringify({ version: 1, transferId: tab.id, sourceWindowId: windowId, connectionId: connId, tab: {
-                    path: tab.path, name: tab.name, revision: tab.revision, refreshMode: tab.refreshMode, dirty: tab.dirty, draft: tab.draft,
-                  } satisfies ExternalFileTab }));
-                  setDraggedTabId(tab.id);
-                }}
-                onDragEnd={() => { setDraggedTabId(null); setDropTarget(null); setDropGroup(null); }}
+              <div key={tab.id} data-editor-tab-id={tab.id} className={`file-editor-tab${tab.id === activeId ? " is-active" : ""}${draggedTabId === tab.id ? " is-dragging" : ""}${dropTarget === tab.id ? " is-drop-target" : ""}`}
                 onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "move"; setDropTarget(tab.id); }}
                 onDragLeave={() => setDropTarget(null)}
                 onDrop={(event) => moveDroppedTab(event, tab.id)}>
-                <button id={tabDomId(group, tab.id)} role="tab" aria-controls={`${tabDomId(group, tab.id)}-panel`} tabIndex={tab.id === activeId ? 0 : -1} aria-selected={tab.id === activeId} onKeyDown={(event) => onTabKeys(event, group, tab.id)} onClick={() => activate(group, tab.id)}>
+                <button id={tabDomId(group, tab.id)} role="tab" draggable aria-controls={`${tabDomId(group, tab.id)}-panel`} tabIndex={tab.id === activeId ? 0 : -1} aria-selected={tab.id === activeId}
+                  onDragStart={(event) => {
+                    event.dataTransfer.effectAllowed = "move";
+                    event.dataTransfer.setData("text/plain", tab.id);
+                    event.dataTransfer.setData(FILE_TAB_TRANSFER_MIME, JSON.stringify({ version: 1, transferId: tab.id, sourceWindowId: windowId, connectionId: connId, tab: {
+                      path: tab.path, name: tab.name, revision: tab.revision, refreshMode: tab.refreshMode, dirty: tab.dirty, draft: tab.draft,
+                    } satisfies ExternalFileTab }));
+                    setDraggedTabId(tab.id);
+                  }}
+                  onDragEnd={() => { setDraggedTabId(null); setDropTarget(null); setDropGroup(null); }}
+                  onKeyDown={(event) => onTabKeys(event, group, tab.id)} onClick={() => activate(group, tab.id)}>
                   <Icon name="file" size={14} /><span title={tab.path}>{tab.name}</span>{tab.dirty && <i aria-label={t("file_unsaved")} />}
                 </button>
                 <button className="file-editor-tab-close" aria-label={`${t("tab_close")} ${tab.name}`} onClick={() => closeTab(tab.id)}><Icon name="x" size={13} /></button>

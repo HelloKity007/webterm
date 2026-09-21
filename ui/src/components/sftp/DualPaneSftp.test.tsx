@@ -120,8 +120,10 @@ describe("Remote file workbench", () => {
     expect(strip.scrollLeft).toBe(120);
 
     const transfer = dragTransfer();
-    const log = screen.getByRole("tab", { name: /app\.log/ }).parentElement!;
-    const config = screen.getByRole("tab", { name: /app\.conf/ }).parentElement!;
+    const log = screen.getByRole("tab", { name: /app\.log/ });
+    const config = screen.getByRole("tab", { name: /app\.conf/ });
+    expect(config.getAttribute("draggable")).toBe("true");
+    expect(config.parentElement?.getAttribute("draggable")).not.toBe("true");
     fireEvent.dragStart(config, { dataTransfer: transfer });
     fireEvent.dragOver(log, { dataTransfer: transfer });
     fireEvent.drop(log, { dataTransfer: transfer });
@@ -134,7 +136,7 @@ describe("Remote file workbench", () => {
     fireEvent.click(screen.getByRole("button", { name: "open-log" }));
     fireEvent.click(screen.getByRole("button", { name: "Split editor" }));
     const transfer = dragTransfer();
-    const tab = screen.getByRole("tab", { name: /app\.log/ }).parentElement!;
+    const tab = screen.getByRole("tab", { name: /app\.log/ });
     const secondary = document.querySelector<HTMLElement>('[data-editor-group="secondary"]')!;
     fireEvent.dragStart(tab, { dataTransfer: transfer });
     fireEvent.dragOver(secondary, { dataTransfer: transfer });
