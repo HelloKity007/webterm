@@ -24,7 +24,7 @@ describe('FilePreview', () => {
     await waitFor(() => expect(previewTicketURL).toHaveBeenCalledTimes(2));
   });
 
-  it('does not fetch an oversized browser-parsed Office document', async () => {
+  it('keeps an oversized browser-parsed Office document out of the parser', async () => {
     render(<FilePreview connId={7} filePath="/tmp/large.xlsx" fileName="large.xlsx" size={26 * 1024 * 1024} onClose={vi.fn()} />);
     await screen.findByText(/exceeds the browser preview limit/i);
     expect(previewTicketURL).toHaveBeenCalledWith(7, '/tmp/large.xlsx');

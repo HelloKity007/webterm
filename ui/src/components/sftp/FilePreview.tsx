@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { PDFDocumentLoadingTask } from "pdfjs-dist";
 import { t } from "../../i18n";
 import Icon from "../common/Icon";
 import { previewTicketURL } from "../../api/wsTicket";
@@ -42,7 +43,7 @@ function PdfPreview({ source }: { source: string }) {
 
   useEffect(() => {
     let cancelled = false;
-    let task: { destroy: () => void; promise: Promise<any> } | undefined;
+    let task: PDFDocumentLoadingTask | undefined;
     const render = async () => {
       try {
         const pdfjs = await import("pdfjs-dist");
@@ -136,20 +137,40 @@ function SheetPreview({ source }: { source: string }) {
 
 export default function FilePreview({ connId, filePath, fileName, size, onClose, onEdit }: Props) {
   const [source, setSource] = useState("");
+  const [sourcePath, setSourcePath] = useState("");
   const [error, setError] = useState("");
   const previewKind = kindFor(fileName);
   const refresh = useCallback(() => {
     if (!connId) return;
     setError("");
-    void previewTicketURL(connId, filePath).then(setSource, () => setError(t("file_preview_failed")));
+    void previewTicketURL(connId, filePath).then((value) => {
+      setSource(value);
+      setSourcePath(filePath);
+    }, () => setError(t("file_preview_failed")));
   }, [connId, filePath]);
-  useEffect(() => { refresh(); }, [refresh]);
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      if (!connId) return;
+      try {
+        const value = await previewTicketURL(connId, filePath);
+        if (!cancelled) {
+          setSource(value);
+          setSourcePath(filePath);
+        }
+      } catch {
+        if (!cancelled) setError(t("file_preview_failed"));
+      }
+    };
+    void load();
+    return () => { cancelled = true; };
+  }, [connId, filePath]);
   const browserDocument = previewKind === "docx" || previewKind === "sheet";
   const tooLarge = browserDocument && typeof size === "number" && size > maxDocumentBytes;
   let body: React.ReactNode;
   if (error) body = <div className="file-preview-error">{error}</div>;
   else if (tooLarge) body = <div className="file-preview-error">{t("file_preview_too_large")}</div>;
-  else if (!source) body = <div className="sftp-state">{t("file_loading")}</div>;
+  else if (!source || sourcePath !== filePath) body = <div className="sftp-state">{t("file_loading")}</div>;
   else if (previewKind === "image") body = <div className="file-preview-media"><img src={source} alt={fileName} /></div>;
   else if (previewKind === "audio") body = <div className="file-preview-media"><audio controls src={source} /></div>;
   else if (previewKind === "video") body = <div className="file-preview-media"><video controls src={source} /></div>;
