@@ -62,13 +62,14 @@ for (const [name, engine] of Object.entries(engines)) {
     // Screenshots must represent a settled workspace rather than the transient
     // loading placeholder, otherwise a visual baseline would be nondeterministic.
     await workspace.locator('.sftp-file-list:not([aria-busy="true"])').waitFor({ timeout: 15000 });
-    // Remote directory names and timestamps are live operational data, not
+    // Remote directory names, timestamps and item counts are live operational data, not
     // layout. Mask only those volatile glyphs so the versioned baseline still
     // compares the actual browser-rendered shell, controls, split/editor area,
     // typography metrics, borders, and responsive geometry.
     await page.addStyleTag({ content: `
       .sftp-file-list [data-file-row], .sftp-file-list > [aria-hidden="true"] { visibility: hidden !important; }
       .sftp-path { color: transparent !important; text-shadow: none !important; }
+      .sftp-statusbar > span:first-child { color: transparent !important; text-shadow: none !important; }
     ` });
     const rendered = [];
     for (const viewport of viewports) {
