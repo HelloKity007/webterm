@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime"
 	"mime/multipart"
 	"net/http"
 	"net/url"
@@ -237,6 +238,65 @@ func (h *SftpHandler) Download(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Length", strconv.FormatInt(info.Size(), 10))
 	w.WriteHeader(http.StatusOK)
 	_, _ = io.Copy(w, file)
+}
+
+// Preview streams one remote regular file with HTTP Range support. It is only
+// reached through a short-lived, path-bound sftp-preview ticket; it never
+// receives an application JWT in a browser-visible URL.
+func (h *SftpHandler) Preview(w http.ResponseWriter, r *http.Request) {
+	connID, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	remotePath := r.URL.Query().Get("path")
+	if remotePath == "" {
+		http.Error(w, `{"error":"path required"}`, http.StatusBadRequest)
+		return
+	}
+
+	connInfo, err := h.Store.GetConnection(connID)
+	if err != nil {
+		http.Error(w, `{"error":"connection not found"}`, http.StatusNotFound)
+		return
+	}
+	if !canUseConnection(auth.GetUser(r), connInfo) {
+		http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden)
+		return
+	}
+
+	sshClient, err := h.Pool.AcquireOrCreate(connID, h.makeSSHFactory(connInfo))
+	if err != nil {
+		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, friendlyErr(err)), http.StatusInternalServerError)
+		return
+	}
+	defer h.Pool.Release(connID)
+	sftpClient, err := sftpmgr.NewClient(sshClient.RawConn())
+	if err != nil {
+		http.Error(w, fmt.Sprintf(`{"error":"sftp init: %s"}`, err.Error()), http.StatusInternalServerError)
+		return
+	}
+	defer sftpClient.Close()
+
+	file, err := sftpClient.Open(remotePath)
+	if err != nil {
+		http.Error(w, fmt.Sprintf(`{"error":"read: %s"}`, err.Error()), http.StatusInternalServerError)
+		return
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil || !info.Mode().IsRegular() {
+		http.Error(w, `{"error":"not a regular file"}`, http.StatusBadRequest)
+		return
+	}
+
+	fileName := pathpkgBase(remotePath)
+	contentType := mime.TypeByExtension(path.Ext(fileName))
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Content-Disposition", strings.Replace(contentDisposition(fileName), "attachment;", "inline;", 1))
+	w.Header().Set("Accept-Ranges", "bytes")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	http.ServeContent(w, r, fileName, info.ModTime(), file)
 }
 
 func pathpkgBase(name string) string { return path.Base(strings.ReplaceAll(name, `\`, "/")) }

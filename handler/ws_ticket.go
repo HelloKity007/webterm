@@ -17,6 +17,7 @@ import (
 )
 
 const wsTicketTTL = 30 * time.Second
+const previewTicketTTL = 2 * time.Minute
 
 type wsTicket struct {
 	claims     auth.Claims
@@ -24,6 +25,7 @@ type wsTicket struct {
 	connID     int64
 	terminalID string
 	clientID   string
+	path       string
 	expiresAt  time.Time
 }
 
@@ -51,7 +53,14 @@ func (s *WSTicketService) issue(ticket wsTicket) (string, error) {
 			delete(s.tickets, key)
 		}
 	}
-	ticket.expiresAt = now.Add(wsTicketTTL)
+	ttl := wsTicketTTL
+	if ticket.endpoint == "sftp-preview" {
+		// PDF and media readers issue multiple Range requests. This ticket remains
+		// tightly bound to one remote path, but must live long enough for those
+		// requests instead of being consumed after the first byte range.
+		ttl = previewTicketTTL
+	}
+	ticket.expiresAt = now.Add(ttl)
 	s.tickets[token] = ticket
 	return token, nil
 }
@@ -73,6 +82,23 @@ func (s *WSTicketService) consume(token, endpoint string, connID int64, terminal
 	return &claims, nil
 }
 
+// preview authorizes a bounded, path-bound HTTP preview ticket. Unlike a
+// download ticket it is reusable until its short expiry so browser Range
+// readers can seek without exposing a long-lived access token in the URL.
+func (s *WSTicketService) preview(token, endpoint string, connID int64, filePath string) (*auth.Claims, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	ticket, ok := s.tickets[token]
+	if !ok || !ticket.expiresAt.After(s.now()) || ticket.endpoint != endpoint || ticket.connID != connID || ticket.path != filePath {
+		if ok && !ticket.expiresAt.After(s.now()) {
+			delete(s.tickets, token)
+		}
+		return nil, errInvalidWSTicket
+	}
+	claims := ticket.claims
+	return &claims, nil
+}
+
 type WSTicketHandler struct {
 	Store   *store.Store
 	Tickets *WSTicketService
@@ -83,6 +109,7 @@ type wsTicketRequest struct {
 	ConnID     int64  `json:"conn_id"`
 	TerminalID string `json:"terminal_id"`
 	ClientID   string `json:"client_id"`
+	Path       string `json:"path"`
 }
 
 func (h *WSTicketHandler) Issue(w http.ResponseWriter, r *http.Request) {
@@ -98,7 +125,7 @@ func (h *WSTicketHandler) Issue(w http.ResponseWriter, r *http.Request) {
 	}
 	user.Username = storedUser.Username
 	user.Role = storedUser.Role
-	r.Body = http.MaxBytesReader(w, r.Body, 4096)
+	r.Body = http.MaxBytesReader(w, r.Body, 8192)
 	var request wsTicketRequest
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
@@ -107,7 +134,7 @@ func (h *WSTicketHandler) Issue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch request.Endpoint {
-	case "ssh", "sftp", "sftp-download":
+	case "ssh", "sftp", "sftp-download", "sftp-preview":
 		connection, err := h.Store.GetConnection(request.ConnID)
 		if err != nil {
 			http.Error(w, `{"error":"connection not found"}`, http.StatusNotFound)
@@ -129,7 +156,7 @@ func (h *WSTicketHandler) Issue(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	token, err := h.Tickets.issue(wsTicket{claims: *user, endpoint: request.Endpoint, connID: request.ConnID,
-		terminalID: request.TerminalID, clientID: request.ClientID})
+		terminalID: request.TerminalID, clientID: request.ClientID, path: request.Path})
 	if err != nil {
 		http.Error(w, `{"error":"ticket generation failed"}`, http.StatusInternalServerError)
 		return
@@ -145,6 +172,8 @@ func validWSTicketRequest(request wsTicketRequest) bool {
 		return request.ConnID > 0 && request.TerminalID != "" && len(request.TerminalID) <= 128 && len(request.ClientID) <= 128
 	case "sftp", "sftp-download", "db":
 		return request.ConnID > 0 && request.TerminalID == "" && request.ClientID == ""
+	case "sftp-preview":
+		return request.ConnID > 0 && request.TerminalID == "" && request.ClientID == "" && request.Path != "" && len(request.Path) <= 4096
 	case "layout":
 		return request.ConnID == 0 && request.TerminalID == "" && request.ClientID != "" && len(request.ClientID) <= 128
 	default:
@@ -152,9 +181,9 @@ func validWSTicketRequest(request wsTicketRequest) bool {
 	}
 }
 
-// TicketHTTPHandler authorizes a single download without putting the user's
-// long-lived JWT in a URL. Tickets expire after wsTicketTTL and are consumed
-// even when an attempted scope check fails.
+// TicketHTTPHandler authorizes a download or a path-bound preview without
+// putting the user's long-lived JWT in a URL. Download tickets are single use;
+// preview tickets expire quickly and can service Range reads for one path.
 type TicketHTTPHandler struct {
 	Store    *store.Store
 	Tickets  *WSTicketService
@@ -168,7 +197,13 @@ func (h TicketHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	connID, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	claims, err := h.Tickets.consume(r.URL.Query().Get("ticket"), h.Endpoint, connID, "", "")
+	var claims *auth.Claims
+	var err error
+	if h.Endpoint == "sftp-preview" {
+		claims, err = h.Tickets.preview(r.URL.Query().Get("ticket"), h.Endpoint, connID, r.URL.Query().Get("path"))
+	} else {
+		claims, err = h.Tickets.consume(r.URL.Query().Get("ticket"), h.Endpoint, connID, "", "")
+	}
 	if err != nil {
 		http.Error(w, `{"error":"invalid download ticket"}`, http.StatusUnauthorized)
 		return
@@ -180,7 +215,7 @@ func (h TicketHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	claims.Username = storedUser.Username
 	claims.Role = storedUser.Role
-	if h.Endpoint == "sftp-download" {
+	if h.Endpoint == "sftp-download" || h.Endpoint == "sftp-preview" {
 		connection, connectionErr := h.Store.GetConnection(connID)
 		if connectionErr != nil {
 			http.Error(w, `{"error":"connection not found"}`, http.StatusNotFound)

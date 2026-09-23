@@ -32,6 +32,8 @@ export interface OpenRemoteFile {
   path: string;
   name: string;
   revision?: string;
+	size?: number;
+	mode?: "editor" | "preview";
 }
 
 interface Props {
@@ -534,18 +536,20 @@ export default function SftpPanel({
       JSON.stringify({ action: "mkdir", path: path + "/" + name }),
     );
   };
-  const handleEditFile = (filePath: string, fileName: string) => {
+  const handleEditFile = (filePath: string, fileName: string, mode: "editor" | "preview" = "editor") => {
     const file = filesRef.current.find((entry) => entry.path === filePath);
     const openedFile = {
       path: filePath,
       name: fileName,
       revision: file?.revision || (file ? `${file.mod_time}:${file.size}` : undefined),
+		size: file?.size,
+		mode,
     };
     if (onOpenFile) {
       onOpenFile(openedFile);
       return;
     }
-    setEditFile({ ...openedFile, refreshMode: null });
+		setEditFile({ path: openedFile.path, name: openedFile.name, revision: openedFile.revision, refreshMode: null });
   };
   const handleChmod = (filePath: string, mode: string) => {
     wsRef.current?.send(
@@ -701,6 +705,7 @@ export default function SftpPanel({
             currentPath={path}
             onUpload={() => fetchDir(path, true)}
             onEdit={handleEditFile}
+			onPreview={(filePath, fileName) => handleEditFile(filePath, fileName, "preview")}
             onChmod={handleChmod}
             onMkdir={(name) => handleMkdir(name)}
             onGoParent={handleGoParent}

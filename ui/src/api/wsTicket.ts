@@ -1,11 +1,12 @@
 import { apiFetch } from './client';
 
-export type WSEndpoint = 'ssh' | 'sftp' | 'db' | 'layout' | 'sftp-download';
+export type WSEndpoint = 'ssh' | 'sftp' | 'db' | 'layout' | 'sftp-download' | 'sftp-preview';
 export interface WSTicketScope {
   endpoint: WSEndpoint;
   connId?: number;
   terminalId?: string;
   clientId?: string;
+	path?: string;
 }
 
 export class WebSocketAuthError extends Error {
@@ -32,14 +33,16 @@ export async function websocketTicketURL(path: string, scope: WSTicketScope, que
 }
 
 async function issueScopedTicket(scope: WSTicketScope): Promise<string> {
+  const payload = {
+    endpoint: scope.endpoint,
+    conn_id: scope.connId || 0,
+    terminal_id: scope.terminalId || '',
+    client_id: scope.clientId || '',
+    ...(scope.path ? { path: scope.path } : {}),
+  };
   const response = await apiFetch('/api/ws-tickets', {
     method: 'POST',
-    body: JSON.stringify({
-      endpoint: scope.endpoint,
-      conn_id: scope.connId || 0,
-      terminal_id: scope.terminalId || '',
-      client_id: scope.clientId || '',
-    }),
+    body: JSON.stringify(payload),
   });
   if (!response.ok) {
     const message = `websocket ticket failed (${response.status})`;
@@ -55,6 +58,14 @@ export async function downloadTicketURL(path: string, scope: WSTicketScope, quer
   const ticket = await issueScopedTicket(scope);
   const url = new URL(path, location.origin);
   Object.entries(query).forEach(([key, value]) => url.searchParams.set(key, value));
+  url.searchParams.set('ticket', ticket);
+  return `${url.pathname}${url.search}`;
+}
+
+export async function previewTicketURL(connId: number, filePath: string): Promise<string> {
+  const ticket = await issueScopedTicket({ endpoint: 'sftp-preview', connId, path: filePath });
+  const url = new URL(`/api/sftp/preview/${connId}`, location.origin);
+  url.searchParams.set('path', filePath);
   url.searchParams.set('ticket', ticket);
   return `${url.pathname}${url.search}`;
 }

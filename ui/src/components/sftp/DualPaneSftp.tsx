@@ -6,19 +6,22 @@ import { t } from "../../i18n";
 import "./sftp.css";
 
 const FileEditor = lazy(() => import("../common/FileEditor"));
+const FilePreview = lazy(() => import("./FilePreview"));
 
 interface Props {
   connections: Array<{ id: number; name: string }>;
 }
 
 type EditorGroup = "primary" | "secondary";
+type FileTabMode = "editor" | "preview";
 type PersistedDraft = { content: string; baseRevision?: string };
 type EditorTab = OpenRemoteFile & {
   id: string;
   group: EditorGroup;
   refreshMode: "auto" | "manual" | null;
   dirty: boolean;
-  draft?: PersistedDraft;
+	draft?: PersistedDraft;
+	mode: FileTabMode;
 };
 
 type PersistedWorkbench = {
@@ -30,7 +33,7 @@ type PersistedWorkbench = {
   split: boolean;
 };
 
-const tabIdFor = (path: string) => `file:${path}`;
+const tabIdFor = (path: string, mode: FileTabMode) => mode === "editor" ? `file:${path}` : `preview:${path}`;
 const FILE_WORKBENCH_STORAGE_KEY = "webterm:file-workbench:v1";
 const FILE_TAB_TRANSFER_MIME = "application/x-webterm-file-tab+json";
 const FILE_TAB_TRANSFER_CHANNEL = "webterm:file-tab-transfer:v1";
@@ -40,8 +43,9 @@ const tabElement = (id: string) => [...document.querySelectorAll<HTMLElement>("[
   .find((element) => element.dataset.editorTabId === id) || null;
 const isEditorGroup = (value: unknown): value is EditorGroup => value === "primary" || value === "secondary";
 const isRefreshMode = (value: unknown): value is "auto" | "manual" | null => value === "auto" || value === "manual" || value === null;
+const isFileTabMode = (value: unknown): value is FileTabMode => value === "editor" || value === "preview";
 
-type ExternalFileTab = Pick<EditorTab, "path" | "name" | "revision" | "refreshMode" | "dirty" | "draft">;
+type ExternalFileTab = Pick<EditorTab, "path" | "name" | "revision" | "size" | "mode" | "refreshMode" | "dirty" | "draft">;
 type ExternalFileTabTransfer = { version: 1; transferId: string; sourceWindowId: string; connectionId: number; tab: ExternalFileTab };
 
 function newOpaqueId() {
@@ -81,8 +85,9 @@ function parseExternalFileTab(raw: string): ExternalFileTabTransfer | null {
     const draft = tab.draft && typeof tab.draft.content === "string"
       ? { content: tab.draft.content, baseRevision: typeof tab.draft.baseRevision === "string" ? tab.draft.baseRevision : undefined } : undefined;
     if (tab.dirty && !draft) return null;
+    const mode: FileTabMode = isFileTabMode(tab.mode) ? tab.mode : "editor";
     return { version: 1, transferId: value.transferId, sourceWindowId: value.sourceWindowId, connectionId: value.connectionId,
-      tab: { path: tab.path, name: tab.name, revision: typeof tab.revision === "string" ? tab.revision : undefined, refreshMode: tab.refreshMode, dirty: tab.dirty, draft } };
+      tab: { path: tab.path, name: tab.name, revision: typeof tab.revision === "string" ? tab.revision : undefined, size: typeof tab.size === "number" ? tab.size : undefined, mode, refreshMode: tab.refreshMode, dirty: tab.dirty, draft } };
   } catch { return null; }
 }
 
@@ -99,7 +104,8 @@ function loadPersistedWorkbench(windowId: string): PersistedWorkbench | null {
       const draft = tab.draft && typeof tab.draft.content === "string"
         ? { content: tab.draft.content, baseRevision: typeof tab.draft.baseRevision === "string" ? tab.draft.baseRevision : undefined }
         : undefined;
-      return [{ path: tab.path, name: tab.name, revision: typeof tab.revision === "string" ? tab.revision : undefined, id: tabIdFor(tab.path), group: tab.group, refreshMode: tab.refreshMode, dirty: Boolean(draft), draft }];
+      const mode: FileTabMode = isFileTabMode(tab.mode) ? tab.mode : "editor";
+      return [{ path: tab.path, name: tab.name, revision: typeof tab.revision === "string" ? tab.revision : undefined, size: typeof tab.size === "number" ? tab.size : undefined, id: tabIdFor(tab.path, mode), group: tab.group, mode, refreshMode: tab.refreshMode, dirty: mode === "editor" && Boolean(draft), draft: mode === "editor" ? draft : undefined }];
     }) : [];
     const restoreActive = (group: EditorGroup) => {
       const candidate = saved.active?.[group];
@@ -202,11 +208,12 @@ export default function DualPaneSftp({ connections }: Props) {
   }, []);
 
   const openFile = useCallback((file: OpenRemoteFile) => {
-    const id = tabIdFor(file.path);
+    const mode: FileTabMode = file.mode || "editor";
+    const id = tabIdFor(file.path, mode);
     setTabs((current) => {
       const existing = current.find((tab) => tab.id === id);
       if (existing) return current.map((tab) => tab.id === id ? { ...tab, group: focusedGroup, revision: file.revision || tab.revision } : tab);
-      const created: EditorTab = { ...file, id, group: focusedGroup, refreshMode: null, dirty: false };
+      const created: EditorTab = { ...file, mode, id, group: focusedGroup, refreshMode: null, dirty: false };
       return replaceGroup(current, focusedGroup, [...current.filter((tab) => tab.group === focusedGroup), created]);
     });
     activate(focusedGroup, id);
@@ -249,7 +256,7 @@ export default function DualPaneSftp({ connections }: Props) {
       setTransferNotice(t("file_tab_transfer_connection_mismatch"));
       return;
     }
-    const id = tabIdFor(transfer.tab.path);
+    const id = tabIdFor(transfer.tab.path, transfer.tab.mode);
     const alreadyOpen = tabs.find((tab) => tab.id === id);
     if (alreadyOpen?.dirty || (alreadyOpen && transfer.tab.dirty)) {
       setTransferNotice(t("file_tab_transfer_dirty_conflict"));
@@ -343,7 +350,7 @@ export default function DualPaneSftp({ connections }: Props) {
                     event.dataTransfer.effectAllowed = "move";
                     event.dataTransfer.setData("text/plain", tab.id);
                     event.dataTransfer.setData(FILE_TAB_TRANSFER_MIME, JSON.stringify({ version: 1, transferId: tab.id, sourceWindowId: windowId, connectionId: connId, tab: {
-                      path: tab.path, name: tab.name, revision: tab.revision, refreshMode: tab.refreshMode, dirty: tab.dirty, draft: tab.draft,
+                      path: tab.path, name: tab.name, revision: tab.revision, size: tab.size, mode: tab.mode, refreshMode: tab.refreshMode, dirty: tab.dirty, draft: tab.draft,
                     } satisfies ExternalFileTab }));
                     setDraggedTabId(tab.id);
                   }}
@@ -366,12 +373,12 @@ export default function DualPaneSftp({ connections }: Props) {
           {groupTabs.map((tab) => (
             <div key={tab.id} id={`${tabDomId(group, tab.id)}-panel`} role="tabpanel" aria-labelledby={tabDomId(group, tab.id)} className="file-editor-page" hidden={tab.id !== activeId}>
               <Suspense fallback={<div className="sftp-state">Loading…</div>}>
-                <FileEditor embedded filePath={tab.path} fileName={tab.name} revision={tab.revision} ws={socket} refreshMode={tab.refreshMode}
+                {tab.mode === "preview" ? <FilePreview connId={connId} filePath={tab.path} fileName={tab.name} size={tab.size} onClose={() => closeTab(tab.id)} onEdit={() => openFile({ path: tab.path, name: tab.name, revision: tab.revision, size: tab.size, mode: "editor" })} /> : <FileEditor embedded filePath={tab.path} fileName={tab.name} revision={tab.revision} ws={socket} refreshMode={tab.refreshMode}
                   onRefreshModeChange={(refreshMode) => setTabs((current) => current.map((item) => item.id === tab.id ? { ...item, refreshMode } : item))}
                   onDirtyChange={(dirty) => setTabs((current) => current.map((item) => item.id === tab.id ? { ...item, dirty } : item))}
                   initialDraft={tab.draft}
                   onDraftChange={(draft) => setTabs((current) => current.map((item) => item.id === tab.id ? { ...item, dirty: Boolean(draft), draft: draft || undefined } : item))}
-                  onClose={() => closeTab(tab.id)} onSaved={() => setRefreshNonce((value) => value + 1)} />
+                  onClose={() => closeTab(tab.id)} onSaved={() => setRefreshNonce((value) => value + 1)} />}
               </Suspense>
             </div>
           ))}

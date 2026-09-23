@@ -23,6 +23,7 @@ interface Props {
   onMkdir: (n: string) => void;
   onUpload: () => void;
   onEdit: (p: string, n: string) => void;
+	onPreview?: (p: string, n: string) => void;
   onChmod: (p: string, m: string) => void;
   onGoParent?: () => void;
   onToggleFollow?: () => void;
@@ -114,6 +115,7 @@ export default function FileList(p: Props) {
     onMkdir,
     onUpload,
     onEdit,
+		onPreview = onEdit,
     onChmod,
     onGoParent,
     onToggleFollow,
@@ -811,6 +813,13 @@ export default function FileList(p: Props) {
                       setMenu(null);
                     },
                   },
+					{
+						label: t("file_preview"),
+						action: () => {
+							onPreview(menu.file.path, menu.file.name);
+							setMenu(null);
+						},
+					},
                 ]),
             {
               label: t("file_chmod"),

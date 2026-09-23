@@ -79,6 +79,41 @@ func TestDownloadTicketScopes(t *testing.T) {
 	}
 }
 
+func TestPreviewTicketIsPathBoundAndReusableForRanges(t *testing.T) {
+	st := newQuickConnectTestStore(t)
+	owner, _ := st.CreateUser("preview-owner", "hash", "user")
+	connectionID, _ := st.CreateConnection(&store.Connection{Name: "preview-target", Host: "127.0.0.1", Port: 22, Username: "tester", AuthMethod: "password", CreatedBy: owner, MaxSessions: 1})
+	service := NewWSTicketService()
+	token, _ := service.issue(wsTicket{claims: auth.Claims{UserID: owner}, endpoint: "sftp-preview", connID: connectionID, path: "/tmp/report.pdf"})
+	called := 0
+	handler := TicketHTTPHandler{Store: st, Tickets: service, Endpoint: "sftp-preview", Next: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called++
+		if auth.GetUser(r) == nil || r.URL.Query().Get("ticket") != "" || r.URL.Query().Get("path") != "/tmp/report.pdf" {
+			t.Fatal("preview handler did not receive sanitized path-bound request")
+		}
+		w.WriteHeader(http.StatusPartialContent)
+	})}
+	for range 2 {
+		request := httptest.NewRequest(http.MethodGet, "https://webterm.test/api/sftp/preview/1?path=%2Ftmp%2Freport.pdf&ticket="+token, nil)
+		request.SetPathValue("id", strconv.FormatInt(connectionID, 10))
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		if response.Code != http.StatusPartialContent {
+			t.Fatalf("range preview code=%d body=%s", response.Code, response.Body.String())
+		}
+	}
+	wrongPath := httptest.NewRequest(http.MethodGet, "https://webterm.test/api/sftp/preview/1?path=%2Ftmp%2Fother.pdf&ticket="+token, nil)
+	wrongPath.SetPathValue("id", strconv.FormatInt(connectionID, 10))
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, wrongPath)
+	if response.Code != http.StatusUnauthorized || called != 2 {
+		t.Fatalf("path mismatch code=%d called=%d", response.Code, called)
+	}
+	if !validWSTicketRequest(wsTicketRequest{Endpoint: "sftp-preview", ConnID: 7, Path: "/tmp/report.pdf"}) || validWSTicketRequest(wsTicketRequest{Endpoint: "sftp-preview", ConnID: 7}) {
+		t.Fatal("preview ticket path validation is wrong")
+	}
+}
+
 func TestTicketHTTPHandlerIsSingleUseAndHidesTicket(t *testing.T) {
 	st := newQuickConnectTestStore(t)
 	owner, _ := st.CreateUser("download-owner", "hash", "user")

@@ -179,6 +179,7 @@ func main() {
 
 	mux.Handle("POST /api/sftp/upload", auth.Middleware(http.HandlerFunc(sftpRestH.Upload)))
 	mux.Handle("GET /api/sftp/download/{id}", handler.TicketHTTPHandler{Store: st, Tickets: wsTickets, Endpoint: "sftp-download", Next: http.HandlerFunc(sftpRestH.Download)})
+	mux.Handle("GET /api/sftp/preview/{id}", handler.TicketHTTPHandler{Store: st, Tickets: wsTickets, Endpoint: "sftp-preview", Next: http.HandlerFunc(sftpRestH.Preview)})
 
 	dbConnH := &handler.DbConnHandler{Store: st, AESCipher: aesCipher}
 	groupH := &handler.GroupHandler{Store: st}
