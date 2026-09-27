@@ -99,6 +99,7 @@
   background: var(--sftp-bg);
 }
 .sftp-commandbar {
+  position: relative;
   min-height: 43px;
   flex: none;
   display: flex;
@@ -186,15 +187,16 @@
   border-bottom: 1px solid #35563b;
 }
 .sftp-selectionbar {
-  min-height: 39px;
-  flex: none;
+  position: absolute;
+  inset: 0;
+  z-index: 2;
   display: flex;
   align-items: center;
   gap: 5px;
   padding: 4px 8px;
   color: var(--sftp-muted);
   background: #17261a;
-  border-bottom: 1px solid #35563b;
+  border-bottom: 1px solid var(--sftp-line);
 }
 .sftp-selectionbar strong {
   color: var(--sftp-text);

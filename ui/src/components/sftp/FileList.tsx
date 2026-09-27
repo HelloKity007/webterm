@@ -488,90 +488,90 @@ export default function FileList(p: Props) {
             <span>{followCd ? t("sftp_follow") : t("sftp_fixed")}</span>
           </button>
         </div>
-      </div>
-      {(selected.size > 0 || clipboard || operation) && (
-        <div
-          className="sftp-selectionbar"
-          role="toolbar"
-          aria-label={t("multi_mode")}
-        >
-          {selected.size > 0 && (
-            <>
-              <strong>
-                {selected.size} {t("file_selected_count")}
-              </strong>
+        {(selected.size > 0 || clipboard || operation) && (
+          <div
+            className="sftp-selectionbar"
+            role="toolbar"
+            aria-label={t("multi_mode")}
+          >
+            {selected.size > 0 && (
+              <>
+                <strong>
+                  {selected.size} {t("file_selected_count")}
+                </strong>
+                <button
+                  className="sftp-action"
+                  onClick={() =>
+                    onClipboardChange({
+                      kind: "copy",
+                      paths: [...selected],
+                      endpointId,
+                    })
+                  }
+                >
+                  {t("file_copy")}
+                </button>
+                <button
+                  className="sftp-action"
+                  onClick={() =>
+                    onClipboardChange({
+                      kind: "move",
+                      paths: [...selected],
+                      endpointId,
+                    })
+                  }
+                >
+                  {t("file_cut")}
+                </button>
+              </>
+            )}
+            {clipboard && (
               <button
-                className="sftp-action"
+                className="sftp-action sftp-primary"
+                disabled={
+                  clipboard.endpointId !== endpointId ||
+                  operation?.status === "running"
+                }
+                title={
+                  clipboard.endpointId !== endpointId
+                    ? t("file_cross_endpoint_unavailable")
+                    : undefined
+                }
                 onClick={() =>
-                  onClipboardChange({
-                    kind: "copy",
-                    paths: [...selected],
-                    endpointId,
-                  })
+                  onFileOperation(clipboard.kind, clipboard.paths, currentPath)
                 }
               >
-                {t("file_copy")}
+                {t("file_paste")} · {clipboard.paths.length}
               </button>
-              <button
-                className="sftp-action"
-                onClick={() =>
-                  onClipboardChange({
-                    kind: "move",
-                    paths: [...selected],
-                    endpointId,
-                  })
-                }
-              >
-                {t("file_cut")}
-              </button>
-            </>
-          )}
-          {clipboard && (
-            <button
-              className="sftp-action sftp-primary"
-              disabled={
-                clipboard.endpointId !== endpointId ||
-                operation?.status === "running"
-              }
-              title={
-                clipboard.endpointId !== endpointId
-                  ? t("file_cross_endpoint_unavailable")
-                  : undefined
-              }
-              onClick={() =>
-                onFileOperation(clipboard.kind, clipboard.paths, currentPath)
-              }
-            >
-              {t("file_paste")} · {clipboard.paths.length}
-            </button>
-          )}
-          {operation?.status === "running" && (
-            <span className="sftp-operation-state">
-              {t("file_operation_running")}
-            </span>
-          )}
-          {operation?.status === "failed" && (
-            <>
-              <span className="sftp-operation-state is-error">
-                {operation.message || t("file_operation_failed")}
+            )}
+            {operation?.status === "running" && (
+              <span className="sftp-operation-state">
+                {t("file_operation_running")}
               </span>
-              <button className="sftp-action" onClick={onRetryOperation}>
-                {t("file_retry")}
+            )}
+            {operation?.status === "failed" && (
+              <>
+                <span className="sftp-operation-state is-error">
+                  {operation.message || t("file_operation_failed")}
+                </span>
+                <button className="sftp-action" onClick={onRetryOperation}>
+                  {t("file_retry")}
+                </button>
+              </>
+            )}
+            <span className="sftp-status-spacer" />
+            {clipboard && (
+              <button
+                className="sftp-icon-button"
+                aria-label={t("multi_cancel")}
+                onClick={() => onClipboardChange(null)}
+              >
+                <Icon name="x" size={13} />
               </button>
-            </>
-          )}
-          <span className="sftp-status-spacer" />
-          {clipboard && (
-            <button
-              className="sftp-icon-button"
-              aria-label={t("multi_cancel")}
-              onClick={() => onClipboardChange(null)}
-            >
-              <Icon name="x" size={13} />
-            </button>
-          )}
-        </div>
-      )}
+            )}
+          </div>
+        )}
+      </div>
       {uploading && (
         <div className="sftp-transfer" role="status">
           <div>

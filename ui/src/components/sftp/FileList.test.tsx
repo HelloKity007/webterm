@@ -124,6 +124,22 @@ describe("FileList", () => {
     expect(actions.onDelete).toHaveBeenCalledTimes(2);
   });
 
+  it("keeps multi-file actions inside the fixed command bar", () => {
+    const view = render(
+      <FileList
+        files={[file(1), file(2)]}
+        loading={false}
+        currentPath="/"
+        {...handlers()}
+      />,
+    );
+    const tableHead = view.container.querySelector(".sftp-table-head")!;
+    expect(view.container.querySelector(".sftp-selectionbar")).toBeNull();
+    fireEvent.click(screen.getAllByRole("option")[0]);
+    expect(view.container.querySelector(".sftp-commandbar .sftp-selectionbar")).not.toBeNull();
+    expect(tableHead.previousElementSibling?.classList.contains("sftp-commandbar")).toBe(true);
+  });
+
   it("does not delete when confirmation is declined", () => {
     const actions = handlers();
     vi.spyOn(window, "confirm").mockReturnValue(false);
