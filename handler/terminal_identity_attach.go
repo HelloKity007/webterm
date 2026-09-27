@@ -36,7 +36,7 @@ func (s terminalIdentityAttachSpec) command() (string, error) {
 	failure := "display-message -p " + s.mismatchMarker()
 	args := []string{s.Binary, "-N"}
 	if s.Socket != "" {
-		args = append(args, "-L", s.Socket)
+		args = append(args, tmuxSocketFlag(s.Socket), s.Socket)
 	}
 	args = append(args, "-C", "if-shell", "-F", "-t", "="+s.Session+":", condition, success, failure)
 	for i, arg := range args {

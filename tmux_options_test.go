@@ -1,6 +1,9 @@
 package main
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestResolveTmuxOptions(t *testing.T) {
 	for _, tc := range []struct {
@@ -33,5 +36,23 @@ func TestResolveTmuxOptions(t *testing.T) {
 				t.Fatalf("got %q %q", b, s)
 			}
 		})
+	}
+}
+
+func TestPersistentSocketPaths(t *testing.T) {
+	for _, socket := range []string{"/home/pgz/.local/state/webterm/webterm-production-main", "/home/pgz/.local/state/webterm/webterm-release-test-main"} {
+		env := "production"
+		if strings.Contains(socket, "release-test") {
+			env = "release-test"
+		}
+		_, got, err := resolveTmuxOptions(env, "/usr/bin/tmux", socket, "", "webterm-release-test", false)
+		if err != nil || got != socket {
+			t.Fatalf("%s: %s %v", socket, got, err)
+		}
+	}
+	for _, socket := range []string{"/state/../webterm-production-main", "/state/webterm-release-test-main", "/state/$(id)/webterm-production-main", "relative/webterm-production-main"} {
+		if _, _, err := resolveTmuxOptions("production", "/usr/bin/tmux", socket, "", "webterm-release-test", false); err == nil {
+			t.Fatalf("accepted %q", socket)
+		}
 	}
 }

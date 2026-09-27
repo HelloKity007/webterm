@@ -79,6 +79,13 @@ func (h *WSHandler) historyFor(key string) *terminalHistory {
 	return h.terminalHistory.get(key)
 }
 
+func tmuxSocketFlag(socket string) string {
+	if strings.HasPrefix(socket, "/") {
+		return "-S"
+	}
+	return "-L"
+}
+
 // scopeTmuxCommand routes every tmux invocation, including invocations inside
 // run-shell hooks, through the environment-specific server socket. Commands
 // are generated internally and contain only controlled tmux syntax.
@@ -88,7 +95,7 @@ func scopeTmuxCommand(command, socket string, binary ...string) string {
 		prefix = binary[0]
 	}
 	if strings.TrimSpace(socket) != "" {
-		prefix += " -L " + socket
+		prefix += " " + tmuxSocketFlag(socket) + " " + socket
 	}
 	return strings.ReplaceAll(command, "tmux ", prefix+" ")
 }
@@ -229,7 +236,7 @@ func (h *WSHandler) CloseTerminalSession(w http.ResponseWriter, r *http.Request)
 	}
 	// Explicit cascade termination may override preservation only on the
 	// isolated test server, never on a copied layout using the default socket.
-	explicitTestClose := r.URL.Query().Get("terminate") == "1" && strings.HasPrefix(h.TmuxSocket, "webterm-release-test")
+	explicitTestClose := r.URL.Query().Get("terminate") == "1" && strings.HasPrefix(path.Base(h.TmuxSocket), "webterm-release-test")
 	if h.PreserveTerminalSessions && !explicitTestClose {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"status":"preserved"}`))

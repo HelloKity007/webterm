@@ -87,10 +87,16 @@ lan_validate_production_tmux() {
   local binary="${WEBTERM_PRODUCTION_TMUX_BINARY:-}"
   local socket="${WEBTERM_PRODUCTION_TMUX_SOCKET:-}"
   [[ -n "$binary" || -n "$socket" ]] || return 0
-  [[ "$binary" =~ ^/[a-zA-Z0-9_./-]+$ && "$socket" =~ ^webterm-production-[a-zA-Z0-9_-]+$ ]] ||
+  local socket_name="${socket##*/}"
+  [[ "$socket" != /* || ( "$socket" =~ ^/[a-zA-Z0-9_./-]+$ && "$socket" != *"/../"* && "$socket" != *"/./"* && "$socket" != *"//"* && ${#socket} -le 100 ) ]] ||
+    lan_die "invalid absolute production tmux socket path"
+  [[ "$binary" =~ ^/[a-zA-Z0-9_./-]+$ && "$socket_name" =~ ^webterm-production-[a-zA-Z0-9_-]+$ && ( "$socket" == /* || "$socket" == "$socket_name" ) ]] ||
     lan_die "production tmux requires paired absolute shell-safe binary and production-scoped socket"
   [[ -x "$binary" ]] || lan_die "missing pinned production tmux executable"
-  [[ "$("$binary" -V)" == "tmux 3.7c" ]] || lan_die "production tmux must be pinned to 3.7c"
+  local version="${WEBTERM_PRODUCTION_TMUX_VERSION:-3.7c}"
+  [[ "$version" == "3.7c" || ( "$version" == "3.5a" && "$socket" == "webterm-production-durable" ) ]] ||
+    lan_die "unsupported production tmux version pin"
+  [[ "$("$binary" -V)" == "tmux $version" ]] || lan_die "production tmux must match pinned version $version"
 }
 
 lan_preflight_production_binary() {

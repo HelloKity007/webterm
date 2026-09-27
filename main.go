@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path"
 	"regexp"
 	"strings"
 	"syscall"
@@ -49,7 +50,14 @@ func resolveTmuxOptions(environment, binary, socket, testBinary, testSocket stri
 		default:
 			return "", "", errors.New("tmux overrides require production or release-test")
 		}
-		if !regexp.MustCompile(`^/[a-zA-Z0-9_./-]+$`).MatchString(binary) || !regexp.MustCompile(prefix).MatchString(socket) {
+		socketName := socket
+		if strings.HasPrefix(socket, "/") {
+			if !regexp.MustCompile(`^/[a-zA-Z0-9_./-]+$`).MatchString(socket) || path.Clean(socket) != socket || len(socket) > 100 {
+				return "", "", errors.New("tmux socket path must be canonical, shell-safe and at most 100 bytes")
+			}
+			socketName = path.Base(socket)
+		}
+		if !regexp.MustCompile(`^/[a-zA-Z0-9_./-]+$`).MatchString(binary) || !regexp.MustCompile(prefix).MatchString(socketName) {
 			return "", "", errors.New("tmux overrides require paired absolute shell-safe binary and environment-scoped socket")
 		}
 		return binary, socket, nil
@@ -72,7 +80,7 @@ func main() {
 	databasePath := flag.String("database", "webterm.db", "path to SQLite database")
 	deploymentEnvironment := flag.String("environment", "production", "deployment environment name")
 	tmuxBinary := flag.String("tmux-binary", "", "absolute remote tmux executable; requires tmux-socket")
-	tmuxSocket := flag.String("tmux-socket", "", "environment-scoped private tmux socket; requires tmux-binary")
+	tmuxSocket := flag.String("tmux-socket", "", "environment-scoped socket name or absolute remote socket path; requires tmux-binary")
 	testTmuxBinary := flag.String("test-tmux-binary", "", "absolute remote tmux path, release-test only")
 	testTmuxSocket := flag.String("test-tmux-socket", "webterm-release-test", "private tmux socket, release-test only")
 	testAutoLogin := flag.Bool("test-auto-login", false, "temporarily allow admin auto-login in release-test only")

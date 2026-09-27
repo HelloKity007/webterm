@@ -110,6 +110,10 @@ func TestProductionTmuxOverrideValidation(t *testing.T) {
 	}{
 		{"legacy", "", "", "", false},
 		{"paired", "fixture", "webterm-production-fixed", "tmux 3.7c", false},
+		{"persistent path", "fixture", "/home/pgz/.local/state/webterm/webterm-production-main", "tmux 3.7c", false},
+		{"path traversal", "fixture", "/state/../webterm-production-main", "tmux 3.7c", true},
+		{"relative path", "fixture", "state/webterm-production-main", "tmux 3.7c", true},
+		{"absolute wrong scope", "fixture", "/state/webterm-release-test-main", "tmux 3.7c", true},
 		{"missing socket", "fixture", "", "tmux 3.7c", true},
 		{"missing binary", "", "webterm-production-fixed", "", true},
 		{"wrong scope", "fixture", "webterm-release-test-fixed", "tmux 3.7c", true},
@@ -324,6 +328,21 @@ func TestProcessStopEscalationTargetsOnlyTheRecordedPID(t *testing.T) {
 	for _, forbidden := range []string{"pkill", "killall"} {
 		if strings.Contains(contents, forbidden) {
 			t.Fatalf("process management must not use broad command %q", forbidden)
+		}
+	}
+}
+
+func TestDurableProductionRequiresMatchingOriginalClient(t *testing.T) {
+	for _, version := range []string{"3.5a", "3.7c"} {
+		binary := filepath.Join(t.TempDir(), "tmux")
+		if err := os.WriteFile(binary, []byte("#!/bin/sh\necho 'tmux 3.5a'\n"), 0700); err != nil {
+			t.Fatal(err)
+		}
+		cmd := exec.Command("bash", "-c", `source ./lan-lib.sh; lan_validate_production_tmux`)
+		cmd.Env = append(os.Environ(), "WEBTERM_PRODUCTION_TMUX_BINARY="+binary, "WEBTERM_PRODUCTION_TMUX_SOCKET=webterm-production-durable", "WEBTERM_PRODUCTION_TMUX_VERSION="+version)
+		out, err := cmd.CombinedOutput()
+		if (err == nil) != (version == "3.5a") {
+			t.Fatalf("version %s: %v %s", version, err, out)
 		}
 	}
 }
