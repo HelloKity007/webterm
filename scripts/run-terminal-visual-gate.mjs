@@ -12,11 +12,13 @@ const tmuxSocket = process.env.WEBTERM_QA_TMUX_SOCKET || 'webterm-release-test-f
 const root = process.env.WEBTERM_QA_OUTPUT || `runtime/visual-gate-${candidate.version.slice(0, 7)}`;
 await mkdir(root, { recursive: true });
 const report = { candidate, cases: [], status: 'RUNNING' };
-const cases = ['verify-idle-shell-visibility', 'verify-peer-font-stability', 'verify-terminal-switch-stability', 'verify-cross-pane-move', 'verify-terminal-two-display', 'verify-shell-repeat', 'verify-claude-repeat', 'verify-claude-composer', 'verify-mobile', 'verify-mobile-landscape', 'verify-workspace-close'];
+const allCases = ['verify-idle-shell-visibility', 'verify-peer-font-stability', 'verify-terminal-switch-stability', 'verify-cross-pane-move', 'verify-terminal-two-display', 'verify-shell-repeat', 'verify-claude-repeat', 'verify-claude-composer', 'verify-mobile', 'verify-mobile-landscape', 'verify-workspace-close'];
+const cases = process.env.WEBTERM_QA_CASES?.split(',') || allCases;
+assert(cases.length > 0 && cases.every(name => allCases.includes(name)), 'Invalid QA case selection');
 const phases = process.env.WEBTERM_QA_PHASES?.split(',') || ['fresh', 'normal', 'hard'];
 assert(phases.length > 0 && phases.every(phase => ['fresh', 'normal', 'hard'].includes(phase)), 'Invalid QA phase selection');
 report.phases = phases;
-report.scope = phases.length === 3 && new Set(phases).size === 3 ? 'full matrix' : 'selected phases only';
+report.scope = phases.length === 3 && new Set(phases).size === 3 && cases.length === allCases.length && new Set(cases).size === allCases.length ? 'full matrix' : 'selected phases only';
 
 async function api(path, options = {}) {
   const response = await fetch(`${origin}${path}`, options);
@@ -51,6 +53,7 @@ report.fixture = { workspaces: baseline.layout.workspaceTabs.map(({ id, index, n
 async function restoreFixtureIfChanged() {
   const current = await readFixture();
   if (JSON.stringify({ schema_version: current.schema_version, layout: current.layout }) === baselineLayout) return;
+  await writeFile(`${root}/fixture-change.json`, JSON.stringify({baseline, current}, null, 2));
   await api('/api/layout', { method: 'PUT', headers: authHeaders, body: JSON.stringify({
     schema_version: baseline.schema_version, revision: current.revision, layout: baseline.layout,
   }) });

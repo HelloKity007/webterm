@@ -59,7 +59,7 @@ func terminalModeForPane(command string, alternate bool) string {
 		return "cli"
 	}
 	switch strings.ToLower(strings.TrimSpace(command)) {
-	case "claude", "claude-code", "claude.exe":
+	case "claude", "claude-code", "claude.exe", "codex", "codex.exe":
 		return "cli"
 	case "sh", "bash", "zsh", "dash", "ash", "ksh", "mksh", "fish", "nu", "xonsh", "elvish", "cmd.exe", "powershell.exe", "pwsh":
 		return "shell"
@@ -168,8 +168,9 @@ func encodeTmuxControlSendKeys(pane, data string) string {
 // announced a real pane id. Before that point input is rejected rather than
 // risking protocol corruption or sending keystrokes to an unintended pane.
 type tmuxControlInput struct {
-	tracker *tmuxControlPaneTracker
-	writer  io.Writer
+	mouseResetMarker string
+	tracker          *tmuxControlPaneTracker
+	writer           io.Writer
 }
 
 type tmuxControlTerminalSession struct {
@@ -226,9 +227,13 @@ func (i *tmuxControlInput) write(data string) error {
 	if i == nil || i.writer == nil {
 		return io.ErrClosedPipe
 	}
-	command := encodeTmuxControlSendKeys(i.tracker.target(), data)
+	target := i.tracker.target()
+	command := encodeTmuxControlSendKeys(target, data)
 	if command == "" {
 		return io.ErrShortWrite
+	}
+	if i.mouseResetMarker != "" && terminalMouseReports.MatchString(data) {
+		command = guardedMouseCommand(target, data, i.mouseResetMarker)
 	}
 	_, err := io.WriteString(i.writer, command)
 	return err
@@ -292,15 +297,7 @@ func terminalScreenSnapshot(captured []byte, state []string) []byte {
 		// A quiet application need not re-emit DECSET after a control-mode
 		// attachment. Restore the pane's actual mouse protocol, not merely its
 		// pixels; otherwise native CLI controls appear but cannot be clicked.
-		mouseModes := []int{1000, 1002, 1003, 1005, 1006}
-		for _, mouseMode := range mouseModes {
-			fmt.Fprintf(&out, "\x1b[?%dl", mouseMode)
-		}
-		for index, mouseMode := range mouseModes {
-			if state[7+index] == "1" {
-				fmt.Fprintf(&out, "\x1b[?%dh", mouseMode)
-			}
-		}
+		out.Write(terminalMouseProtocolForPane(state))
 	}
 	lines := bytes.Split(bytes.TrimSuffix(captured, []byte("\n")), []byte("\n"))
 	if state[6] == "0" {

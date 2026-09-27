@@ -7,7 +7,7 @@ func TestTerminalModeForPane(t *testing.T) {
 		command, want string
 		alternate     bool
 	}{
-		{"bash", "shell", false}, {"claude.exe", "cli", false},
+		{"bash", "shell", false}, {"claude.exe", "cli", false}, {"codex", "cli", false},
 		{"ssh", "unknown", false}, {"docker", "unknown", false},
 		{"ssh", "cli", true}, {"bash", "cli", true},
 	} {

@@ -539,19 +539,20 @@ func (h *WSHandler) HandleSSH(conn *websocket.Conn) {
 		return err
 	}}
 	controlTracker := &tmuxControlPaneTracker{}
+	mouseGuard := &terminalMouseGuardResponse{marker: "WEBTERM_MOUSE_RESET:" + attachSpec.Nonce}
+	targetName := instance.CanonicalName
+	paneStateCommand := scopeTmuxCommand("tmux display-message -p -t "+targetName+" '#{pane_id}\t#{pane_current_command}\t#{pane_width}\t#{pane_height}\t#{cursor_x}\t#{cursor_y}\t#{alternate_on}\t#{mouse_standard_flag}\t#{mouse_button_flag}\t#{mouse_any_flag}\t#{mouse_utf8_flag}\t#{mouse_sgr_flag}'", h.TmuxSocket, h.TmuxBinary)
 	var inputWriter io.Writer = stdinPipe
 	inputSession := terminalInputSession(session)
 	if controlMode {
-		inputWriter = &tmuxControlInput{tracker: controlTracker, writer: stdinPipe}
+		inputWriter = &tmuxControlInput{tracker: controlTracker, writer: stdinPipe, mouseResetMarker: mouseGuard.marker}
 		inputSession = &tmuxControlTerminalSession{base: session, writer: stdinPipe}
 	}
 	// A quiet, already-running pane may not emit a %output notification when a
 	// control client attaches. Call this only after the framed identity guard is
 	// ready, so a capture can never make an unverified replacement look usable.
 	seedControlSnapshot := func() {
-		targetName := instance.CanonicalName
 		captureCommand := initialTerminalScreenCaptureCommand(targetName, h.TmuxSocket, h.TmuxBinary)
-		paneCommand := scopeTmuxCommand("tmux display-message -p -t "+targetName+" '#{pane_id}\t#{pane_current_command}\t#{pane_width}\t#{pane_height}\t#{cursor_x}\t#{cursor_y}\t#{alternate_on}\t#{mouse_standard_flag}\t#{mouse_button_flag}\t#{mouse_any_flag}\t#{mouse_utf8_flag}\t#{mouse_sgr_flag}'", h.TmuxSocket, h.TmuxBinary)
 		go func() {
 			captureClient, captureErr := newSSHClient()
 			if captureErr != nil {
@@ -573,7 +574,7 @@ func (h *WSHandler) HandleSSH(conn *websocket.Conn) {
 			paneSession, paneErr := captureClient.NewSession()
 			if paneErr == nil {
 				paneSession.Stdout = &paneID
-				if paneErr = paneSession.Run(paneCommand); paneErr == nil {
+				if paneErr = paneSession.Run(paneStateCommand); paneErr == nil {
 					parts := strings.Split(strings.TrimSpace(paneID.String()), "\t")
 					paneState = parts
 					controlTracker.setTarget(strings.TrimSpace(parts[0]))
@@ -597,6 +598,90 @@ func (h *WSHandler) HandleSSH(conn *websocket.Conn) {
 			}
 		}()
 	}
+	// A foreground CLI can disappear without sending its own DEC reset (for
+	// example when its Docker container or tmux server is interrupted). The
+	// next pane output normally includes the restored shell prompt, so perform
+	// one debounced, out-of-band state read and remove only stale mouse modes.
+	// This never probes a quiet pane and deliberately leaves nested ssh/docker
+	// commands alone because their foreground command is not trustworthy.
+	mouseModeRefresh := make(chan struct{}, 1)
+	mouseModeMonitorStart := make(chan struct{})
+	mouseModeMonitorStop := make(chan struct{})
+	defer close(mouseModeMonitorStop)
+	var mouseProbeClient *sshmgr.Client
+	requestMouseModeRefresh := func() {
+		select {
+		case mouseModeRefresh <- struct{}{}:
+		default:
+		}
+	}
+	go func() {
+		select {
+		case <-mouseModeMonitorStart:
+		case <-mouseModeMonitorStop:
+			return
+		}
+		followupPending := false
+		for {
+			select {
+			case <-mouseModeMonitorStop:
+				return
+			case <-mouseModeRefresh:
+			}
+			// Let the foreground process transition settle. Coalescing output
+			// bursts avoids extra SSH channels during a full-screen redraw.
+			select {
+			case <-mouseModeMonitorStop:
+				return
+			case <-time.After(75 * time.Millisecond):
+			}
+			if mouseProbeClient == nil {
+				continue
+			}
+			probeSession, probeErr := mouseProbeClient.NewSession()
+			if probeErr != nil {
+				log.Printf("terminal mouse-state probe session failed: %v", probeErr)
+				continue
+			}
+			var paneState bytes.Buffer
+			probeSession.Stdout = &paneState
+			probeErr = probeSession.Run(paneStateCommand)
+			_ = probeSession.Close()
+			if probeErr != nil {
+				log.Printf("terminal mouse-state probe command failed: %v", probeErr)
+				continue
+			}
+			state := strings.Split(strings.TrimSpace(paneState.String()), "\t")
+			reset, mode := terminalMouseRecoveryForPane(state)
+			if len(reset) > 0 {
+				log.Printf("terminal mouse-state probe reset stale shell mouse mode")
+				if err := controlOutput.output(reset); err != nil {
+					return
+				}
+			}
+			if mode != "unknown" {
+				_ = outbound.Send(map[string]string{"type": "terminal_mode", "mode": mode})
+			}
+			if mode == "shell" || !terminalPaneHasMouse(state) {
+				followupPending = false
+				continue
+			}
+			if !followupPending {
+				// A very short-lived CLI can enable mouse tracking and exit while
+				// the first debounced probe is running. Take one bounded follow-up
+				// sample so that an output burst cannot coalesce away the shell
+				// prompt transition. Long-running CLIs are not polled repeatedly.
+				followupPending = true
+				go func() {
+					select {
+					case <-mouseModeMonitorStop:
+					case <-time.After(350 * time.Millisecond):
+						requestMouseModeRefresh()
+					}
+				}()
+			}
+		}
+	}()
 
 	startTerminalInput := func() {
 		go func() {
@@ -654,11 +739,20 @@ func (h *WSHandler) HandleSSH(conn *websocket.Conn) {
 	go func() {
 		err := pumpTmuxControlOutputWithRaw(stdoutPipe, "", controlOutput.output, func(event tmuxControlEvent) error {
 			controlTracker.observe(event)
+			if event.Name == "output" && event.Pane != "" && event.Pane == controlTracker.target() {
+				requestMouseModeRefresh()
+			}
 			if grid := terminalGridFromLayout(event, controlTracker.target()); len(grid) > 0 {
 				return controlOutput.grid(grid)
 			}
 			return nil
 		}, func(line string) error {
+			if mouseGuard.observe(line) {
+				if err := controlOutput.output([]byte(terminalMouseDisable)); err != nil {
+					return err
+				}
+				_ = outbound.Send(map[string]string{"type": "terminal_mode", "mode": "shell"})
+			}
 			isReady, observeErr := guard.observeLine(line)
 			if observeErr != nil {
 				signalReady(observeErr)
@@ -685,6 +779,20 @@ func (h *WSHandler) HandleSSH(conn *websocket.Conn) {
 		_ = outbound.Send(map[string]string{"type": "error", "code": "TERMINAL_IDENTITY_TIMEOUT", "error": "terminal identity verification timed out; input was not attached"})
 		return
 	}
+	// The interaction transport can be at its channel limit while a busy
+	// terminal is attached. Prewarm one private SSH transport after identity
+	// verification, rather than connecting on the crash path or competing with
+	// browser input. It is used only for short state reads and is closed with
+	// this WebSocket attachment.
+	var probeErr error
+	mouseProbeClient, probeErr = newSSHClient()
+	if probeErr != nil {
+		log.Printf("terminal mouse-state probe transport failed: %v", probeErr)
+	} else {
+		defer mouseProbeClient.Close()
+	}
+	close(mouseModeMonitorStart)
+	requestMouseModeRefresh()
 	seedControlSnapshot()
 	startTerminalInput()
 	io.Copy(&recordingWSWriter{wsWriter: wsWriter{outbound: outbound}, history: history}, stderrPipe)
