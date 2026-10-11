@@ -7,3 +7,4 @@
 /lan-secrets.env
 /certs/
 /ssh_known_hosts
+.agents/
