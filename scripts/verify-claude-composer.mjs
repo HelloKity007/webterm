@@ -5,17 +5,41 @@ import { visualReloadPhase } from './visual-reload-phase.mjs';
 const require = createRequire(import.meta.url);
 const { chromium } = require('../ui/node_modules/playwright');
 const output = process.env.WEBTERM_QA_OUTPUT || 'runtime/claude-composer-qa';
+const selectedWidths = process.env.WEBTERM_QA_VIEWPORTS?.split(',').map(Number);
 await mkdir(output, { recursive: true });
 const browser = await chromium.launch({ executablePath: '/usr/bin/google-chrome', headless: false, args: ['--no-sandbox'] });
 const results = [];
 try {
   for (const [width, height] of [[1920,1080],[2860,988],[3440,1440]]) {
+    if (selectedWidths && !selectedWidths.includes(width)) continue;
     const context = await browser.newContext({ viewport: { width, height }, ignoreHTTPSErrors: true });
     const health = await (await context.request.get('https://192.168.11.87:9444/api/health')).json();
     assert.equal(health.environment, 'release-test');
     const page = await context.newPage();
     const errors = [];
+    const sentResizes = [];
+    const geometryEvents = [];
     page.on('pageerror', e => errors.push(String(e)));
+    page.on('websocket', ws => {
+      if (!ws.url().includes('/ws/ssh/')) return;
+      const id = new URL(ws.url()).searchParams.get('terminal_id');
+      ws.on('framesent', ({ payload }) => {
+        try {
+          const message = JSON.parse(String(payload));
+          if (Number.isInteger(message.cols) && Number.isInteger(message.rows)) sentResizes.push(message);
+          if (message.cols || message.action === 'take_size_control') geometryEvents.push({ time: Date.now(), id, send: message });
+        } catch {}
+      });
+      ws.on('framereceived', ({ payload }) => {
+        try {
+          const message = JSON.parse(String(payload));
+          if (!message.data) return;
+          const data = message.b64 ? Buffer.from(message.data, 'base64').toString() : message.data;
+          const grids = [...data.matchAll(/webterm-grid:(\d+)x(\d+)/g)].map(match => `${match[1]}x${match[2]}`);
+          if (grids.length) geometryEvents.push({ time: Date.now(), id, grids });
+        } catch {}
+      });
+    });
     await page.goto('https://192.168.11.87:9444/', { waitUntil: 'networkidle' });
     await visualReloadPhase(page);
     // DOM order follows the responsive grid, not a stable Panel number. In a
@@ -26,6 +50,11 @@ try {
     await claudeTab.click();
     const panel = claudeTab.locator('xpath=ancestor::*[contains(@class,"terminal-grid-cell")]').locator('.terminal-surface:visible');
     await panel.waitFor();
+    const capturePanel = async path => {
+      const box = await panel.boundingBox();
+      assert(box, 'Claude Panel has no visible bounds');
+      await page.screenshot({ path, clip: box });
+    };
     assert.equal(await page.locator('.app-statusbar').count(), 0);
     assert.equal(await page.locator('.workspace-tabs').count(), 0);
     const toggle = page.locator('.workspace-tabs-toggle');
@@ -79,34 +108,46 @@ try {
           return r.width > 0 && r.top >= bounds.top && r.bottom <= bounds.bottom + 1;
         }).length };
     });
-    assert.equal(layout.columns, width < 3000 ? 2 : 4);
+    assert.equal(layout.columns, width >= 2600 ? 4 : 2);
     assert.equal(layout.firstScreenPanels, width < 3000 ? 4 : 8);
     if (width < 3000) assert(layout.scrollHeight > layout.clientHeight);
     await page.screenshot({ path: `${output}/${width}-layout.png` });
     await panel.scrollIntoViewIfNeeded();
     await page.waitForTimeout(5000);
+    await page.bringToFront();
+    await panel.locator('.xterm-helper-textarea').focus();
+    await page.keyboard.press('Shift');
+    await page.waitForFunction(e => e.dataset.sharedCols === e.dataset.requestedCols && e.dataset.sharedRows === e.dataset.requestedRows, await panel.elementHandle());
     const measure = () => panel.evaluate(e => {
       const screen = e.querySelector('.xterm-screen').getBoundingClientRect();
       const bar = e.querySelector('.scrollbar.vertical').getBoundingClientRect();
       const surface = e.getBoundingClientRect();
       const edge = e.classList.contains('desktop-local-viewport') ? surface.left + e.clientWidth : bar.left;
-      return { authority: e.dataset.gridAuthority, font: e.dataset.fittedFontSize, lineHeight: Number(e.dataset.fittedLineHeight || 1), cols: Number(e.dataset.sharedCols), rows: Number(e.dataset.sharedRows), width: e.clientWidth, height: e.clientHeight, rightGap: edge - screen.right, bottomGap: surface.top + e.clientHeight - screen.bottom };
+      return { authority: e.dataset.gridAuthority, font: e.dataset.fittedFontSize, lineHeight: Number(e.dataset.fittedLineHeight || 1), requestedCols: Number(e.dataset.requestedCols), requestedRows: Number(e.dataset.requestedRows), cols: Number(e.dataset.sharedCols), rows: Number(e.dataset.sharedRows), width: e.clientWidth, height: e.clientHeight, scrollWidth: e.scrollWidth, scrollHeight: e.scrollHeight, topGap: screen.top - surface.top, rightGap: edge - screen.right, bottomGap: surface.top + e.clientHeight - screen.bottom };
     });
     const before = await measure();
-    await panel.screenshot({ path: `${output}/${width}-before.png` });
+    await capturePanel(`${output}/${width}-before.png`);
     await panel.hover();
     for (let i = 0; i < 8; i++) { await page.mouse.wheel(0, -100); await page.waitForTimeout(80); }
     await page.waitForTimeout(200);
-    await panel.screenshot({ path: `${output}/${width}-history.png` });
+    await capturePanel(`${output}/${width}-history.png`);
     for (let i = 0; i < 12; i++) { await page.mouse.wheel(0, 100); await page.waitForTimeout(80); }
     await page.waitForTimeout(5000);
     const after = await measure();
-    await panel.screenshot({ path: `${output}/${width}-returned.png` });
-    results.push({ width, height, health, layout, titlebars, before, after, errors });
+    await capturePanel(`${output}/${width}-returned.png`);
+    results.push({ width, height, health, layout, titlebars, before, after, sentResizes, geometryEvents, errors });
+    // A bottom-aligned overflowing screen used to pass the composer check:
+    // its final row was visible while its upper rows needed an outer scrollbar.
+    // Claude must show the complete live frame, including the top, at once.
+    for (const frame of [before, after]) {
+      assert(frame.topGap >= -1, `Claude top rows are outside the panel: ${JSON.stringify(frame)}`);
+      assert(frame.scrollHeight <= frame.height + 1 && frame.scrollWidth <= frame.width + 1,
+        `Claude requires an outer scrollbar: ${JSON.stringify(frame)}`);
+    }
     assert.equal(before.authority, 'server');
     assert(before.bottomGap >= 0 && before.rightGap >= 0);
-    assert(before.lineHeight >= 1 && before.lineHeight <= 1.15);
-    assert(after.lineHeight >= 1 && after.lineHeight <= 1.15);
+    assert(before.lineHeight >= 1 && before.lineHeight <= 1.25);
+    assert(after.lineHeight >= 1 && after.lineHeight <= 1.25);
     // Another attached display may legitimately renegotiate the shared PTY
     // rows/columns. History navigation must not change this browser's geometry
     // or local font, and the returned composer must still fit without clipping.

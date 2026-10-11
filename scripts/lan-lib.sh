@@ -38,6 +38,8 @@ lan_check() {
   lan_require_mode_600 "$LAN_SECRETS"
   [[ -f "$LAN_CADDYFILE" ]] || lan_die "missing required file: $LAN_CADDYFILE"
   lan_load_secrets
+  [[ -n "${LAN_TLS_CERT:-}" && -f "$LAN_TLS_CERT" ]] || lan_die "LAN_TLS_CERT must point to an existing certificate"
+  [[ -n "${LAN_TLS_KEY:-}" && -f "$LAN_TLS_KEY" ]] || lan_die "LAN_TLS_KEY must point to an existing private key"
   command -v "$LAN_CADDY_BIN" >/dev/null 2>&1 || lan_die "caddy executable not found: $LAN_CADDY_BIN"
   "$LAN_CADDY_BIN" validate --config "$LAN_CADDYFILE" --adapter caddyfile >/dev/null
 }
@@ -48,8 +50,6 @@ lan_load_secrets() {
   source "$LAN_SECRETS"
   set +a
   [[ -n "${WEBTERM_LOCAL_SSH_PASSWORD:-}" ]] || lan_die "WEBTERM_LOCAL_SSH_PASSWORD is not set in lan-secrets.env"
-  [[ -n "${LAN_TLS_CERT:-}" && -f "$LAN_TLS_CERT" ]] || lan_die "LAN_TLS_CERT must point to an existing certificate"
-  [[ -n "${LAN_TLS_KEY:-}" && -f "$LAN_TLS_KEY" ]] || lan_die "LAN_TLS_KEY must point to an existing private key"
 }
 
 lan_start() {
@@ -103,6 +103,14 @@ lan_preflight_production_binary() {
   local candidate_binary="$1"
   [[ -x "$candidate_binary" ]] || lan_die "missing production binary: $candidate_binary"
   lan_validate_production_tmux
+  if [[ -n "${WEBTERM_PRODUCTION_SESSION_DIRECTORY:-}" || -n "${WEBTERM_PRODUCTION_SESSION_BINARY:-}" ]]; then
+    [[ -n "${WEBTERM_PRODUCTION_SESSION_DIRECTORY:-}" && -x "${WEBTERM_PRODUCTION_SESSION_BINARY:-}" ]] ||
+      lan_die "isolated terminal directory/binary must be configured together"
+    local isolation_help
+    isolation_help="$("$candidate_binary" -help 2>&1)" || lan_die "cannot inspect production binary isolation flags"
+    [[ "$isolation_help" == *"-tmux-session-directory"* && "$isolation_help" == *"-tmux-session-binary"* ]] ||
+      lan_die "production binary does not support isolated terminal sessions"
+  fi
   if [[ -n "${WEBTERM_PRODUCTION_TMUX_BINARY:-}" ]]; then
     local binary_help
     binary_help="$("$candidate_binary" -help 2>&1)" || lan_die "cannot inspect production binary flags"
@@ -119,6 +127,10 @@ lan_start_production() {
   local start_args=(-config "$LAN_CONFIG")
   if [[ -n "${WEBTERM_PRODUCTION_TMUX_BINARY:-}" ]]; then
     start_args+=(-tmux-binary "$WEBTERM_PRODUCTION_TMUX_BINARY" -tmux-socket "$WEBTERM_PRODUCTION_TMUX_SOCKET")
+  fi
+  if [[ -n "${WEBTERM_PRODUCTION_SESSION_DIRECTORY:-}" || -n "${WEBTERM_PRODUCTION_SESSION_BINARY:-}" ]]; then
+    [[ -n "${WEBTERM_PRODUCTION_SESSION_DIRECTORY:-}" && -x "${WEBTERM_PRODUCTION_SESSION_BINARY:-}" ]] || lan_die "isolated terminal directory/binary must be configured together"
+    start_args+=(-tmux-session-directory "$WEBTERM_PRODUCTION_SESSION_DIRECTORY" -tmux-session-binary "$WEBTERM_PRODUCTION_SESSION_BINARY")
   fi
   # Release-aware binaries support explicit database/environment flags. Keep
   # rollback compatible with the pre-release binary, which used the config and
@@ -144,9 +156,14 @@ lan_start_release() {
   if [[ -f "$LAN_RUNTIME_DIR/webterm-release.pid" ]] && lan_pid_running "$(<"$LAN_RUNTIME_DIR/webterm-release.pid")"; then
     lan_die "release-test webterm is already running"
   fi
+  local session_args=()
+  if [[ -n "${WEBTERM_TEST_SESSION_DIRECTORY:-}" || -n "${WEBTERM_TEST_SESSION_BINARY:-}" ]]; then
+    [[ -n "${WEBTERM_TEST_SESSION_DIRECTORY:-}" && -x "${WEBTERM_TEST_SESSION_BINARY:-}" ]] || lan_die "isolated test terminal directory/binary must be configured together"
+    session_args=(-tmux-session-directory "$WEBTERM_TEST_SESSION_DIRECTORY" -tmux-session-binary "$WEBTERM_TEST_SESSION_BINARY")
+  fi
   (
     cd "$LAN_ROOT"
-    setsid "$LAN_RELEASE_BINARY" -config "$LAN_CONFIG" -listen-addr 127.0.0.1:8889 -database "$LAN_RELEASE_DATABASE" -environment release-test -test-auto-login -preserve-terminal-sessions -test-tmux-binary "$test_tmux" -test-tmux-socket webterm-release-test-fixed >"$LAN_RUNTIME_DIR/webterm-release.log" 2>&1 &
+    setsid "$LAN_RELEASE_BINARY" "${session_args[@]}" -config "$LAN_CONFIG" -listen-addr 127.0.0.1:8889 -database "$LAN_RELEASE_DATABASE" -environment release-test -test-auto-login -preserve-terminal-sessions -test-tmux-binary "$test_tmux" -test-tmux-socket webterm-release-test-fixed >"$LAN_RUNTIME_DIR/webterm-release.log" 2>&1 &
     echo $! >"$LAN_RUNTIME_DIR/webterm-release.pid"
   )
 }

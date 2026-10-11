@@ -1,3 +1,4 @@
+
 export interface TerminalGrid {
   cols: number;
   rows: number;
@@ -33,11 +34,10 @@ export function compactDesktopGridForViewport(viewportWidth: number): TerminalGr
   return viewportWidth >= wideCompactViewportWidth ? wideCompactSharedTerminalGrid : smallViewportGridLimit;
 }
 
-// A two-column compact panel can be wider than a four-column large-display
-// panel. Do not let that client inflate the shared PTY beyond the roomy
-// display's native grid; rendering still obeys the server's exact reply.
+// Desktop requests describe measured capacity; the server arbitrates which
+// client controls the shared grid. Only protocol bounds apply here.
 export function desktopRequestedGrid(measured: TerminalGrid): TerminalGrid {
-  return { cols: Math.min(measured.cols, 104), rows: measured.rows };
+  return { cols: Math.max(2, Math.min(measured.cols, 1000)), rows: Math.max(1, Math.min(measured.rows, 499)) };
 }
 
 export function sharedGridForViewport(announced: TerminalGrid, viewportWidth: number): TerminalGrid {

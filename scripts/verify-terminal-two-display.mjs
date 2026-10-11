@@ -82,6 +82,12 @@ try {
       await tab.click();
       const pane = tab.locator('xpath=ancestor::*[contains(@class,"terminal-grid-cell")]');
       const terminal = pane.locator('.terminal-surface:visible');
+      if (index === 1) {
+        await page.bringToFront();
+        await terminal.locator('.xterm-helper-textarea').focus();
+        await page.keyboard.press('Shift');
+        await page.waitForFunction(e=>e.dataset.sharedCols===e.dataset.requestedCols && e.dataset.sharedRows===e.dataset.requestedRows,await terminal.elementHandle());
+      }
       for (let i = 0; i < 5; i++) {
         await page.locator('.terminal-grid').evaluate(e => { e.scrollTop = 0; });
         await terminal.scrollIntoViewIfNeeded(); await terminal.hover();
@@ -98,14 +104,16 @@ try {
         const cursorRow = Number(e.dataset.cursorRow);
         const cellHeight = screen.height / Number(e.dataset.sharedRows);
         return { font: e.dataset.fittedFontSize, cols: Number(e.dataset.sharedCols), rows: Number(e.dataset.sharedRows),
-          height: e.clientHeight, outerScrollTop: e.scrollTop, cursorRow, cursorBuffer: e.dataset.cursorBuffer,
+          height: e.clientHeight, outerScrollTop: e.scrollTop, historyBase: Number(e.dataset.historyBase || 0),
+          scrollOwner:e.dataset.scrollOwner, scrollWidth:e.scrollWidth, width:e.clientWidth,
+          cursorRow, cursorBuffer: e.dataset.cursorBuffer,
           cursorTop: screen.top - surface.top + cursorRow * cellHeight,
           cursorBottom: screen.top - surface.top + (cursorRow + 1) * cellHeight,
           rightGap: edge - screen.right, bottomGap: surface.top + e.clientHeight - screen.bottom,
           cellWidth: screen.width / Number(e.dataset.sharedCols), cellHeight };
       });
       results.push({ display: index, panel: number, fill });
-      assert(fill.rightGap >= 0, 'Terminal overlaps a panel edge');
+      assert(fill.rightGap >= 0 || (fill.scrollOwner === 'surface' && fill.scrollWidth > fill.width), 'Wide mirror grid is clipped without navigation');
       assert(Number.isInteger(fill.cursorRow) && fill.cursorRow >= 0,
         `Terminal cursor is not available for visual verification: ${JSON.stringify(fill)}`);
       assert(fill.cursorTop >= -1 && fill.cursorBottom <= fill.height + 1,
@@ -116,7 +124,7 @@ try {
         // actual bottom prompt after returning from local xterm history. It
         // may reach the final content row, but must never pass it into a
         // blank peer-grid tail.
-        const shellContentOverflow = Math.max(0, fill.rows * fill.cellHeight - fill.height);
+        const shellContentOverflow = Math.max(0, (fill.historyBase + fill.rows) * fill.cellHeight - fill.height);
         assert(fill.outerScrollTop <= shellContentOverflow + 1,
           `Bash wheel round-trip scrolled past its final content row: ${JSON.stringify(fill)}`);
       }

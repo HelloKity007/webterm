@@ -49,7 +49,16 @@ func (h *WSHandler) ReplayTerminalHistory(w http.ResponseWriter, r *http.Request
 		http.Error(w, `{"error":"invalid terminal history target"}`, http.StatusBadRequest)
 		return
 	}
-	command := terminalHistoryCaptureCommand(target, h.TmuxSocket, h.TmuxBinary)
+	socket, binary := h.TmuxSocket, h.TmuxBinary
+	if instance, lookupErr := h.Store.GetTerminalInstance(user.UserID, connID, terminalID); lookupErr == nil {
+		if !h.terminalInstanceMatchesEndpoint(instance, connection) {
+			http.Error(w, `{"error":"terminal endpoint mismatch"}`, http.StatusConflict)
+			return
+		}
+		target = instance.CanonicalName
+		socket, binary = h.terminalTransport(instance)
+	}
+	command := terminalHistoryCaptureCommand(target, socket, binary)
 	snapshot, err := h.captureTerminalOutput(connection, command)
 	if err == nil {
 		// capture-pane is line-oriented, unlike the live PTY stream. Convert

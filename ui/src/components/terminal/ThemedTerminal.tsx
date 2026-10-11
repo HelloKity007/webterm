@@ -19,7 +19,8 @@ import CliHistoryResume from './CliHistoryResume';
 import { useCliHistoryResume } from './useCliHistoryResume';
 import MobileTerminalReader from './MobileTerminalReader';
 import { terminalModeAfterPrivateControl } from './terminalMode';
-import { localViewportFont, localViewportRevealRow } from './localViewport';
+import { localTerminalFont, localViewportRevealRow } from './localViewport';
+import { createDesktopTerminalViewport, desktopCapacity, type DesktopTerminalViewport } from './desktopTerminalViewport';
 import { observeTerminalRenderer } from './terminalRendererMetrics';
 import { takeTerminalOutput } from './terminalOutputQueue';
 import { cancelTerminalOutput, scheduleTerminalOutput } from './terminalOutputScheduler';
@@ -31,8 +32,10 @@ import {
   resumeTerminalInputAction,
   openClaudeTranscriptAction,
   routeTerminalWheel,
+  createTerminalWheelNotchGate,
   terminalActionMessage,
   terminalScrollbackLines,
+  type TerminalWheelNotchGate,
 } from './terminalCliSupport';
 import {
   clearTerminalHistory,
@@ -53,9 +56,11 @@ import {
   shouldAutoFocusTerminal,
   shouldRevealTerminalInputCursor,
 } from './terminalInteractions';
-import { calculateTerminalScale, constrainTerminalHeight, defaultSharedTerminalGrid, desktopRequestedGrid, mobileSharedTerminalGrid, parseSharedTerminalGridTitle, sharedGridForViewport, smallViewportWidth, type TerminalGrid } from './terminalScaling';
-import { fitTerminalColumns } from './terminalWidth';
+import { calculateTerminalScale, constrainTerminalHeight, desktopRequestedGrid, mobileSharedTerminalGrid, parseSharedTerminalGridTitle, smallViewportWidth, type TerminalGrid } from './terminalScaling';
 import { getSharedTerminalGrid, setSharedTerminalGrid } from './terminalGridCache';
+import { createAutomaticTerminalGeometry, type AutomaticTerminalGeometry } from './automaticTerminalGeometry';
+import { createTerminalReplayGeometry } from './terminalReplayGeometry';
+import { createWheelDebugRecorder } from './terminalWheelDebug';
 import { isMobileBrowserEnvironment } from '../layout/mobileLayout';
 import { clearShellHistoryViewport, loadShellHistoryViewport, restoredHistoryLine, saveShellHistoryViewport, shellHistoryViewportKey, type ShellHistoryViewport } from './shellHistoryViewport';
 
@@ -70,6 +75,7 @@ interface Props {
   panelNumber?: number;
   onDismissUnverified?: () => void;
   onCreateSafeTerminal?: () => Promise<void>;
+  onReplaceUnrecoverableTerminal?: () => Promise<void>;
   onIdentityGuardChange?: (guarded: boolean) => void;
 }
 
@@ -118,7 +124,7 @@ function restoreShellHistoryViewport(term: Terminal, snapshot: ShellHistoryViewp
   const lines: string[] = [];
   for (let row = 0; row <= buffer.baseY; row++) lines.push(buffer.getLine(row)?.translateToString(true) || '');
   term.scrollToLine(restoredHistoryLine(snapshot, lines, buffer.baseY));
-  if (surface && typeof snapshot.outerTop === 'number') {
+  if (surface && surface.dataset.scrollOwner !== 'surface' && typeof snapshot.outerTop === 'number') {
     // Clamp only after the current layout has a measurable scroll height.
     // Reapplying at the normal restore checkpoints handles a delayed shared
     // grid resize without snapping a history reader to the local top.
@@ -155,15 +161,21 @@ function terminalGridAnnouncement(bytes: Uint8Array): Uint8Array | null {
   return terminator < 0 ? null : bytes.subarray(0, terminator + 1);
 }
 
-export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMenuItems, myTabId, workspaceIndex, panelNumber, onDismissUnverified, onCreateSafeTerminal, onIdentityGuardChange }: Props) {
+export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMenuItems, myTabId, workspaceIndex, panelNumber, onDismissUnverified, onCreateSafeTerminal, onReplaceUnrecoverableTerminal, onIdentityGuardChange }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
+  const desktopViewportRef = useRef<DesktopTerminalViewport | null>(null);
   const [termKey, setTermKey] = useState(0);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
   const [clipboardNotice, setClipboardNotice] = useState('');
   const [identityFault, setIdentityFault] = useState<string | null>(null);
+  const [faultDetail, setFaultDetail] = useState<{ message: string; observedAt?: string; environment?: string } | null>(null);
   const [identityRevision, setIdentityRevision] = useState(0);
+  const [recoveryPhase, setRecoveryPhase] = useState<'idle' | 'recovering' | 'replacing' | 'failed'>('idle');
   const [historyHelpOpen, setHistoryHelpOpen] = useState(false);
+  const recoveryAttemptRef = useRef(0);
+  const recoveryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const recoveryReplaceFiredRef = useRef(false);
   const identityGuardChangeRef = useRef(onIdentityGuardChange);
   useEffect(() => { identityGuardChangeRef.current = onIdentityGuardChange; }, [onIdentityGuardChange]);
   useEffect(() => {
@@ -178,7 +190,9 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
   const contextSelectionRef = useRef('');
   const mouseStateRef = useRef(createTerminalMouseState());
   const wheelStateRef = useRef(createTerminalWheelState());
+  const wheelNotchGateRef = useRef<TerminalWheelNotchGate | null>(null);
   const terminalModeRef = useRef<'unknown' | 'shell' | 'cli'>('unknown');
+  const modeFitRef = useRef<() => void>(() => {});
   const alternateScreenRef = useRef(false);
   const selectionCopyArmedRef = useRef(false);
   const selectionAnchorRef = useRef<{ col: number; row: number } | null>(null);
@@ -198,6 +212,8 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
   const outputScheduledJobRef = useRef<() => void>(() => {});
   const sendRef = useRef<(data: string) => void>(() => {});
   const requestedGridRef = useRef<TerminalGrid | null>(null);
+  const automaticGeometryRef = useRef<AutomaticTerminalGeometry | null>(null);
+  const geometryConnectedRef = useRef(false);
   const inputViewportFollowedRef = useRef(false);
   const pendingCursorRevealRef = useRef(false);
   const shellHistoryLoadedRef = useRef(false);
@@ -228,6 +244,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
   // settled 104-column measurement can alter one wrapped row before the
   // restore code gets a chance to anchor it.
   const historyReplayGridLockRef = useRef<TerminalGrid | null>(null);
+  const replayGeometryRef = useRef<ReturnType<typeof createTerminalReplayGeometry> | null>(null);
   const onStatusRef = useRef(onStatus);
   const onResizeDimRef = useRef(onResizeDim);
   const themeName = usePreferencesStore((s) => s.themeName);
@@ -247,6 +264,15 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
     }
     outputPumpRef.current();
   }, []);
+
+  useEffect(() => {
+    const geometry = createTerminalReplayGeometry(enqueueTerminalOutput);
+    replayGeometryRef.current = geometry;
+    return () => {
+      geometry.reset();
+      if (replayGeometryRef.current === geometry) replayGeometryRef.current = null;
+    };
+  }, [enqueueTerminalOutput]);
 
   const waitForTerminalOutputIdle = useCallback(async () => {
     // The normal output pump writes asynchronously. Draining it before reset
@@ -561,7 +587,8 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
     // Do not make a control-plane request on every ordinary wheel event.
     if (!restore && (shellHistoryLoadedRef.current || term.buffer.active.baseY > 0)) {
       shellHistoryUserScrollRef.current = userInitiated;
-      term.scrollLines(lines);
+      if (desktopViewportRef.current) desktopViewportRef.current.scrollLines(lines);
+      else term.scrollLines(lines);
       if (userInitiated) requestAnimationFrame(() => { shellHistoryUserScrollRef.current = false; });
       // A peer can own a taller shared tmux grid than this panel. Once a
       // downward wheel has genuinely returned xterm to its live bottom, make
@@ -581,6 +608,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
           const storage = shellHistoryStorageRef.current;
           const key = shellHistoryStorageKeyRef.current;
           if (storage && key) clearShellHistoryViewport(storage, key);
+          if (desktopViewportRef.current) { desktopViewportRef.current.revealCursor(); return; }
           surface.scrollTop = localViewportRevealRow(surface.scrollTop, surface.clientHeight, surface.scrollHeight,
             screen.getBoundingClientRect().height / term.rows, term.buffer.active.cursorY);
         });
@@ -683,13 +711,14 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
           } else if (!shellHistoryReaderActiveRef.current) {
             term.scrollLines(requestedScroll);
           }
-          // Geometry events received during replay have already been
-          // deliberately ignored. Future genuine layout changes may now use
-          // the normal anchor-preserving resize path.
+          // Replay temporarily held the saved reader grid. Apply the latest
+          // received metadata through the normal anchor-preserving resize
+          // path, even if the remote pane stays completely quiet afterwards.
           suppressLateScreenSnapshotRef.current = false;
           suppressHistoryReplayOutputRef.current = false;
           deferredScreenSnapshotRef.current = null;
           historyReplayGridLockRef.current = null;
+          replayGeometryRef.current?.release();
         }, 350);
       } catch (error) {
         historyReplayGridLockRef.current = null;
@@ -703,6 +732,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
         pendingShellHistoryScrollRef.current = 0;
         pendingShellHistoryUserScrollRef.current = false;
         shellHistoryLoadingRef.current = false;
+        if (!historyReplayGridLockRef.current) replayGeometryRef.current?.release();
       }
     })();
   }, [connId, enqueueTerminalOutput, panelNumber, terminalID, waitForTerminalOutputIdle, workspaceIndex]);
@@ -713,6 +743,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
     // that as a fresh client viewport so a later wheel can request tmux
     // history instead of assuming a discarded local buffer still exists.
     shellHistoryLoadedRef.current = false;
+    replayGeometryRef.current?.reset();
     shellHistoryLoadingRef.current = false;
     pendingShellHistoryScrollRef.current = 0;
     pendingShellHistoryUserScrollRef.current = false;
@@ -778,8 +809,10 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
     // Protocol beats printed words: a Claude response may contain shell
     // prompts, "bash", "context" or even an entire shell script.
     const applyTerminalMode = (mode: 'unknown' | 'shell' | 'cli') => {
+      const changed = terminalModeRef.current !== mode;
       terminalModeRef.current = mode;
       if (ref.current) ref.current.dataset.terminalMode = mode;
+      if (changed) modeFitRef.current();
     };
     const modeDisposables = (['h', 'l'] as const).map(final =>
       term.parser.registerCsiHandler({ prefix: '?', final }, params => {
@@ -797,7 +830,37 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       }),
     );
     const mobileBrowser = isMobileBrowserEnvironment();
+    const geometrySurface = ref.current;
+    const automaticGeometry = mobileBrowser ? null : createAutomaticTerminalGeometry(
+      message => sendRef.current(message),
+      () => {
+        if (!geometrySurface || !document.hasFocus() || document.visibilityState !== 'visible') return false;
+        const rect = geometrySurface.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0 && rect.bottom > 0 && rect.right > 0 && rect.top < window.innerHeight && rect.left < window.innerWidth;
+      },
+    );
+    automaticGeometryRef.current = automaticGeometry;
+    if (geometryConnectedRef.current) automaticGeometry?.connect();
+    const activateGeometry = () => automaticGeometry?.activate();
+    const deactivateGeometry = () => automaticGeometry?.deactivate();
+    const geometryVisibility = () => {
+      if (document.visibilityState === 'visible') activateGeometry();
+      else deactivateGeometry();
+    };
+    const geometryPanel = geometrySurface?.closest('.terminal-grid-cell') || geometrySurface;
+    geometryPanel?.addEventListener('pointerdown', activateGeometry, true);
+    geometryPanel?.addEventListener('keydown', activateGeometry, true);
+    window.addEventListener('focus', activateGeometry);
+    window.addEventListener('blur', deactivateGeometry);
+    document.addEventListener('visibilitychange', geometryVisibility);
     const wheelSender = createLatestTerminalWheelSender((data) => sendRef.current(JSON.stringify({ data })));
+    wheelNotchGateRef.current = createTerminalWheelNotchGate();
+    // Temporary release-test-only diagnostics for the macOS Magic Mouse scroll
+    // investigation. Records numeric wheel data only; never terminal content.
+    // The port gate keeps production browsers from producing any diag traffic.
+    const wheelDiag = import.meta.env.DEV || (workspaceIndex === 2 && panelNumber === 45 && window.location.port === '9444')
+      ? createWheelDebugRecorder(terminalID, workspaceIndex || 0, panelNumber || 0)
+      : null;
     let initialOutputFollow = true;
     let initialOutputFollowTimer: ReturnType<typeof setTimeout> | null = null;
     let cliViewportFollowTimer: ReturnType<typeof setTimeout> | null = null;
@@ -812,11 +875,23 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       if (event.deltaY < 0) inputViewportFollowedRef.current = false;
       // A normal shell has a local xterm scrollback. Do not let tmux's mouse
       // protocol reach readline, where wheel reports become history-up/down.
+      // A reconnect snapshot replays pixels without ?1049h, so xterm's own
+      // buffer/mouse state can lag the remote truth for a CLI session. The
+      // backend terminal_mode probe is authoritative: trust it over xterm's
+      // post-snapshot heuristics, or every CLI wheel lands in the local
+      // shell-history scrollback instead of the remote program.
       const alternate = terminalModeRef.current === 'cli' ||
-        (terminalModeRef.current === 'unknown' && (alternateScreenRef.current || term.buffer.active.type === 'alternate'));
-      return routeTerminalWheel(event, {
+        term.buffer.active.type === 'alternate' ||
+        (terminalModeRef.current !== 'shell' && term.modes.mouseTrackingMode !== 'none');
+      wheelDiag?.begin(event, { alternate, termMode: terminalModeRef.current });
+      const routed = routeTerminalWheel(event, {
+        // Both the CLI SGR path and the shell-history path must share the
+        // gesture gate; an ungated momentum stream scrolls a Bash panel
+        // straight to the top of its local buffer.
+        notchGate: wheelNotchGateRef.current || undefined,
         scrollNotch: (lines) => {
           if (!alternate) {
+            wheelDiag?.emitted('shell-history');
             shellHistoryReaderActiveRef.current = true;
             // A peer can enlarge tmux beyond this panel's local height. That
             // makes the outer surface scrollable, but it is only blank grid
@@ -835,6 +910,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
             { x: event.clientX, y: bounds.top + bounds.height / 2 }, bounds, term.cols, term.rows,
           );
           if (lines < 0 && terminalModeRef.current === 'cli') setShowHistoryResume(true);
+          wheelDiag?.emitted('sgr-mouse');
           wheelSender.notch(`\x1b[<${lines < 0 ? 64 : 65};${col};${row}M`);
           // A downwards CLI wheel returns toward the composer. Its shared grid
           // may be taller than this display, so reveal the actual xterm cursor
@@ -845,6 +921,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
               const surface = ref.current;
               const screen = term.element?.querySelector<HTMLElement>('.xterm-screen');
               if (!surface || !screen || terminalModeRef.current !== 'cli') return;
+              if (desktopViewportRef.current) { desktopViewportRef.current.revealCursor(); return; }
               surface.scrollTop = localViewportRevealRow(surface.scrollTop, surface.clientHeight, surface.scrollHeight,
                 screen.getBoundingClientRect().height / term.rows, term.buffer.active.cursorY);
             };
@@ -857,6 +934,8 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
           }
         },
       });
+      wheelDiag?.finish(routed ? 'passthrough' : 'intercepted');
+      return routed;
     };
     term.attachCustomWheelEventHandler(handleTerminalWheel);
     // Handle wheels on the complete panel, including the area below xterm's
@@ -999,20 +1078,11 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
     let resizingForSharedGrid = false;
     let sharedGrid: TerminalGrid | null = mobileBrowser ? null : (myTabId ? getSharedTerminalGrid(myTabId) : null);
     let pendingFitFrame: number | null = null;
-    let widthFitFrame: number | null = null;
-    let historyScrollbarFrame: number | null = null;
-    let localWidthSettled = false;
     let announcedGrid: TerminalGrid | null = null;
     let fittedGridKey = '';
     let requestedGeometryKey = '';
-    let viewportInitialized = false;
-    let fittedTerminalMode: 'unknown' | 'shell' | 'cli' = 'unknown';
-    let viewportFollowFrame: number | null = null;
-    let viewportFollowTimer: ReturnType<typeof setTimeout> | null = null;
     let historyAnchorRestoreFrame: number | null = null;
     let historyAnchorRestoreTimer: ReturnType<typeof setTimeout> | null = null;
-    let historyOuterScrollFrame: number | null = null;
-    const fontMeasure = document.createElement('canvas').getContext('2d');
 
     const prepareHistoryAnchorForGeometry = () => {
       const anchor = shellHistoryAnchorRef.current;
@@ -1047,33 +1117,6 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       }, 120);
     };
 
-    // xterm's scrollable element spans the whole panel, while a shared grid
-    // can deliberately end before that panel does. Keep Bash's history rail
-    // attached to the final rendered column instead of to the panel edge.
-    // This must be an inline important rule: xterm may refresh its own rail
-    // position after it paints a batch of output.
-    const alignHistoryScrollbar = () => {
-      if (mobileBrowser) return;
-      const screen = term.element?.querySelector<HTMLElement>('.xterm-screen');
-      const scrollbar = term.element?.querySelector<HTMLElement>('.scrollbar.vertical');
-      const scrollable = scrollbar?.parentElement;
-      if (!screen || !scrollbar || !scrollable) return;
-      const screenRect = screen.getBoundingClientRect();
-      const scrollableRect = scrollable.getBoundingClientRect();
-      if (!screenRect.width || !scrollableRect.width) return;
-      const left = `${Math.round(screenRect.right - scrollableRect.left + 2)}px`;
-      if (scrollbar.style.left !== left) scrollbar.style.setProperty('left', left, 'important');
-      if (scrollbar.style.right !== 'auto') scrollbar.style.setProperty('right', 'auto', 'important');
-    };
-    const scheduleHistoryScrollbarAlignment = () => {
-      if (mobileBrowser || historyScrollbarFrame !== null) return;
-      historyScrollbarFrame = requestAnimationFrame(() => {
-        historyScrollbarFrame = null;
-        alignHistoryScrollbar();
-      });
-    };
-    const historyScrollbarDisposable = term.onRender(scheduleHistoryScrollbarAlignment);
-
     term.onResize(({ cols, rows }) => {
       if (cols < 2 || rows < 1) return; // ignore zero-size (hidden terminal)
       if (resizingForSharedGrid) return;
@@ -1091,122 +1134,48 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       if (!ref.current || ref.current.offsetWidth <= 0 || ref.current.offsetHeight <= 0) return;
       resizingForSharedGrid = true;
       try {
-        if (!mobileBrowser && fontMeasure) {
-          ref.current.classList.add('desktop-local-viewport');
-          ref.current.style.overflow = 'auto';
-          const style = getComputedStyle(ref.current);
-          const width = ref.current.clientWidth - parseFloat(style.paddingLeft || '0') - parseFloat(style.paddingRight || '0');
-          const height = ref.current.clientHeight - parseFloat(style.paddingTop || '0') - parseFloat(style.paddingBottom || '0');
-          const dpr = window.devicePixelRatio || 1;
-          const measure = (size: number) => {
-            fontMeasure.font = `${size}px ${term.options.fontFamily}`;
-            const metric = fontMeasure.measureText('W');
-            return { width: metric.width, height: metric.fontBoundingBoxAscent + metric.fontBoundingBoxDescent };
-          };
-          const geometryKey = [width, height, dpr, fontSize, term.options.fontFamily, !!webglAddon, window.innerWidth].join(':');
-          const fittedFont = localViewportFont(fontSize, width, dpr, measure);
+        if (!mobileBrowser) {
+          const surface = ref.current;
+          surface.classList.add('desktop-local-viewport');
+          surface.style.overflow = 'auto';
+          const style = getComputedStyle(surface);
+          const width = surface.clientWidth - parseFloat(style.paddingLeft || '0') - parseFloat(style.paddingRight || '0');
+          const height = surface.clientHeight;
+          if (term.options.fontSize !== localTerminalFont(fontSize)) term.options.fontSize = localTerminalFont(fontSize);
+          if (term.options.letterSpacing !== 0) term.options.letterSpacing = 0;
+          if (term.options.lineHeight !== 1) term.options.lineHeight = 1;
+          const screen = term.element?.querySelector<HTMLElement>('.xterm-screen');
+          const rect = screen?.getBoundingClientRect();
+          if (!rect || rect.width <= 0 || rect.height <= 0) return;
+          const cellWidth = rect.width / term.cols;
+          const cellHeight = rect.height / term.rows;
+          const localGrid = desktopRequestedGrid(desktopCapacity(width, height, cellWidth, cellHeight));
+          const geometryKey = [localGrid.cols, localGrid.rows, fontSize, window.devicePixelRatio, !!webglAddon].join(':');
           if (geometryKey !== requestedGeometryKey) {
-            const metric = measure(fittedFont);
-            const cellWidth = (webglAddon ? Math.floor(metric.width * dpr) : metric.width * dpr) / dpr;
-            const cellHeight = Math.ceil(metric.height * dpr) / dpr;
-            if (cellWidth > 0 && cellHeight > 0) {
-              requestedGridRef.current = desktopRequestedGrid({ cols: Math.max(2, Math.min(1000, Math.floor((width - 2) / cellWidth))), rows: Math.max(1, Math.min(499, Math.floor((height - 1) / cellHeight))) });
-              requestedGeometryKey = geometryKey;
-              sendRef.current(JSON.stringify(requestedGridRef.current));
-            }
+            requestedGridRef.current = localGrid;
+            Object.assign(surface.dataset, { requestedCols: String(localGrid.cols), requestedRows: String(localGrid.rows) });
+            requestedGeometryKey = geometryKey;
+            automaticGeometry?.update(localGrid);
           }
           const historyOwned = terminalModeRef.current !== 'cli' &&
             (shellHistoryReaderActiveRef.current || shellHistoryRestoreInFlightRef.current);
-          const requestedGrid = requestedGridRef.current;
-          const readerAnchor = shellHistoryAnchorRef.current;
-          const replayGridLock = historyReplayGridLockRef.current;
-          // A reconnect can receive a tmux layout from another, shorter
-          // attached browser before this display's measured refresh-client
-          // request has won window-size=largest.  That remote 22-row title is
-          // valid for the peer but must not shrink a 35-row history reader
-          // mid-restore.  Keep this display's already measured grid until the
-          // reader returns to the live bottom; the regular negotiation path
-          // then remains authoritative for interactive input.
-          const useMeasuredReaderGrid = historyOwned && announcedGrid && requestedGrid &&
-            announcedGrid.cols <= requestedGrid.cols && announcedGrid.rows < requestedGrid.rows;
-          // A persisted reader owns its local visual grid until it returns to
-          // the live bottom. The server's shared tmux grid may be either
-          // shorter *or taller* than this particular panel after a reload;
-          // accepting either direction reflows logical history and changes
-          // the text block the reader was looking at. The normal negotiated
-          // grid resumes when the user intentionally returns to live output.
-          const stableReaderGrid = historyOwned && readerAnchor?.cols && readerAnchor?.rows
-            ? { cols: readerAnchor.cols, rows: readerAnchor.rows }
-            : null;
-          const exactGrid = replayGridLock || stableReaderGrid || (useMeasuredReaderGrid ? requestedGrid : (announcedGrid || requestedGrid));
-          if (!exactGrid) return;
-          const key = [width, height, dpr, exactGrid.cols, exactGrid.rows, term.options.fontFamily, !!webglAddon, terminalModeRef.current, window.innerWidth < smallViewportWidth].join(':');
-          // Re-entering the viewport or receiving the same title is not a
-          // geometry change. Keep the already painted metrics untouched.
+          const exactGrid = historyReplayGridLockRef.current || announcedGrid || localGrid;
+          const key = [geometryKey, exactGrid.cols, exactGrid.rows, width, height, !!announcedGrid].join(':');
           if (key === fittedGridKey) return;
-          // A local xterm scrollback has no outer-surface overflow, so an
-          // outer scroll-position check would incorrectly classify an active
-          // history reader as being at the input bottom. Once the user has
-          // wheeled, never let a later fit/title callback snap the xterm
-          // viewport back to its live prompt.
-          const following = !historyOwned && (!userOwnsViewport || !viewportInitialized ||
-            (terminalModeRef.current === 'cli' && fittedTerminalMode !== 'cli'));
           if (historyOwned) prepareHistoryAnchorForGeometry();
           term.resize(exactGrid.cols, exactGrid.rows);
-          term.options.fontSize = fittedFont;
-          term.options.letterSpacing = 0;
-          term.options.lineHeight = 1;
-          const metric = measure(fittedFont);
-          const contentHeight = Math.round(exactGrid.rows * Math.ceil(metric.height * dpr) / dpr);
-          const contentWidth = Math.round(exactGrid.cols * (webglAddon ? Math.floor(metric.width * dpr) : metric.width * dpr) / dpr);
-          ref.current.classList.add('desktop-local-viewport');
-          ref.current.style.overflow = 'auto';
-          if (term.element) {
-            const scrollableShell = terminalModeRef.current !== 'cli';
-            term.element.style.height = `${scrollableShell ? Math.max(height, contentHeight) : height}px`;
-            // xterm's internal viewport is absolutely positioned, so a height
-            // alone can fail to contribute to the surface's scroll height.
-            // Keep a Bash grid enlarged by a peer in the local scroll flow;
-            // that preserves this display's font and exposes its history bar.
-            term.element.style.minHeight = scrollableShell ? `${contentHeight}px` : '';
-            term.element.style.width = `${Math.max(width, contentWidth)}px`;
-          }
-          viewportInitialized = true;
-          fittedTerminalMode = terminalModeRef.current;
+          if (term.element) term.element.style.width = `${Math.max(width, exactGrid.cols * cellWidth)}px`;
+          desktopViewportRef.current?.refresh();
           if (historyOwned) restoreHistoryAnchorAfterGeometry();
-          if (following) {
-            const follow = () => {
-              const surface = ref.current;
-              if (!surface || (terminalModeRef.current !== 'cli' &&
-                (shellHistoryReaderActiveRef.current || shellHistoryRestoreInFlightRef.current))) return;
-              // Bash scrollback lives in xterm's normal buffer. The outer
-              // surface may not gain height when a peer enlarges the shared
-              // grid, so returning only that element to its old scrollTop can
-              // still leave the prompt below xterm's internal viewport.
-              if (terminalModeRef.current !== 'cli') term.scrollToBottom();
-              surface.scrollTop = terminalModeRef.current === 'cli' ? surface.scrollHeight :
-                localViewportRevealRow(surface.scrollTop, surface.clientHeight, surface.scrollHeight,
-                  contentHeight / exactGrid.rows, term.buffer.active.cursorY);
-            };
-            follow();
-            if (viewportFollowFrame !== null) cancelAnimationFrame(viewportFollowFrame);
-            viewportFollowFrame = requestAnimationFrame(() => {
-              viewportFollowFrame = null;
-              follow();
-            });
-            // xterm commits the resized screen and its scroll height after the
-            // resize callback. A peer display can increase this pane's shared
-            // row count, so repeat after that commit before declaring an idle
-            // Bash prompt visible in the local viewport.
-            if (viewportFollowTimer !== null) clearTimeout(viewportFollowTimer);
-            viewportFollowTimer = setTimeout(() => {
-              viewportFollowTimer = null;
-              follow();
-            }, 80);
-          }
+          else if (!userOwnsViewport) desktopViewportRef.current?.revealCursor();
           sharedGrid = exactGrid;
+          onResizeDimRef.current?.(exactGrid.cols, exactGrid.rows);
           if (myTabId) setSharedTerminalGrid(myTabId, sharedGrid);
-          Object.assign(ref.current.dataset, { sharedCols: String(sharedGrid.cols), sharedRows: String(sharedGrid.rows), gridAuthority: 'server', fittedFontSize: String(fittedFont), fittedLineHeight: String(term.options.lineHeight) });
+          Object.assign(surface.dataset, {
+            sharedCols: String(exactGrid.cols), sharedRows: String(exactGrid.rows),
+            gridAuthority: announcedGrid ? 'server' : 'pending', fittedFontSize: String(term.options.fontSize),
+            fittedLineHeight: '1', nativeCols: String(localGrid.cols), nativeRows: String(localGrid.rows),
+          });
           fittedGridKey = key;
           return;
         }
@@ -1234,9 +1203,9 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
         if (!nativeGrid) return;
         // Raw pane ANSI coordinates must use the server's exact grid, even
         // on a large display with many small split panels.
-        const targetGrid = useCappedViewportGrid
-          ? (mobileBrowser ? mobileSharedTerminalGrid : sharedGridForViewport(sharedGrid || defaultSharedTerminalGrid, displayWidth))
-          : (sharedGrid || nativeGrid);
+        // A phone's wrapped reader is local, but ANSI cursor coordinates still
+        // belong to the one remote grid. Never parse a desktop frame at 69x21.
+        const targetGrid = announcedGrid || mobileSharedTerminalGrid;
         const screen = term.element?.querySelector<HTMLElement>('.xterm-screen');
         const nativeCellWidth = screen && term.cols > 0
           ? screen.getBoundingClientRect().width / term.cols
@@ -1304,53 +1273,11 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
         if (myTabId) setSharedTerminalGrid(myTabId, targetGrid);
         if (historyOwned) restoreHistoryAnchorAfterGeometry();
 
-        sendRef.current(JSON.stringify({ cols: targetGrid.cols, rows: targetGrid.rows }));
+        requestedGridRef.current = mobileSharedTerminalGrid;
+        sendRef.current(JSON.stringify(mobileSharedTerminalGrid));
         onResizeDimRef.current?.(targetGrid.cols, targetGrid.rows);
         inputViewportFollowedRef.current = false;
 
-        if (!mobileBrowser) {
-          if (widthFitFrame !== null) cancelAnimationFrame(widthFitFrame);
-          // Wait for xterm's render frame before measuring the final glyphs.
-          let passes = 0;
-          const settleWidth = () => {
-            widthFitFrame = requestAnimationFrame(() => {
-              widthFitFrame = null;
-              // A logical tmux capture must be parsed at one width. Defer the
-              // cosmetic final-column correction until its replay lock ends.
-              if (historyReplayGridLockRef.current) return;
-              const screenRect = screen?.getBoundingClientRect();
-              const scrollbar = term.element?.querySelector<HTMLElement>('.scrollbar.vertical')?.getBoundingClientRect();
-              if (!screenRect || !scrollbar || !screenRect.width || !scrollbar.width) return;
-              scheduleHistoryScrollbarAlignment();
-              // xterm suspends painting offscreen panes. Their rectangle may
-              // describe an old grid even though term.cols already changed.
-              if (screenRect.top >= window.innerHeight || screenRect.bottom <= 0) return;
-              const available = scrollbar.left - screenRect.left;
-              const fit = fitTerminalColumns(available, screenRect.width, term.cols, term.options.letterSpacing || 0, window.devicePixelRatio);
-              if (!fit) return;
-              if (fit.cols === term.cols && fit.letterSpacing === term.options.letterSpacing) return;
-              resizingForSharedGrid = true;
-              try {
-                term.options.letterSpacing = fit.letterSpacing;
-                const historyOwned = terminalModeRef.current !== 'cli' &&
-                  (shellHistoryReaderActiveRef.current || shellHistoryRestoreInFlightRef.current);
-                if (historyOwned) prepareHistoryAnchorForGeometry();
-                term.resize(fit.cols, targetGrid.rows);
-                sharedGrid = { cols: fit.cols, rows: targetGrid.rows };
-                localWidthSettled = true;
-                if (myTabId) setSharedTerminalGrid(myTabId, sharedGrid);
-                if (ref.current) ref.current.dataset.sharedCols = String(fit.cols);
-                sendRef.current(JSON.stringify(sharedGrid));
-                onResizeDimRef.current?.(fit.cols, targetGrid.rows);
-                if (historyOwned) restoreHistoryAnchorAfterGeometry();
-              } finally { resizingForSharedGrid = false; }
-              // Scrollbar geometry may change after resize (especially panes
-              // returning from below the fold). Recheck the painted boundary.
-              if (++passes < 4) widthFitFrame = requestAnimationFrame(settleWidth);
-            });
-          };
-          widthFitFrame = requestAnimationFrame(settleWidth);
-        }
 
       } finally {
         resizingForSharedGrid = false;
@@ -1360,16 +1287,19 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
     const scheduleFit = () => {
       if (document.documentElement.dataset.layoutDragging === 'true') return;
       if (pendingFitFrame !== null) cancelAnimationFrame(pendingFitFrame);
-      if (widthFitFrame !== null) cancelAnimationFrame(widthFitFrame);
-      if (viewportFollowTimer !== null) clearTimeout(viewportFollowTimer);
       pendingFitFrame = requestAnimationFrame(() => {
         pendingFitFrame = null;
         fitWhenVisible();
       });
     };
+    modeFitRef.current = scheduleFit;
+    // Font loading and renderer fallback can commit cell metrics after resize.
+    // Re-measure after paint; unchanged capacity is deduplicated above.
+    const renderedGeometry = term.onRender(() => { if (!mobileBrowser) scheduleFit(); });
 
     const titleDisposable = term.onTitleChange((title) => {
       const receivedGrid = parseSharedTerminalGridTitle(title);
+      if (receivedGrid) automaticGeometry?.observe(receivedGrid);
       if (!receivedGrid) return;
       announcedGrid = receivedGrid;
       if (!mobileBrowser) {
@@ -1386,16 +1316,9 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
         }
         return;
       }
-      // This control client publishes its measured local grid. A title from
-      // another display must not undo it and restart a resize feedback loop.
-      if (!mobileBrowser && localWidthSettled) return;
-      // The title is authoritative on roomy screens. A dense desktop layout
-      // must retain its readable local cap when tmux echoes a grid announced
-      // earlier by a larger client; fitWhenVisible sends the capped complete
-      // grid back to this control client instead of silently restoring tiny
-      // glyphs. Mobile uses the same grid for its native input canvas while
-      // retaining the separately sized 12px wrapped reader.
-      const nextGrid = mobileBrowser ? mobileSharedTerminalGrid : sharedGridForViewport(receivedGrid, window.innerWidth);
+      // Mobile rendering uses the exact server grid; its wrapped reader keeps
+      // its independent readable font and does not renegotiate peer geometry.
+      const nextGrid = receivedGrid;
       if (sharedGrid?.cols === nextGrid.cols && sharedGrid.rows === nextGrid.rows) return;
       sharedGrid = nextGrid;
       // Resize during the OSC callback, before parsing the following snapshot.
@@ -1411,28 +1334,6 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
     });
 
     const surfaceElement = ref.current;
-    // The desktop surface contains an overflow tail when another client owns
-    // a taller shared tmux grid. Bash history itself is inside xterm, so a
-    // late layout write must never scroll this outer shell and reveal a
-    // different slice of the same anchored buffer. User history wheels are
-    // routed to xterm above; while a reader is active this offset is therefore
-    // layout state, not a second user-controlled history position.
-    const lockHistoryOuterScroll = () => {
-      const anchor = shellHistoryAnchorRef.current;
-      if (!surfaceElement || !anchor || !shellHistoryReaderActiveRef.current || terminalModeRef.current === 'cli' ||
-        typeof anchor.outerTop !== 'number') return;
-      const max = Math.max(0, surfaceElement.scrollHeight - surfaceElement.clientHeight);
-      const expected = Math.min(anchor.outerTop, max);
-      if (Math.abs(surfaceElement.scrollTop - expected) < 1) return;
-      if (historyOuterScrollFrame !== null) cancelAnimationFrame(historyOuterScrollFrame);
-      historyOuterScrollFrame = requestAnimationFrame(() => {
-        historyOuterScrollFrame = null;
-        const current = shellHistoryAnchorRef.current;
-        if (!current || !shellHistoryReaderActiveRef.current || terminalModeRef.current === 'cli') return;
-        const limit = Math.max(0, surfaceElement.scrollHeight - surfaceElement.clientHeight);
-        surfaceElement.scrollTop = Math.min(current.outerTop || 0, limit);
-      });
-    };
     let webglAddon: WebglAddon | null = null;
     let webglSetupTimer: number | null = null;
     const rendererObservation = surfaceElement ? observeTerminalRenderer(surfaceElement) : null;
@@ -1475,6 +1376,8 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
         } catch (error) {
           console.warn('WebGL renderer unavailable; using xterm DOM renderer', error);
           webglAddon = null;
+        } finally {
+          surfaceElement.dataset.rendererReady = 'true';
         }
       };
       if (typeof window.requestIdleCallback === 'function') {
@@ -1486,7 +1389,6 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       surfaceElement.addEventListener('touchmove', handleTouchMove, { passive: false, capture: true });
       surfaceElement.addEventListener('touchend', handleTouchEnd, { passive: true, capture: true });
       surfaceElement.addEventListener('wheel', handleSurfaceWheel, { passive: false, capture: true });
-      surfaceElement.addEventListener('scroll', lockHistoryOuterScroll, { passive: true });
       // xterm sizes its canvas to integral character cells.  Keep its viewport
       // itself stretched to the pane so the few remaining pixels (or a
       // transient pre-resize canvas) cannot reveal the page behind it.
@@ -1496,6 +1398,11 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
         term.element.style.backgroundColor = themeConfig.background;
       }
       termRef.current = term;
+      if (!mobileBrowser) desktopViewportRef.current = createDesktopTerminalViewport(term, surfaceElement, () => {
+        userOwnsViewport = true;
+        shellHistoryUserScrollRef.current = true;
+        requestAnimationFrame(() => { shellHistoryUserScrollRef.current = false; });
+      });
       const settleInitialOutputViewport = () => {
         initialOutputFollowTimer = null;
         if (!initialOutputFollow || (terminalModeRef.current !== 'cli' &&
@@ -1506,7 +1413,8 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
         }
         const screen = term.element?.querySelector<HTMLElement>('.xterm-screen');
         if (screen) {
-          surfaceElement.scrollTop = terminalModeRef.current === 'cli' ? surfaceElement.scrollHeight :
+          if (desktopViewportRef.current) desktopViewportRef.current.revealCursor();
+          else surfaceElement.scrollTop = terminalModeRef.current === 'cli' ? surfaceElement.scrollHeight :
             localViewportRevealRow(surfaceElement.scrollTop, surfaceElement.clientHeight, surfaceElement.scrollHeight,
               screen.getBoundingClientRect().height / term.rows, term.buffer.active.cursorY);
         }
@@ -1584,7 +1492,10 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
     if (ref.current) resizeObserver.observe(ref.current);
 
     const visibilityObserver = new IntersectionObserver(entries => {
-      if (entries.some(entry => entry.isIntersecting)) scheduleFit();
+      if (entries.some(entry => entry.isIntersecting)) {
+        scheduleFit();
+        activateGeometry();
+      } else deactivateGeometry();
     });
     if (ref.current) visibilityObserver.observe(ref.current);
 
@@ -1593,14 +1504,17 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
     window.addEventListener('webterm-layout-drag-end', handleResize);
 
     return () => {
+      automaticGeometry?.disconnect();
+      if (automaticGeometryRef.current === automaticGeometry) automaticGeometryRef.current = null;
+      geometryPanel?.removeEventListener('pointerdown', activateGeometry, true);
+      geometryPanel?.removeEventListener('keydown', activateGeometry, true);
+      window.removeEventListener('focus', activateGeometry);
+      window.removeEventListener('blur', deactivateGeometry);
+      document.removeEventListener('visibilitychange', geometryVisibility);
+      modeFitRef.current = () => {};
       if (pendingFitFrame !== null) cancelAnimationFrame(pendingFitFrame);
-      if (viewportFollowFrame !== null) cancelAnimationFrame(viewportFollowFrame);
-      if (viewportFollowTimer !== null) clearTimeout(viewportFollowTimer);
       if (historyAnchorRestoreFrame !== null) cancelAnimationFrame(historyAnchorRestoreFrame);
       if (historyAnchorRestoreTimer !== null) clearTimeout(historyAnchorRestoreTimer);
-      if (historyOuterScrollFrame !== null) cancelAnimationFrame(historyOuterScrollFrame);
-      if (widthFitFrame !== null) cancelAnimationFrame(widthFitFrame);
-      if (historyScrollbarFrame !== null) cancelAnimationFrame(historyScrollbarFrame);
       if (outputFrameRef.current !== null) cancelAnimationFrame(outputFrameRef.current);
       if (outputTimerRef.current !== null) clearTimeout(outputTimerRef.current);
       cancelTerminalOutput(outputScheduledJobRef.current);
@@ -1620,17 +1534,21 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       outputQueueRef.current = [];
       outputQueueBytesRef.current = 0;
       outputQueuePeakRef.current = 0;
+      replayGeometryRef.current?.reset();
       titleDisposable.dispose();
-      historyScrollbarDisposable.dispose();
+      renderedGeometry.dispose();
+      desktopViewportRef.current?.dispose();
+      desktopViewportRef.current = null;
       shellHistoryScrollDisposable.dispose();
       modeDisposables.forEach(disposable => disposable.dispose());
       surfaceElement?.removeEventListener('touchstart', handleTouchStart, true);
       surfaceElement?.removeEventListener('touchmove', handleTouchMove, true);
       surfaceElement?.removeEventListener('touchend', handleTouchEnd, true);
       surfaceElement?.removeEventListener('wheel', handleSurfaceWheel, true);
-      surfaceElement?.removeEventListener('scroll', lockHistoryOuterScroll);
       surfaceElement?.removeEventListener('webglcontextlost', handleWebglContextLost, true);
       wheelSender.dispose();
+      wheelDiag?.dispose();
+      wheelNotchGateRef.current = null;
       rendererObservation?.dispose();
       if (webglAddon) {
         try { webglAddon.dispose(); } catch { /* ignore */ }
@@ -1664,7 +1582,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
     });
   }, [connId, identityRevision, panelNumber, terminalClientID, terminalID, workspaceIndex]);
 
-  const { send } = useWebSocket({
+  const { send, status: terminalStatus } = useWebSocket({
     createUrl: createWsUrl,
     onMessage: (data) => {
       const term = termRef.current;
@@ -1673,9 +1591,11 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
         const msg = JSON.parse(data);
         if (msg.type === 'terminal_mode' && ['shell', 'cli', 'unknown'].includes(msg.mode)) {
           setIdentityFault(null);
+          const changed = terminalModeRef.current !== msg.mode;
           terminalModeRef.current = msg.mode;
           if (ref.current) ref.current.dataset.terminalMode = msg.mode;
           alternateScreenRef.current = msg.mode === 'cli';
+          if (changed) modeFitRef.current();
         }
         if (msg.data) {
           let bytes: Uint8Array;
@@ -1692,7 +1612,8 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
             // superseded by the explicit history response and must never be
             // allowed to overlap a chunked replay.
             const grid = terminalGridAnnouncement(bytes);
-            if (grid && !shellHistoryLoadingRef.current && !shellHistoryReaderActiveRef.current) enqueueTerminalOutput(grid);
+            if (grid) replayGeometryRef.current?.receive(grid,
+              shellHistoryLoadingRef.current || historyReplayGridLockRef.current !== null);
             deferredScreenSnapshotRef.current = bytes;
             suppressLateScreenSnapshotRef.current = false;
             return;
@@ -1701,17 +1622,22 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
             // A fresh HTTP capture includes all terminal state up to its
             // server-side capture point. Keeping the pre-capture control
             // stream would either duplicate the prompt or race its direct
-            // xterm writes. Preserve grid negotiation only before the replay
-            // begins; it is metadata, not screen content.
+            // xterm writes. Hold only the latest geometry during parsing;
+            // metadata must survive even when its pixels are discarded.
             const grid = terminalGridAnnouncement(bytes);
-            if (grid && !shellHistoryLoadingRef.current) enqueueTerminalOutput(grid);
+            if (grid) replayGeometryRef.current?.receive(grid,
+              shellHistoryLoadingRef.current || historyReplayGridLockRef.current !== null);
             return;
           }
           enqueueTerminalOutput(bytes);
         }
         if (msg.error) {
-          if (msg.code === 'TERMINAL_IDENTITY_UNAVAILABLE') setIdentityFault('unregistered');
-          else if (msg.code === 'TERMINAL_IDENTITY_MISMATCH' || msg.code === 'TERMINAL_IDENTITY_TIMEOUT') setIdentityFault('unavailable');
+          const automaticTestRecovery = msg.environment === 'release-test' && ['TERMINAL_IDENTITY_UNAVAILABLE', 'TERMINAL_IDENTITY_MISMATCH'].includes(msg.code);
+          if (msg.code === 'TERMINAL_IDENTITY_UNAVAILABLE' && !automaticTestRecovery) setIdentityFault('unregistered');
+          else if (automaticTestRecovery || (typeof msg.code === 'string' && ['TERMINAL_IDENTITY_TIMEOUT', 'TERMINAL_SERVER_UNAVAILABLE', 'TERMINAL_SESSION_MISSING', 'TERMINAL_BACKEND_UNREACHABLE', 'TERMINAL_ATTACH_FAILED'].includes(msg.code))) {
+            setIdentityFault(msg.code);
+            setFaultDetail({ message: msg.error, observedAt: msg.observed_at, environment: msg.environment });
+          }
           term.write(`\r\n\x1b[31m${msg.error}\x1b[0m\r\n`);
         }
       } catch {
@@ -1719,6 +1645,8 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       }
     },
     onClose: (final) => {
+      geometryConnectedRef.current = false;
+      automaticGeometryRef.current?.disconnect();
       onStatusRef.current?.(false);
       const currentStatus = useLayoutStore.getState().statusConn;
       if (currentStatus) setStatusConn({ ...currentStatus, connected: false });
@@ -1727,6 +1655,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       }
     },
     onOpen: (sendNow) => {
+      geometryConnectedRef.current = true;
       // fit() may run before the socket is open. Always make the first frame
       // carry the real xterm grid so the backend never leaves tmux at the
       // fallback PTY size (especially after a layout or tab-title update).
@@ -1734,6 +1663,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       if (term && term.cols > 1 && term.rows > 0) {
         sendNow(JSON.stringify(requestedGridRef.current || { cols: term.cols, rows: term.rows }));
       }
+      automaticGeometryRef.current?.connect();
       sendNow(terminalActionMessage(followTerminalInputAction));
       inputViewportFollowedRef.current = true;
       onStatusRef.current?.(true);
@@ -1748,6 +1678,44 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
   useEffect(() => {
     sendRef.current = send;
   }, [send]);
+
+  useEffect(() => {
+    const autoRecoverable = identityFault === 'TERMINAL_SESSION_MISSING' || identityFault === 'TERMINAL_SERVER_UNAVAILABLE' || (faultDetail?.environment === 'release-test' && (identityFault === 'TERMINAL_IDENTITY_MISMATCH' || identityFault === 'TERMINAL_IDENTITY_UNAVAILABLE'));
+    if (terminalStatus !== 'terminal-failed' || !autoRecoverable || recoveryReplaceFiredRef.current) return;
+    if (recoveryPhase === 'idle') recoveryAttemptRef.current = 0;
+    if (recoveryTimerRef.current) return;
+    if (recoveryAttemptRef.current < 3) {
+      const delay = 1000 * (recoveryAttemptRef.current + 1);
+      recoveryAttemptRef.current++;
+      recoveryTimerRef.current = setTimeout(() => {
+        recoveryTimerRef.current = null;
+        setRecoveryPhase('recovering');
+        setIdentityRevision((revision) => revision + 1);
+      }, delay);
+      return () => {
+        if (recoveryTimerRef.current) clearTimeout(recoveryTimerRef.current);
+        recoveryTimerRef.current = null;
+      };
+    }
+    if (!onReplaceUnrecoverableTerminal) {
+      queueMicrotask(() => {
+        setRecoveryPhase('failed');
+        termRef.current?.write(`\\r\\n\\x1b[31m[${t('term_recovery_failed')}]\\x1b[0m\\r\\n`);
+      });
+      return;
+    }
+    recoveryReplaceFiredRef.current = true;
+    queueMicrotask(() => setRecoveryPhase('replacing'));
+    void onReplaceUnrecoverableTerminal().catch((error) => {
+      console.error('Failed to replace unrecoverable terminal:', error);
+      setRecoveryPhase('failed');
+      termRef.current?.write(`\\r\\n\\x1b[31m[${t('term_recovery_failed')}]\\x1b[0m\\r\\n`);
+    });
+    return () => {
+      if (recoveryTimerRef.current) clearTimeout(recoveryTimerRef.current);
+      recoveryTimerRef.current = null;
+    };
+  }, [faultDetail?.environment, identityFault, onReplaceUnrecoverableTerminal, recoveryPhase, terminalStatus]);
 
   const adoptLegacyTerminal = useCallback(async () => {
     if (!terminalID || !workspaceIndex || !panelNumber) return;
@@ -1840,11 +1808,20 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
     const surface = ref.current;
     const term = termRef.current;
     if (!surface?.classList.contains('desktop-local-viewport') || !term) return;
+    if (desktopViewportRef.current) { desktopViewportRef.current.revealCursor(); return; }
     term.scrollToBottom();
     const screen = term.element?.querySelector<HTMLElement>('.xterm-screen');
     if (!screen) return;
     surface.scrollTop = localViewportRevealRow(surface.scrollTop, surface.clientHeight, surface.scrollHeight,
       screen.getBoundingClientRect().height / term.rows, term.buffer.active.cursorY);
+  }, []);
+
+  const takeSizeControl = useCallback(() => {
+    const requested = requestedGridRef.current;
+    if (!requested) return;
+    sendRef.current(JSON.stringify(requested));
+    sendRef.current(JSON.stringify({ action: 'take_size_control' }));
+    termRef.current?.focus();
   }, []);
 
   useEffect(() => {
@@ -1894,11 +1871,12 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
         })}
       />
       <CliHistoryResume terminalRef={termRef} surfaceRef={ref} active={showHistoryResume} revision={termKey} onResume={resumeTerminalInput} />
-      {identityFault && (
+      {identityFault && !(['TERMINAL_SESSION_MISSING', 'TERMINAL_SERVER_UNAVAILABLE', 'TERMINAL_IDENTITY_MISMATCH', 'TERMINAL_IDENTITY_UNAVAILABLE'].includes(identityFault) && (faultDetail?.environment === 'release-test' || identityFault === 'TERMINAL_SESSION_MISSING' || identityFault === 'TERMINAL_SERVER_UNAVAILABLE')) && recoveryPhase !== 'recovering' && recoveryPhase !== 'replacing' && (
         <div role="alert" style={{ position: 'absolute', inset: 0, zIndex: 30, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 18, background: 'rgba(12,16,24,.80)' }}>
           <div style={{ maxWidth: 410, padding: 16, border: '1px solid var(--c-border)', borderRadius: 7, background: colors.bgRaised, color: colors.text, boxShadow: '0 12px 36px rgba(0,0,0,.48)' }}>
-            <div style={{ fontWeight: 650, marginBottom: 7 }}>终端会话未通过身份校验</div>
-            <div style={{ color: colors.textMuted, fontSize: 12, lineHeight: 1.55 }}>为避免误连到新的 Bash，会话已保持只读且未发送任何输入。</div>
+            <div style={{ fontWeight: 650, marginBottom: 7 }}>{identityFault === 'TERMINAL_SERVER_UNAVAILABLE' ? '终端服务不可达' : identityFault === 'TERMINAL_SESSION_MISSING' ? '原终端会话已结束' : identityFault === 'TERMINAL_IDENTITY_TIMEOUT' ? '终端连接验证超时' : identityFault === 'TERMINAL_BACKEND_UNREACHABLE' || identityFault === 'TERMINAL_ATTACH_FAILED' ? '终端连接暂时不可用' : '终端会话未通过身份校验'}</div>
+            <div style={{ color: colors.textMuted, fontSize: 12, lineHeight: 1.55 }}>{faultDetail?.message || '为避免误连到新的 Bash，会话已保持只读且未发送任何输入。'}</div>
+            {faultDetail?.observedAt && <div style={{ marginTop: 7, color: colors.textMuted, fontSize: 12 }}>检测时间：{new Date(faultDetail.observedAt).toLocaleString()}</div>}
             {(identityFault === 'unregistered' || identityFault === 'adopting') && workspaceIndex && panelNumber && (
               <button type="button" disabled={identityFault === 'adopting'} onClick={() => { void adoptLegacyTerminal(); }} style={{ marginTop: 12, padding: '6px 10px', border: '1px solid var(--c-accent)', borderRadius: 4, background: colors.accentFaint, color: colors.accent, cursor: identityFault === 'adopting' ? 'wait' : 'pointer' }}>
                 {identityFault === 'adopting' ? '正在验证已有会话…' : '验证并迁移已有会话'}
@@ -1907,8 +1885,9 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
             {identityFault === 'adoption-failed' && <div style={{ marginTop: 10, color: colors.dangerBright, fontSize: 12 }}>未找到可安全迁移的旧会话；可移除该 Panel，或明确新建独立 Panel。原会话不会被创建、替换或清理。</div>}
             {identityFault === 'creation-failed' && <div style={{ marginTop: 10, color: colors.dangerBright, fontSize: 12 }}>新建安全 Panel 失败；原会话及当前 Panel 均未被修改。</div>}
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
+              <button type="button" onClick={() => { setFaultDetail(null); setIdentityFault(null); setIdentityRevision(value => value + 1); }} style={{ padding: '6px 10px', border: `1px solid ${colors.border}`, borderRadius: 4, background: colors.bg, color: colors.text, cursor: 'pointer' }}>重新检查原会话</button>
               {onDismissUnverified && <button type="button" onClick={onDismissUnverified} style={{ padding: '6px 10px', border: `1px solid ${colors.border}`, borderRadius: 4, background: colors.bg, color: colors.text, cursor: 'pointer' }}>从布局移除（保留远端会话）</button>}
-              {onCreateSafeTerminal && <button type="button" disabled={identityFault === 'creating'} onClick={() => { void createSafeTerminal(); }} style={{ padding: '6px 10px', border: '1px solid var(--c-accent)', borderRadius: 4, background: colors.accentFaint, color: colors.accent, cursor: identityFault === 'creating' ? 'wait' : 'pointer' }}>{identityFault === 'creating' ? '正在新建安全 Panel…' : '在当前窗格新建安全 Panel（保留旧会话）'}</button>}
+              {onCreateSafeTerminal && <button type="button" disabled={identityFault === 'creating'} onClick={() => { void createSafeTerminal(); }} style={{ padding: '6px 10px', border: '1px solid var(--c-accent)', borderRadius: 4, background: colors.accentFaint, color: colors.accent, cursor: identityFault === 'creating' ? 'wait' : 'pointer' }}>{identityFault === 'creating' ? '正在新建安全 Panel…' : '新建独立终端（不恢复原进程）'}</button>}
             </div>
           </div>
         </div>
@@ -2000,6 +1979,10 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
             {
               label: t('term_history_codex_launch'),
               action: launchCodexScrollable,
+            },
+            {
+              label: t('term_fit_window_title'),
+              action: takeSizeControl,
             },
             ...(extraMenuItems || []),
           ]}

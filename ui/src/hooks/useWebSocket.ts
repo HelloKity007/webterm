@@ -1,6 +1,6 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
 
-export type WebSocketStatus = 'connecting' | 'open' | 'backoff' | 'offline' | 'auth-failed' | 'disposed';
+export type WebSocketStatus = 'connecting' | 'open' | 'backoff' | 'offline' | 'auth-failed' | 'terminal-failed' | 'disposed';
 
 interface UseWsOptions {
   url?: string;
@@ -18,6 +18,7 @@ export function useWebSocket({ url, createUrl, onMessage, onClose, onOpen }: Use
   const heartbeatRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
   const bufferRef = useRef<string[]>([]);
   const disposedRef = useRef(false);
+  const stoppedRef = useRef(false);
   const connectRef = useRef<() => void>(() => {});
   const generationRef = useRef(0);
 
@@ -34,7 +35,7 @@ export function useWebSocket({ url, createUrl, onMessage, onClose, onOpen }: Use
   // Full jitter prevents many panes from reconnecting in lockstep. Retrying is
   // lifecycle-bound, not count-bound; auth failures are terminal in connect.
   const scheduleReconnect = useCallback(() => {
-    if (disposedRef.current || timerRef.current !== undefined) return;
+    if (disposedRef.current || stoppedRef.current || timerRef.current !== undefined) return;
     if (!navigator.onLine) {
       setStatus('offline');
       return;
@@ -49,7 +50,7 @@ export function useWebSocket({ url, createUrl, onMessage, onClose, onOpen }: Use
   }, []);
 
   const connect = useCallback(async () => {
-    if (disposedRef.current) return;
+    if (disposedRef.current || stoppedRef.current) return;
     if (!navigator.onLine) {
       setStatus('offline');
       return;
@@ -97,7 +98,19 @@ export function useWebSocket({ url, createUrl, onMessage, onClose, onOpen }: Use
     ws.onmessage = (event) => {
       const data = typeof event.data === 'string' ? event.data : '';
       try {
-        const control = JSON.parse(data) as { type?: string };
+        const control = JSON.parse(data) as { type?: string; code?: string; retryable?: boolean };
+        if (control.type === 'error' && control.retryable === false && control.code?.startsWith('TERMINAL_')) {
+          stoppedRef.current = true;
+          bufferRef.current = [];
+          clearTimeout(timerRef.current);
+          clearInterval(heartbeatRef.current);
+          timerRef.current = undefined;
+          heartbeatRef.current = undefined;
+          setStatus('terminal-failed');
+          onMessageRef.current(data);
+          ws.close();
+          return;
+        }
         if (control.type === 'ping') {
           ws.send(JSON.stringify({ action: 'pong' }));
           return;
@@ -116,7 +129,7 @@ export function useWebSocket({ url, createUrl, onMessage, onClose, onOpen }: Use
       clearInterval(heartbeatRef.current);
       heartbeatRef.current = undefined;
       wsRef.current = null;
-      onCloseRef.current?.();
+      onCloseRef.current?.(stoppedRef.current);
       scheduleReconnect();
     };
 
@@ -131,8 +144,10 @@ export function useWebSocket({ url, createUrl, onMessage, onClose, onOpen }: Use
 
   useEffect(() => {
     disposedRef.current = false;
+    stoppedRef.current = false;
     const lifecycleGeneration = generationRef;
     const reconnectOnline = () => {
+      if (stoppedRef.current) return;
       clearTimeout(timerRef.current);
       clearInterval(heartbeatRef.current);
       timerRef.current = undefined;
@@ -154,6 +169,7 @@ export function useWebSocket({ url, createUrl, onMessage, onClose, onOpen }: Use
       disposedRef.current = true;
       lifecycleGeneration.current++;
       clearTimeout(timerRef.current);
+      clearInterval(heartbeatRef.current);
       timerRef.current = undefined;
       wsRef.current?.close();
       window.removeEventListener('online', reconnectOnline);
@@ -162,6 +178,7 @@ export function useWebSocket({ url, createUrl, onMessage, onClose, onOpen }: Use
   }, [connect]);
 
   const send = useCallback((data: string) => {
+    if (stoppedRef.current) return;
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(data);
     } else {

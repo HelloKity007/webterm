@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
+import { visualReloadPhase } from './visual-reload-phase.mjs';
 const { chromium, devices } = createRequire(import.meta.url)('../ui/node_modules/playwright');
 
 const origin = 'https://192.168.11.87:9444';
@@ -23,6 +24,7 @@ try {
     const errors = [];
     page.on('pageerror', error => errors.push(String(error)));
     await page.goto(origin, { waitUntil: 'networkidle' });
+    await visualReloadPhase(page);
     const switcher = page.locator('.mobile-panel-switcher');
     await switcher.waitFor();
     assert((await switcher.boundingBox()).height > 0, `${fixture.name}: Panel switcher hidden`);

@@ -88,8 +88,26 @@ func TestTmuxControlTerminalSessionEncodesResizeAsControlCommand(t *testing.T) {
 	if err := session.WindowChange(44, 92); err != nil {
 		t.Fatal(err)
 	}
-	if out.String() != "refresh-client -C 92x44\n" {
+	if out.String() != "refresh-client -C 92x44 ; resize-window -x 92 -y 44\n" {
 		t.Fatalf("resize command = %q", out.String())
+	}
+}
+
+func TestTmuxControlTerminalSessionPreservesMeasuredWidth(t *testing.T) {
+	var out strings.Builder
+	session := &tmuxControlTerminalSession{writer: &out}
+	if err := session.WindowChange(37, 117); err != nil {
+		t.Fatal(err)
+	}
+	if out.String() != "refresh-client -C 117x37 ; resize-window -x 117 -y 37\n" {
+		t.Fatalf("resize command = %q", out.String())
+	}
+	out.Reset()
+	if err := session.WindowChange(37, 117); err != nil {
+		t.Fatal(err)
+	}
+	if out.String() != "refresh-client -C 117x37 ; resize-window -x 117 -y 37\n" {
+		t.Fatalf("shell resize command = %q", out.String())
 	}
 }
 

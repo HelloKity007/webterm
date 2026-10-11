@@ -66,7 +66,10 @@ try {
         const scrollbarBounds = scrollbar?.getBoundingClientRect();
         return { scrollTop: surface.scrollTop, height: surface.clientHeight,
           serverCursorRow: row, clientCursorRow, cursorBuffer: surface.dataset.cursorBuffer,
-          cursorTop: clientCursorRow * cell, cursorBottom: (clientCursorRow + 1) * cell, font: surface.dataset.fittedFontSize,
+          cursorTop: screen.top - surface.getBoundingClientRect().top + clientCursorRow * cell,
+          cursorBottom: screen.top - surface.getBoundingClientRect().top + (clientCursorRow + 1) * cell,
+          scrollOwner: surface.dataset.scrollOwner, outerOverflow: getComputedStyle(surface).overflowY,
+          font: surface.dataset.fittedFontSize,
           sharedRows: surface.dataset.sharedRows, screenHeight: screen.height,
           xtermViewportScrollTop: viewport?.scrollTop, xtermViewportScrollHeight: viewport?.scrollHeight,
           xtermViewportHeight: viewport?.clientHeight,
@@ -91,12 +94,11 @@ try {
       else fonts.set(index, Number(metrics.font));
       assert(Number.isInteger(metrics.clientCursorRow) && metrics.clientCursorRow >= 0, 'Client xterm cursor was not published');
       assert.equal(metrics.cursorBuffer, 'normal', 'Idle Bash must use xterm normal buffer');
-      assert(metrics.shellScrollbar.display !== 'none' && (metrics.shellScrollbar.width || 0) > 0,
-        'Bash native history scrollbar is hidden');
-      assert(metrics.shellScrollbar.gapFromGrid >= 1 && metrics.shellScrollbar.gapFromGrid <= 3,
-        `Bash history scrollbar must sit 2px from the rendered grid: ${JSON.stringify(metrics.shellScrollbar)}`);
-      assert(metrics.cursorTop >= metrics.scrollTop - 1, 'Idle prompt hidden above local viewport');
-      assert(metrics.cursorBottom <= metrics.scrollTop + metrics.height + 1, 'Idle prompt hidden below local viewport');
+      assert.equal(metrics.scrollOwner, 'surface', 'Bash history and live-frame overflow must share one surface');
+      assert.equal(metrics.outerOverflow, 'auto', 'Unified history rail is unavailable');
+      assert.equal(metrics.shellScrollbar.display, 'none', 'Bash exposes duplicate inner and outer history rails');
+      assert(metrics.cursorTop >= -1, 'Idle prompt hidden above local viewport');
+      assert(metrics.cursorBottom <= metrics.height + 1, 'Idle prompt hidden below local viewport');
     }
   }
 } finally {

@@ -33,7 +33,11 @@ try {
   }
   assert.match(terminalID, /^terminal-[a-f0-9]{32}$/);
   sessionName = `wt-1-2-${createHash('sha256').update(terminalID).digest('hex').slice(0, 16)}`;
-  const marker = execFileSync(tmux, ['-L', 'webterm-release-test-fixed', 'display-message', '-p', '-t', `=${sessionName}:`, '#{@webterm_incarnation}'], { encoding: 'utf8' }).trim();
+  const registryDB = process.env.WEBTERM_QA_DB;
+  const registeredSocket = registryDB ? JSON.parse(execFileSync('sqlite3', ['-readonly', '-json', registryDB, `select socket from terminal_instances where terminal_id='${terminalID}'`], { encoding: 'utf8' }))[0]?.socket : 'webterm-release-test-fixed';
+  assert(registeredSocket && (registeredSocket === 'webterm-release-test-fixed' || registeredSocket.includes('/webterm-release-test/')), 'QA creation must use a test socket');
+  const socketArgs = [registeredSocket.startsWith('/') ? '-S' : '-L', registeredSocket];
+  const marker = execFileSync(tmux, [...socketArgs, 'display-message', '-p', '-t', `=${sessionName}:`, '#{@webterm_incarnation}'], { encoding: 'utf8' }).trim();
   assert.match(marker, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
   checks.push({ name: existingTerminalID ? 'durable identity survives service restart' : 'explicit create registered exact tmux identity', status: 'PASS', sessionName });
 

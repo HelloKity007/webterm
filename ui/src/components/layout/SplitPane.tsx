@@ -38,7 +38,7 @@ import {
 } from './workspaceLayout';
 import { isMobileBrowserEnvironment } from './mobileLayout';
 import { smallViewportWidth } from '../terminal/terminalScaling';
-import { buildCompactPanelGrid, compactPanelRowTemplate, shouldUseCompactDesktopGrid } from './responsivePanelGrid';
+import { buildCompactPanelGrid, compactPanelRowTemplate, shouldUseCompactDesktopGrid, shouldUseWideShortDesktopGrid } from './responsivePanelGrid';
 import LayoutDividerOverlay from './LayoutDividerOverlay';
 import { loadRememberedUsername, saveRememberedUsername } from '../../auth/rememberedLogin';
 
@@ -597,6 +597,9 @@ function LeafPane({ nodeId, restoreVersion, onActiveSshChange, isInSplit, worksp
   if (activeTabId && !visitedTabs.includes(activeTabId)) setVisitedTabs([...visitedTabs, activeTabId]);
   const [showAddMenu, setShowAddMenu] = useState(false);
   const [identityGuardedTabIDs, setIdentityGuardedTabIDs] = useState<Set<string>>(() => new Set());
+  const tabsRef = useRef<Tab[]>(tabs);
+  const replacementInFlightRef = useRef(new Map<string, Promise<void>>());
+  useLayoutEffect(() => { tabsRef.current = tabs; }, [tabs]);
   const drainTabQueue = useLayoutStore((s) => s.drainTabQueue);
   const queuedTabs = useLayoutStore((s) => s.newTabQueue);
   const focusedPaneId = useLayoutStore((s) => s.focusedPaneId);
@@ -698,6 +701,30 @@ function LeafPane({ nodeId, restoreVersion, onActiveSshChange, isInSplit, worksp
       if (guarded) next.add(id); else next.delete(id);
       return next;
     });
+  }, []);
+  const replaceUnrecoverableTerminal = useCallback((id: string) => {
+    const existing = replacementInFlightRef.current.get(id);
+    if (existing) return existing;
+    const task = (async () => {
+      const tab = tabsRef.current.find((candidate) => candidate.id === id);
+      if (!tab?.connId) throw new Error('terminal tab is missing');
+      const terminalID = await createTerminalSession(tab.connId);
+      if (!tabsRef.current.some((candidate) => candidate.id === id)) throw new Error('terminal tab was removed during replacement');
+      setTabs((prev) => {
+        if (!prev.some((candidate) => candidate.id === id) || prev.some((candidate) => candidate.id === terminalID)) return prev;
+        return prev.map((candidate) => candidate.id === id ? { ...candidate, id: terminalID } : candidate);
+      });
+      discardPersistentTerminal(id);
+      setActiveTabId((current) => current === id ? terminalID : current);
+      setIdentityGuardedTabIDs((previous) => {
+        if (!previous.has(id)) return previous;
+        const next = new Set(previous);
+        next.delete(id);
+        return next;
+      });
+    })().finally(() => replacementInFlightRef.current.delete(id));
+    replacementInFlightRef.current.set(id, task);
+    return task;
   }, []);
   const createSafeTabInCurrentPane = async (tab: Tab) => {
     if (!tab.connId) throw new Error('terminal connection is missing');
@@ -847,7 +874,7 @@ function LeafPane({ nodeId, restoreVersion, onActiveSshChange, isInSplit, worksp
           <div key={tab.id} style={{ flex: 1, display: tab.id === activeTabId ? 'flex' : 'none', overflow: 'hidden' }}>
             {tab.type === 'ssh' && tab.connId && (
               <Suspense fallback={<div style={{ padding: 12, fontSize: font.md, color: colors.textMuted }}>Loading…</div>}>
-                <TerminalTab connId={tab.connId} myTabId={tab.id} workspaceIndex={workspaceIndex} panelNumber={tab.labelNumber ?? tabs.findIndex((candidate) => candidate.id === tab.id) + 1} onDismissUnverified={() => dismissUnverifiedTab(tab.id)} onCreateSafeTerminal={() => createSafeTabInCurrentPane(tab)} onIdentityGuardChange={(guarded) => setIdentityGuarded(tab.id, guarded)} extraMenuItems={[
+                <TerminalTab connId={tab.connId} myTabId={tab.id} workspaceIndex={workspaceIndex} panelNumber={tab.labelNumber ?? tabs.findIndex((candidate) => candidate.id === tab.id) + 1} onDismissUnverified={() => dismissUnverifiedTab(tab.id)} onCreateSafeTerminal={() => createSafeTabInCurrentPane(tab)} onReplaceUnrecoverableTerminal={() => replaceUnrecoverableTerminal(tab.id)} onIdentityGuardChange={(guarded) => setIdentityGuarded(tab.id, guarded)} extraMenuItems={[
                   { label: t('term_split_h'), action: () => handleSplit('horizontal') },
                   { label: t('term_split_v'), action: () => handleSplit('vertical') },
                   { label: t('term_split_quad'), action: handleQuadSplit },
@@ -876,10 +903,10 @@ function GridContainer({ onActiveSshChange, workspaceIndex, presenceCounts }: { 
   const [, forceUpdate] = useState(0);
   const gridRef = useRef<HTMLDivElement>(null);
   const mobile = isMobileBrowserEnvironment();
-  const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth);
+  const [viewportSize, setViewportSize] = useState(() => ({ width: window.innerWidth, height: window.innerHeight }));
 
   useEffect(() => {
-    const update = () => setViewportWidth(window.innerWidth);
+    const update = () => setViewportSize({ width: window.innerWidth, height: window.innerHeight });
     window.addEventListener('resize', update);
     return () => window.removeEventListener('resize', update);
   }, []);
@@ -893,8 +920,10 @@ function GridContainer({ onActiveSshChange, workspaceIndex, presenceCounts }: { 
   const paneIds = Array.from(allPaneIds);
   const isInSplit = layoutRoot.type !== 'leaf';
   const visiblePaneIds = cells.map((cell) => cell.id);
-  const compactDesktop = shouldUseCompactDesktopGrid(mobile, viewportWidth, smallViewportWidth);
-  const compactGrid = compactDesktop ? buildCompactPanelGrid(visiblePaneIds) : null;
+  const compactDesktop = shouldUseCompactDesktopGrid(mobile, viewportSize.width, smallViewportWidth);
+  const wideShortDesktop = shouldUseWideShortDesktopGrid(mobile, viewportSize.width, viewportSize.height, smallViewportWidth);
+  const compactVisibleRows = wideShortDesktop ? 1.3 : 2;
+  const compactGrid = compactDesktop ? buildCompactPanelGrid(visiblePaneIds, wideShortDesktop ? 4 : 2) : null;
   const [mobilePaneId, setMobilePaneId] = useState(visiblePaneIds[0] || paneIds[0] || 'root');
   const effectiveMobilePaneId = visiblePaneIds.includes(mobilePaneId) ? mobilePaneId : (visiblePaneIds[0] || paneIds[0] || 'root');
 
@@ -910,7 +939,7 @@ function GridContainer({ onActiveSshChange, workspaceIndex, presenceCounts }: { 
   const gridTemplateAreas = compactGrid?.templateAreas || grid.map((row) => `"${row.join(' ')}"`).join(' ');
   const displayColumns = compactGrid?.columns || cols;
   const displayRows = compactGrid?.rows || rows;
-  const compactScrollable = !!compactGrid && displayRows > 2;
+  const compactScrollable = !!compactGrid && displayRows > compactVisibleRows;
 
   return (
     <div className={mobile ? 'terminal-mobile-shell' : undefined} style={{ flex: 1, minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
@@ -925,7 +954,7 @@ function GridContainer({ onActiveSshChange, workspaceIndex, presenceCounts }: { 
       <div ref={gridRef} className={mobile ? 'terminal-grid mobile-single-panel-grid' : 'terminal-grid'} data-panel-columns={displayColumns} data-panel-rows={displayRows} style={{
       display: 'grid',
       gridTemplateColumns: mobile ? '1fr' : `repeat(${displayColumns}, 1fr)`,
-      gridTemplateRows: mobile ? '1fr' : compactGrid ? compactPanelRowTemplate(displayRows) : `repeat(${displayRows}, 1fr)`,
+      gridTemplateRows: mobile ? '1fr' : compactGrid ? compactPanelRowTemplate(displayRows, 2, compactVisibleRows) : `repeat(${displayRows}, 1fr)`,
       gridTemplateAreas: mobile ? `"${effectiveMobilePaneId}"` : gridTemplateAreas,
       flex: 1, overflowX: 'hidden', overflowY: compactScrollable ? 'auto' : 'hidden', minWidth: 0, minHeight: 0,
       alignContent: 'start', overscrollBehaviorY: 'contain', scrollbarWidth: 'thin',

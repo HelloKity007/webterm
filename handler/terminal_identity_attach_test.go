@@ -93,10 +93,27 @@ func TestIdentityAttachRealTmuxReplacementAndMissing(t *testing.T) {
 		return ready, transcript.String()
 	}
 	create(guardTestIncarnation)
+	// Existing terminals may retain the old raw-client hook. An attachment
+	// must not restore automatic largest sizing after the new manual policy.
+	if out, err := command("set-hook", "-t", "registry_target", "client-attached[200]", "set-window-option -t =registry_target: window-size largest"); err != nil {
+		t.Fatalf("legacy sizing hook: %s %v", out, err)
+	}
+	if out, err := command("set-hook", "-t", "registry_target", "client-attached[201]", "set-option -t registry_target @qa-unrelated-hook preserved"); err != nil {
+		t.Fatalf("unrelated hook fixture: %s %v", out, err)
+	}
+	if out, err := command("set-window-option", "-t", "=registry_target:", "window-size", "largest"); err != nil {
+		t.Fatalf("fixture window override: %s %v", out, err)
+	}
 	if ready, out := run(); !ready {
 		t.Fatalf("matching identity failed: %s", out)
 	} else {
 		t.Logf("MATCH: %s", out)
+	}
+	if out, err := command("display-message", "-p", "-t", "=registry_target:", "#{window-size}"); err != nil || strings.TrimSpace(string(out)) != "manual" {
+		t.Fatalf("verified window did not enter explicit geometry control: %s %v", out, err)
+	}
+	if out, err := command("show-hooks", "-t", "registry_target"); err != nil || !strings.Contains(string(out), "client-attached[201]") || strings.Contains(string(out), "client-attached[200]") {
+		t.Fatalf("legacy cleanup changed unrelated hooks: %s %v", out, err)
 	}
 	if out, err := command("kill-session", "-t", "=registry_target"); err != nil {
 		t.Fatalf("kill fixture: %s %v", out, err)

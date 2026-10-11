@@ -96,7 +96,7 @@ func (h *WSHandler) terminalInstanceMatchesEndpoint(instance *store.TerminalInst
 	return instance != nil && connection != nil &&
 		instance.Environment == h.terminalEnvironment() && instance.Host == connection.Host &&
 		instance.Port == connection.Port && instance.SSHUser == connection.Username &&
-		instance.Socket == h.terminalRegistrySocket() &&
+		h.terminalSocketMatches(instance) &&
 		identitySessionPattern.MatchString(instance.CanonicalName) &&
 		identityIncarnationPattern.MatchString(instance.Incarnation)
 }
@@ -135,10 +135,14 @@ func (h *WSHandler) CreateTerminalSession(w http.ResponseWriter, r *http.Request
 		http.Error(w, `{"error":"failed to allocate terminal identity"}`, http.StatusInternalServerError)
 		return
 	}
+	socket := h.terminalRegistrySocket()
+	if h.TmuxSessionDirectory != "" {
+		socket = h.isolatedTerminalSocket(user.UserID, connID, terminalID)
+	}
 	instance, won, err := h.Store.ReserveTerminalInstance(store.TerminalInstance{
 		UserID: user.UserID, ConnectionID: connID, TerminalID: terminalID,
 		Environment: h.terminalEnvironment(), Host: connection.Host, Port: connection.Port,
-		SSHUser: connection.Username, Socket: h.terminalRegistrySocket(), CanonicalName: canonicalName,
+		SSHUser: connection.Username, Socket: socket, CanonicalName: canonicalName,
 	})
 	if err != nil || !won {
 		// ID collision is deliberately not retried inside this request: a caller
@@ -151,7 +155,7 @@ func (h *WSHandler) CreateTerminalSession(w http.ResponseWriter, r *http.Request
 		http.Error(w, `{"error":"failed to allocate terminal identity"}`, http.StatusInternalServerError)
 		return
 	}
-	if err := h.runTerminalCommand(connection, scopeTmuxCommand(command, h.TmuxSocket, h.TmuxBinary)); err != nil {
+	if err := h.runTerminalCommand(connection, h.scopeTerminalCreation(command, instance)); err != nil {
 		// Keep the reservation. A transport acknowledgement can be lost after
 		// tmux has created the session; silently retrying would be unsafe.
 		http.Error(w, `{"error":"`+terminalCreateError+`","code":"TERMINAL_CREATE_UNCERTAIN"}`, http.StatusBadGateway)

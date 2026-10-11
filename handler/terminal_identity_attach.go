@@ -19,6 +19,12 @@ var identityNoncePattern = regexp.MustCompile(`^[0-9a-f]{32,64}$`)
 var identityResponseFramePattern = regexp.MustCompile(`^%(begin|end|error) ([0-9]+ [0-9]+ [01])$`)
 var identitySessionEventPattern = regexp.MustCompile(`^%session-changed (\$[0-9]+) ([A-Za-z0-9_-]+)$`)
 
+// Only the geometry lease holder issues resize-window. Client attachments must
+// never automatically resize a running application (including legacy clients).
+func terminalWindowSizeCommand(session string) string {
+	return "tmux -N set-window-option -t =" + session + ": window-size manual"
+}
+
 func (s terminalIdentityAttachSpec) readyMarker() string {
 	return "WEBTERM_READY:" + s.Incarnation + ":" + s.Nonce
 }
@@ -32,7 +38,16 @@ func (s terminalIdentityAttachSpec) command() (string, error) {
 	// Both checking and attaching execute synchronously within one tmux command
 	// queue. -N prevents even attach-session's STARTSERVER flag starting a server.
 	condition := fmt.Sprintf("#{&&:#{==:#{session_name},%s},#{==:#{@webterm_incarnation},%s}}", s.Session, s.Incarnation)
-	success := "attach-session -t =" + s.Session + " ; display-message -p " + s.readyMarker()
+	// Configure only the verified window; a missing or replacement session
+	// cannot change any other terminal's dimensions.
+	// Remove only WebTerm's indexed legacy sizing hooks. Otherwise attaching
+	// to an existing window can run its old hook *after* setting manual and
+	// silently restore largest. Leave unrelated user hooks untouched.
+	success := "set-hook -u -t " + s.Session + " 'client-attached[200]' ; " +
+		"set-hook -u -t " + s.Session + " 'client-resized[200]' ; " +
+		"set-hook -uw -t " + s.Session + ": 'window-resized[200]' ; " +
+		strings.TrimPrefix(terminalWindowSizeCommand(s.Session), "tmux -N ") +
+		" ; attach-session -t =" + s.Session + " ; display-message -p " + s.readyMarker()
 	failure := "display-message -p " + s.mismatchMarker()
 	args := []string{s.Binary, "-N"}
 	if s.Socket != "" {

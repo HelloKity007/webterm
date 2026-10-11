@@ -30,9 +30,10 @@ const api = async (method, path, data, token = userToken) => {
   assert(response.ok(), `${method} ${path.split('?')[0]} returned ${response.status()}`);
   return response.json();
 };
-const pad = n => String(n).padStart(2, '0');
+const fixtureSockets = [];
+const fixtureTmux = (i, args) => execFileSync(binary, ['-N', fixtureSockets[i].startsWith('/') ? '-S' : '-L', fixtureSockets[i], ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 const sessionName = i => `wt-${fixtureUser}-2-${createHash('sha256').update(tabIDs[i]).digest('hex').slice(0, 16)}`;
-const exists = i => { try { tmux(['has-session', '-t', sessionName(i)]); return true; } catch { return false; } };
+const exists = i => { try { fixtureTmux(i, ['has-session', '-t', sessionName(i)]); return true; } catch { return false; } };
 const waitFor = async (predicate, message) => {
   for (let i = 0; i < 50; i++) { if (await predicate()) return; await new Promise(resolve => setTimeout(resolve, 200)); }
   throw new Error(message);
@@ -52,6 +53,15 @@ try {
     const created = await api('POST', '/api/terminal-sessions/2', {});
     assert(typeof created.terminal_id === 'string' && created.terminal_id.startsWith('terminal-'));
     tabIDs.push(created.terminal_id);
+    assert.match(created.terminal_id, /^terminal-[a-f0-9]{32}$/);
+    const registryDB = process.env.WEBTERM_QA_DB;
+    const registered = registryDB ? JSON.parse(execFileSync('sqlite3', ['-readonly', '-json', registryDB, `select socket,user_id,environment from terminal_instances where terminal_id='${created.terminal_id}'`], { encoding: 'utf8' }))[0] : null;
+    if (registryDB) {
+      assert.equal(registered?.user_id, fixtureUser);
+      assert.equal(registered?.environment, 'release-test');
+      assert(registered.socket === 'webterm-release-test-fixed' || registered.socket.includes('/webterm-release-test/'));
+    }
+    fixtureSockets.push(registered?.socket || 'webterm-release-test-fixed');
   }
   const tab = i => ({ id: tabIDs[i], type: 'ssh', connId: 2, title: `QA close ${i + 1}`, labelNumber: panelNumber(i) });
   const pane = ids => ({ tabs: ids.map(tab), activeTabId: tabIDs[ids[0]] });
@@ -95,12 +105,12 @@ try {
   await waitFor(() => [0, 1, 2].every(exists), 'Fixture sessions did not start');
   await page.getByRole('tab', { name: '2: 关闭验收乙', exact: true }).click();
   await waitFor(() => exists(3), 'Last workspace fixture did not start');
-  const fixturePids = [0, 1, 2, 3].map(i => Number(tmux(['display-message', '-pt', sessionName(i), '#{pane_pid}'])));
+  const fixturePids = [0, 1, 2, 3].map(i => Number(fixtureTmux(i, ['display-message', '-pt', sessionName(i), '#{pane_pid}'])));
   // A foreground process in our newly-created session must actually terminate,
   // not merely disappear from the browser layout.
-  tmux(['send-keys', '-t', sessionName(0), '-l', 'exec sleep 3600']);
-  tmux(['send-keys', '-t', sessionName(0), 'Enter']);
-  await waitFor(() => tmux(['display-message', '-pt', sessionName(0), '#{pane_current_command}']) === 'sleep', 'Foreground fixture did not start');
+  fixtureTmux(0, ['send-keys', '-t', sessionName(0), '-l', 'exec sleep 3600']);
+  fixtureTmux(0, ['send-keys', '-t', sessionName(0), 'Enter']);
+  await waitFor(() => fixtureTmux(0, ['display-message', '-pt', sessionName(0), '#{pane_current_command}']) === 'sleep', 'Foreground fixture did not start');
   await page.getByRole('tab', { name: '1: 关闭验收甲', exact: true }).click();
   const peer = await context.newPage(); await peer.goto(origin, { waitUntil: 'networkidle' });
   await peer.locator('.workspace-tabs-toggle').click();
@@ -147,7 +157,7 @@ try {
       await (await synced).finished();
       await peer.locator(`[data-tab-id="${tabIDs[4]}"]`).click();
       await waitFor(() => exists(4), 'Concurrent fixture did not start');
-      fixturePids.push(Number(tmux(['display-message', '-pt', sessionName(4), '#{pane_pid}'])));
+      fixturePids.push(Number(fixtureTmux(4, ['display-message', '-pt', sessionName(4), '#{pane_pid}'])));
       await page.waitForTimeout(300);
       await route.fulfill({ response });
     });
@@ -186,7 +196,7 @@ try {
   report.status = 'PASS';
 } catch (error) {
   report.status = 'FAIL'; report.error = error.message;
-  report.fixtureSessions = fixtureUser ? tmux(['list-sessions', '-F', '#{session_name}']).split('\n').filter(name => name.startsWith(`wt${pad(fixtureUser)}-`)) : [];
+  report.fixtureSessions = tabIDs.map((_, i) => i).filter(exists).map(sessionName);
   const page = browser.contexts().at(-1)?.pages()[0];
   if (page) {
     await page.screenshot({ path: `${output}/failure.png` }).catch(() => {});

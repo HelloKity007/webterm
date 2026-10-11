@@ -1,0 +1,20 @@
+[Unit]
+Description=WebTerm LAN production service (127.0.0.1:8888)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=pgz
+Group=pgz
+WorkingDirectory=/media/pgz/DATA-B/code/tools/webterm-xufanchn/webterm-HelloKity007
+EnvironmentFile=/media/pgz/DATA-B/code/tools/webterm-xufanchn/webterm-HelloKity007/lan-secrets.env
+ExecStart=/media/pgz/DATA-B/code/tools/webterm-xufanchn/webterm-HelloKity007/scripts/lan-exec-webterm.sh
+ExecStartPost=/bin/sh -c 'echo $MAINPID > /media/pgz/DATA-B/code/tools/webterm-xufanchn/webterm-HelloKity007/runtime/webterm.pid'
+ExecStopPost=/bin/rm -f /media/pgz/DATA-B/code/tools/webterm-xufanchn/webterm-HelloKity007/runtime/webterm.pid
+Restart=on-failure
+RestartSec=5
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

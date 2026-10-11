@@ -40,29 +40,37 @@ func TestSnapshotRestoreOrderingBrowser(t *testing.T) {
 	current := terminalScreenSnapshot(currentCapture, state(38))
 	var cases []scenario
 	cases = append(cases, scenario{"coherent-control", string(current)})
-	// The metadata command completes at 26 rows; capture executes after a
-	// concurrent resize to 38. This is permitted by the two-channel bootstrap.
+	// The old two-channel bootstrap could mix 26-row state with a 38-row
+	// capture. Reject that response and use a fresh coherent capture instead.
 	var mismatched bytes.Buffer
 	a := &terminalOutputOrder{write: func(p []byte) error { _, err := mismatched.Write(p); return err }}
 	if err := a.grid([]byte("\x1b]2;webterm-grid:104x38\x07")); err != nil {
 		t.Fatal(err)
 	}
-	if err := a.snapshot(terminalScreenSnapshot(currentCapture, state(26))); err != nil {
+	if _, _, err := parseTerminalScreenStateCapture(append([]byte(strings.Join(state(26), "\t")+"\n"), currentCapture...)); err == nil {
+		t.Fatal("mixed state/capture accepted")
+	}
+	freshCapture, freshState, err := parseTerminalScreenStateCapture(append([]byte(strings.Join(state(38), "\t")+"\n"), currentCapture...))
+	if err != nil {
 		t.Fatal(err)
+	}
+	if accepted, err := a.snapshot(terminalScreenSnapshot(freshCapture, freshState), a.captureVersion()); err != nil || !accepted {
+		t.Fatalf("fresh coherent capture accepted=%v error=%v", accepted, err)
 	}
 	cases = append(cases, scenario{"metadata-before-resize-capture-after", mismatched.String()})
 	// A coherent 26-row snapshot is delayed. A newer full 38-row redraw reaches
 	// the browser first; the old snapshot arrives last and erases those pixels.
 	var late bytes.Buffer
 	b := &terminalOutputOrder{write: func(p []byte) error { _, err := late.Write(p); return err }}
+	lateVersion := b.captureVersion()
 	if err := b.grid([]byte("\x1b]2;webterm-grid:104x38\x07")); err != nil {
 		t.Fatal(err)
 	}
 	if err := b.output(current); err != nil {
 		t.Fatal(err)
 	}
-	if err := b.snapshot(terminalScreenSnapshot(capture(26, "STALE"), state(26))); err != nil {
-		t.Fatal(err)
+	if accepted, err := b.snapshot(terminalScreenSnapshot(capture(26, "STALE"), state(26)), lateVersion); err != nil || accepted {
+		t.Fatalf("late capture accepted=%v error=%v", accepted, err)
 	}
 	cases = append(cases, scenario{"late-snapshot-after-newer-redraw", late.String()})
 	// Rejecting only differently-sized snapshots would still lose newer
@@ -72,11 +80,12 @@ func TestSnapshotRestoreOrderingBrowser(t *testing.T) {
 	if err := c.grid([]byte("\x1b]2;webterm-grid:104x38\x07")); err != nil {
 		t.Fatal(err)
 	}
+	sameSizeVersion := c.captureVersion()
 	if err := c.output(current); err != nil {
 		t.Fatal(err)
 	}
-	if err := c.snapshot(terminalScreenSnapshot(capture(38, "STALE"), state(38))); err != nil {
-		t.Fatal(err)
+	if accepted, err := c.snapshot(terminalScreenSnapshot(capture(38, "STALE"), state(38)), sameSizeVersion); err != nil || accepted {
+		t.Fatalf("same-grid stale capture accepted=%v error=%v", accepted, err)
 	}
 	cases = append(cases, scenario{"late-snapshot-same-grid", sameSize.String()})
 	payload, err := json.Marshal(cases)

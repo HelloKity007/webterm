@@ -1,0 +1,20 @@
+[Unit]
+Description=WebTerm LAN Caddy TLS gateway (:9443/:9444)
+Requires=webterm-lan.service
+After=webterm-lan.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pgz
+Group=pgz
+WorkingDirectory=/media/pgz/DATA-B/code/tools/webterm-xufanchn/webterm-HelloKity007
+EnvironmentFile=/media/pgz/DATA-B/code/tools/webterm-xufanchn/webterm-HelloKity007/lan-secrets.env
+ExecStart=/usr/local/bin/caddy run --config /media/pgz/DATA-B/code/tools/webterm-xufanchn/webterm-HelloKity007/Caddyfile --adapter caddyfile
+ExecStartPost=/bin/sh -c 'echo $MAINPID > /media/pgz/DATA-B/code/tools/webterm-xufanchn/webterm-HelloKity007/runtime/caddy.pid'
+ExecStopPost=/bin/rm -f /media/pgz/DATA-B/code/tools/webterm-xufanchn/webterm-HelloKity007/runtime/caddy.pid
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -1,14 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import { desktopRequestedGrid } from './terminalScaling';
 describe('desktop client geometry negotiation', () => {
-  it('keeps native large-screen geometry', () => {
-    expect(desktopRequestedGrid({ cols: 92, rows: 36 })).toEqual({ cols: 92, rows: 36 });
+  it.each([{ cols: 152, rows: 25 }, { cols: 115, rows: 44 }, { cols: 30, rows: 10 }])('keeps measured capacity %j without program or monitor caps', grid => {
+    expect(desktopRequestedGrid(grid)).toEqual(grid);
   });
-  it('prevents wide compact panels from inflating the shared server width', () => {
-    expect(desktopRequestedGrid({ cols: 152, rows: 25 })).toEqual({ cols: 104, rows: 25 });
-    expect(desktopRequestedGrid({ cols: 102, rows: 26 })).toEqual({ cols: 102, rows: 26 });
-  });
-  it('does not grow a very small measured viewport', () => {
-    expect(desktopRequestedGrid({ cols: 30, rows: 10 })).toEqual({ cols: 30, rows: 10 });
+  it('retains protocol safety limits', () => {
+    expect(desktopRequestedGrid({ cols: 1200, rows: 900 })).toEqual({ cols: 1000, rows: 499 });
+    expect(desktopRequestedGrid({ cols: 0, rows: 0 })).toEqual({ cols: 2, rows: 1 });
   });
 });

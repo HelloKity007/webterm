@@ -30,6 +30,22 @@ try {
   report.health = await health.json();
   assert.equal(report.health.environment, 'release-test', 'Refusing a production backend');
   const page = await context.newPage();
+  const remoteGrids = new Map();
+  page.on('websocket', socket => {
+    const url = new URL(socket.url());
+    if (!url.pathname.startsWith('/ws/ssh/')) return;
+    const terminalID = url.searchParams.get('terminal_id');
+    socket.on('framereceived', ({ payload }) => {
+      try {
+        const message = JSON.parse(String(payload));
+        if (typeof message.data !== 'string') return;
+        const data = message.b64 ? Buffer.from(message.data, 'base64').toString('utf8') : message.data;
+        for (const grid of data.matchAll(/\x1b\]2;webterm-grid:(\d+)x(\d+)\x07/g)) {
+          remoteGrids.set(terminalID, { cols: Number(grid[1]), rows: Number(grid[2]) });
+        }
+      } catch { /* Non-output frames do not announce geometry. */ }
+    });
+  });
   const pageErrors = [];
   page.on('pageerror', error => pageErrors.push(error.message
     .replace(/(token|ticket)=[^\s&]+/gi, '$1=[redacted]').slice(0, 500)));
@@ -105,8 +121,10 @@ try {
   assert(inputBounds.screen, 'mobile terminal input canvas is missing');
   assert(inputBounds.screen.width <= inputBounds.panel.width + 1, 'mobile terminal input is clipped horizontally');
   assert(inputBounds.screen.height <= inputBounds.panel.height + 1, 'mobile terminal input is clipped vertically');
-  assert.equal(inputBounds.cols, 69);
-  assert.equal(inputBounds.rows, 21);
+  const announced = remoteGrids.get(await finalTab.getAttribute('data-tab-id'));
+  assert(announced, 'No authoritative remote grid was received for the selected mobile terminal');
+  assert.deepEqual({ cols: inputBounds.cols, rows: inputBounds.rows }, announced,
+    'Mobile must parse ANSI at the server grid; wrapped reader width is independent');
   await page.getByRole('button', { name: '换行阅读', exact: true }).click();
   assert.equal(await page.locator('.xterm-helper-textarea:focus').count(), 0);
   check('MOB-04/07: reading blurs terminal; native input fits and has no white ruler', inputBounds);

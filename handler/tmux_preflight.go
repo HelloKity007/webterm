@@ -79,8 +79,12 @@ func runTmuxVersionCommand(client *sshmgr.Client, command string) (string, error
 	return string(output), err
 }
 
-func (h *WSHandler) ensureTmuxPreflight(connection *store.Connection, client *sshmgr.Client) error {
-	fingerprint := tmuxConnectionFingerprint(connection)
+func (h *WSHandler) ensureTmuxPreflight(connection *store.Connection, client *sshmgr.Client, selectedBinary ...string) error {
+	binary := h.TmuxBinary
+	if len(selectedBinary) > 0 {
+		binary = selectedBinary[0]
+	}
+	fingerprint := tmuxConnectionFingerprint(connection) + "|" + binary
 	now := time.Now()
 
 	h.tmuxPreflightMu.Lock()
@@ -108,7 +112,7 @@ func (h *WSHandler) ensureTmuxPreflight(connection *store.Connection, client *ss
 	runner := h.RunTmuxPreflight
 	if runner == nil {
 		runner = func(client *sshmgr.Client) (string, error) {
-			return runTmuxVersionCommand(client, scopeTmuxCommand("tmux -V", h.TmuxSocket, h.TmuxBinary))
+			return runTmuxVersionCommand(client, scopeTmuxCommand("tmux -V", "", binary))
 		}
 	}
 	output, runErr := runner(client)

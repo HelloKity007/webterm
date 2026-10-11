@@ -346,3 +346,36 @@ func TestDurableProductionRequiresMatchingOriginalClient(t *testing.T) {
 		}
 	}
 }
+
+func TestIsolatedProductionLauncherRejectsLegacyBinary(t *testing.T) {
+	root := t.TempDir()
+	isolated := filepath.Join(root, "isolated-tmux")
+	if err := os.WriteFile(isolated, []byte("#!/bin/sh\nexit 0\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name, help string
+		allowed    bool
+	}{
+		{"legacy binary", "-tmux-binary -tmux-socket", false},
+		{"isolated binary", "-tmux-binary -tmux-socket -tmux-session-directory -tmux-session-binary", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			candidate := filepath.Join(root, strings.ReplaceAll(tc.name, " ", "-"))
+			if err := os.WriteFile(candidate, []byte("#!/bin/sh\necho '"+tc.help+"'\n"), 0700); err != nil {
+				t.Fatal(err)
+			}
+			cmd := exec.Command("bash", "-c", `source ./lan-lib.sh; lan_preflight_production_binary "$QA_CANDIDATE"`)
+			cmd.Env = append(os.Environ(),
+				"QA_CANDIDATE="+candidate,
+				"WEBTERM_PRODUCTION_TMUX_BINARY=",
+				"WEBTERM_PRODUCTION_TMUX_SOCKET=",
+				"WEBTERM_PRODUCTION_SESSION_DIRECTORY="+filepath.Join(root, "webterm-production"),
+				"WEBTERM_PRODUCTION_SESSION_BINARY="+isolated)
+			out, err := cmd.CombinedOutput()
+			if (err == nil) != tc.allowed {
+				t.Fatalf("preflight err=%v output=%s", err, out)
+			}
+		})
+	}
+}

@@ -104,3 +104,24 @@ describe('useWebSocket', () => {
     vi.useRealTimers();
   });
 });
+
+describe('terminal loss reconnect policy', () => {
+  afterEach(() => { cleanup(); FakeWebSocket.instances = []; vi.unstubAllGlobals(); vi.useRealTimers(); });
+  it('stops after confirmed loss, ignores online events and drops queued input until explicit retry', async () => {
+    vi.stubGlobal('WebSocket', FakeWebSocket);
+    const onMessage = vi.fn();
+    const { result, rerender } = renderHook(({ url }) => useWebSocket({ url, onMessage }), { initialProps: { url: 'ws://test/first' } });
+    await waitFor(() => expect(FakeWebSocket.instances).toHaveLength(1));
+    const ws = FakeWebSocket.instances[0];
+    act(() => ws.emitMessage(JSON.stringify({ type: 'error', code: 'TERMINAL_SERVER_UNAVAILABLE', retryable: false })));
+    expect(result.current.status).toBe('terminal-failed');
+    act(() => { window.dispatchEvent(new Event('online')); result.current.send('must-not-replay'); });
+    expect(FakeWebSocket.instances).toHaveLength(1);
+    expect(ws.sent).toEqual([]);
+    expect(onMessage).toHaveBeenCalledTimes(1);
+    rerender({ url: 'ws://test/retry' });
+    await waitFor(() => expect(FakeWebSocket.instances).toHaveLength(2));
+    act(() => FakeWebSocket.instances[1].onopen?.());
+    expect(FakeWebSocket.instances[1].sent).toEqual([]);
+  });
+});

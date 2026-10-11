@@ -134,12 +134,15 @@ select:focus, input:focus, textarea:focus, button:focus-visible, [role="button"]
    the screen desynchronizes glyphs, cursor coordinates, and scrollback rows. */
 .terminal-surface .xterm-screen { transform: none !important; transform-origin: top left; }
 .terminal-surface .xterm-rows { line-height: normal; }
-.terminal-surface.desktop-local-viewport { scrollbar-width: auto; scrollbar-color: auto; scrollbar-gutter: stable; overscroll-behavior: contain; padding-left: 4px !important; }
+.terminal-surface.desktop-local-viewport { scrollbar-width: auto; scrollbar-color: auto; scrollbar-gutter: stable; overscroll-behavior: contain; overflow-anchor: none; padding-left: 4px !important; }
+/* CLI alternate screens fit locally and own their wheel history. Keep an
+   outer scrollbar from stealing 2px after a repaint at exact cell width. */
+.terminal-surface.desktop-unified-scroll .xterm .scrollbar.vertical { display: none !important; }
+.terminal-surface.desktop-unified-scroll .xterm-viewport { scrollbar-width: none; }
+.terminal-surface.desktop-unified-scroll .xterm-viewport::-webkit-scrollbar { display: none; }
+.terminal-history-spacer { width: 1px; pointer-events: none; }
 .terminal-surface.desktop-local-viewport::-webkit-scrollbar { width: 5px; height: 5px; }
 .terminal-surface.desktop-local-viewport::-webkit-scrollbar-thumb { background: #76a78088; border-radius: 3px; }
-/* Claude owns history in its alternate screen, so xterm's buffer scrollbar is
-   misleading there. Bash keeps local xterm scrollback and must retain it. */
-.terminal-surface.desktop-local-viewport[data-terminal-mode="cli"] .xterm .scrollbar.vertical { display: none !important; }
 .terminal-mobile-shell { background: #1f211f; }
 .mobile-panel-switcher { display: none; }
 .terminal-mobile-shell > .mobile-panel-switcher { display: flex; flex: 0 0 38px; align-items: center; gap: 6px; padding: 4px 8px; overflow-x: auto; background: #b9dcb9; border-bottom: 1px solid #80ad82; }

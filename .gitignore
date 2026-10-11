@@ -5,4 +5,5 @@
 /webterm.db*
 /runtime/
 /lan-secrets.env
+/certs/
 /ssh_known_hosts

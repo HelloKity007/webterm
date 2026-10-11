@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildCompactPanelGrid, compactPanelRowTemplate, shouldUseCompactDesktopGrid } from './responsivePanelGrid';
+import { buildCompactPanelGrid, compactPanelRowTemplate, shouldUseCompactDesktopGrid, shouldUseWideShortDesktopGrid } from './responsivePanelGrid';
 
 describe('responsivePanelGrid', () => {
   it('reflows eight panes into two columns and four scrollable rows on a compact desktop', () => {
@@ -24,6 +24,15 @@ describe('responsivePanelGrid', () => {
     expect(compactPanelRowTemplate(2)).toBe('repeat(2, minmax(0, 1fr))');
     expect(compactPanelRowTemplate(3)).toBe('repeat(3, calc(50% - 1px))');
     expect(compactPanelRowTemplate(4)).toBe('repeat(4, calc(50% - 1px))');
+  });
+
+  it('uses taller, narrower cells on a wide short desktop', () => {
+    expect(shouldUseWideShortDesktopGrid(false, 2860, 988, 3000)).toBe(true);
+    expect(shouldUseWideShortDesktopGrid(false, 1920, 1080, 3000)).toBe(false);
+    expect(shouldUseWideShortDesktopGrid(false, 3440, 1440, 3000)).toBe(false);
+    expect(shouldUseWideShortDesktopGrid(true, 2860, 988, 3000)).toBe(false);
+    expect(buildCompactPanelGrid(Array.from({ length: 8 }, (_, index) => `pane${index + 1}`), 4).columns).toBe(4);
+    expect(compactPanelRowTemplate(2, 2, 1.3)).toContain('76.92307692307692%');
   });
 
   it('preserves pane order and leaves only the last odd slot empty', () => {

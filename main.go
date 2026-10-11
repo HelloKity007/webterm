@@ -79,6 +79,8 @@ func main() {
 	listenAddr := flag.String("listen-addr", "", "override loopback listen address")
 	databasePath := flag.String("database", "webterm.db", "path to SQLite database")
 	deploymentEnvironment := flag.String("environment", "production", "deployment environment name")
+	sessionDirectory := flag.String("tmux-session-directory", "", "durable remote directory for isolated new terminals; ends in webterm-<environment>")
+	sessionBinary := flag.String("tmux-session-binary", "", "pinned remote executable for isolated new terminals")
 	tmuxBinary := flag.String("tmux-binary", "", "absolute remote tmux executable; requires tmux-socket")
 	tmuxSocket := flag.String("tmux-socket", "", "environment-scoped socket name or absolute remote socket path; requires tmux-binary")
 	testTmuxBinary := flag.String("test-tmux-binary", "", "absolute remote tmux path, release-test only")
@@ -96,6 +98,10 @@ func main() {
 	resolvedTmuxBinary, resolvedTmuxSocket, tmuxErr := resolveTmuxOptions(*deploymentEnvironment, *tmuxBinary, *tmuxSocket, *testTmuxBinary, *testTmuxSocket, testExplicit)
 	if tmuxErr != nil {
 		log.Fatal(tmuxErr)
+	}
+
+	if err := handler.ValidateTerminalIsolation(*deploymentEnvironment, *sessionDirectory, *sessionBinary); err != nil {
+		log.Fatal(err)
 	}
 
 	if *showVersion {
@@ -160,8 +166,16 @@ func main() {
 	layoutH := &handler.LayoutHandler{Store: st, Hub: layoutHub, Registry: wsRegistry, Presence: presenceRegistry}
 	wsTickets := handler.NewWSTicketService()
 	wsTicketH := &handler.WSTicketHandler{Store: st, Tickets: wsTickets}
+	wheelDiagH := &handler.WheelDiagHandler{}
+	if *deploymentEnvironment == "release-test" {
+		wheelDiagH.SetEnabled(true)
+		mux.Handle("POST /api/diag/wheel", auth.Middleware(http.HandlerFunc(wheelDiagH.AppendHTTP)))
+		mux.Handle("GET /api/diag/wheel", auth.Middleware(http.HandlerFunc(wheelDiagH.SnapshotHTTP)))
+	}
+
 	wsH := &handler.WSHandler{
 		Store: st, Pool: pool, AESCipher: aesCipher,
+		TmuxSessionDirectory: *sessionDirectory, TmuxSessionBinary: *sessionBinary,
 		Environment:              *deploymentEnvironment,
 		Registry:                 wsRegistry,
 		Presence:                 presenceRegistry,
@@ -205,6 +219,7 @@ func main() {
 	mux.Handle("/ws/ssh/{conn_id}", handler.TicketWebSocketHandler{Store: st, Tickets: wsTickets, Endpoint: "ssh", Next: websocket.Handler(wsH.HandleSSH)})
 	mux.Handle("POST /api/terminal-sessions/{conn_id}", auth.Middleware(http.HandlerFunc(wsH.CreateTerminalSession)))
 	mux.Handle("POST /api/terminal-sessions/{conn_id}/adopt", auth.Middleware(http.HandlerFunc(wsH.AdoptTerminalSession)))
+	mux.Handle("GET /api/terminal-health/{conn_id}", auth.Middleware(http.HandlerFunc(wsH.TerminalHealth)))
 	mux.Handle("DELETE /api/terminal-sessions/{conn_id}", auth.Middleware(http.HandlerFunc(wsH.CloseTerminalSession)))
 	mux.Handle("/ws/sftp/{conn_id}", handler.TicketWebSocketHandler{Store: st, Tickets: wsTickets, Endpoint: "sftp", Next: websocket.Handler(wsH.HandleSFTP)})
 	mux.Handle("/ws/db/{conn_id}", handler.TicketWebSocketHandler{Store: st, Tickets: wsTickets, Endpoint: "db", Next: websocket.Handler(wsH.HandleDB)})
@@ -212,9 +227,11 @@ func main() {
 	mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"status":      "ok",
-			"environment": *deploymentEnvironment,
-			"version":     version,
+			"status":          "ok",
+			"scope":           "application",
+			"terminal_health": "authenticated /api/terminal-health/{conn_id}?terminal_id=...",
+			"environment":     *deploymentEnvironment,
+			"version":         version,
 		})
 	})
 
