@@ -1,6 +1,6 @@
 [Unit]
 Description=WebTerm LAN Caddy TLS gateway (:9443/:9444)
-Requires=webterm-lan.service
+Wants=webterm-lan.service
 After=webterm-lan.service network-online.target
 Wants=network-online.target
 
