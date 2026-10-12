@@ -85,7 +85,7 @@ lan_stop_pid() { touch "$QA_ROOT/STOPPED"; }
 lan_start_production() { touch "$QA_ROOT/STARTED"; }
 `)
 			cmd := exec.Command("bash", filepath.Join(root, tc.script))
-			cmd.Env = append(os.Environ(), "QA_ROOT="+root, "WEBTERM_ROOT="+root, "WEBTERM_PRODUCTION_TMUX_BINARY="+filepath.Join(root, "tmux"), "WEBTERM_PRODUCTION_TMUX_SOCKET=webterm-production-fixture", "WEBTERM_PRODUCTION_TMUX_VERSION=3.7c")
+			cmd.Env = append(os.Environ(), "QA_ROOT="+root, "WEBTERM_ROOT="+root, "WEBTERM_PRODUCTION_TMUX_BINARY="+filepath.Join(root, "tmux"), "WEBTERM_PRODUCTION_TMUX_SOCKET=webterm-production-fixture", "WEBTERM_PRODUCTION_TMUX_VERSION=3.7c", "WEBTERM_PRODUCTION_SESSION_DIRECTORY=", "WEBTERM_PRODUCTION_SESSION_BINARY=")
 			out, err := cmd.CombinedOutput()
 			if err == nil || !strings.Contains(string(out), "does not support pinned tmux") {
 				t.Fatalf("expected preflight failure: %v %s", err, out)
@@ -128,7 +128,7 @@ func TestProductionTmuxOverrideValidation(t *testing.T) {
 				}
 			}
 			cmd := exec.Command("bash", "-c", `source ./lan-lib.sh; lan_validate_production_tmux`)
-			cmd.Env = append(os.Environ(), "WEBTERM_PRODUCTION_TMUX_BINARY="+tc.binary, "WEBTERM_PRODUCTION_TMUX_SOCKET="+tc.socket, "WEBTERM_PRODUCTION_TMUX_VERSION=3.7c")
+			cmd.Env = append(os.Environ(), "WEBTERM_PRODUCTION_TMUX_BINARY="+tc.binary, "WEBTERM_PRODUCTION_TMUX_SOCKET="+tc.socket, "WEBTERM_PRODUCTION_TMUX_VERSION=3.7c", "WEBTERM_PRODUCTION_SESSION_DIRECTORY=", "WEBTERM_PRODUCTION_SESSION_BINARY=")
 			out, err := cmd.CombinedOutput()
 			if (err != nil) != tc.fail {
 				t.Fatalf("err=%v output=%s", err, out)
@@ -156,7 +156,7 @@ func TestProductionStartPassesOverridesAndRejectsLegacyBinary(t *testing.T) {
 				t.Fatal(err)
 			}
 			cmd := exec.Command("bash", "-c", `source ./lan-lib.sh; setsid() { printf '%s\n' "$@" > "$LAN_ROOT/arguments"; }; lan_start_production; wait`)
-			cmd.Env = append(os.Environ(), "WEBTERM_ROOT="+root, "WEBTERM_PRODUCTION_TMUX_BINARY="+tmux, "WEBTERM_PRODUCTION_TMUX_SOCKET=webterm-production-fixed", "WEBTERM_PRODUCTION_TMUX_VERSION=3.7c")
+			cmd.Env = append(os.Environ(), "WEBTERM_ROOT="+root, "WEBTERM_PRODUCTION_TMUX_BINARY="+tmux, "WEBTERM_PRODUCTION_TMUX_SOCKET=webterm-production-fixed", "WEBTERM_PRODUCTION_TMUX_VERSION=3.7c", "WEBTERM_PRODUCTION_SESSION_DIRECTORY=", "WEBTERM_PRODUCTION_SESSION_BINARY=")
 			out, err := cmd.CombinedOutput()
 			if !supported {
 				if err == nil || !strings.Contains(string(out), "does not support pinned tmux") {
@@ -339,7 +339,7 @@ func TestDurableProductionRequiresMatchingOriginalClient(t *testing.T) {
 			t.Fatal(err)
 		}
 		cmd := exec.Command("bash", "-c", `source ./lan-lib.sh; lan_validate_production_tmux`)
-		cmd.Env = append(os.Environ(), "WEBTERM_PRODUCTION_TMUX_BINARY="+binary, "WEBTERM_PRODUCTION_TMUX_SOCKET=webterm-production-durable", "WEBTERM_PRODUCTION_TMUX_VERSION="+version)
+		cmd.Env = append(os.Environ(), "WEBTERM_PRODUCTION_TMUX_BINARY="+binary, "WEBTERM_PRODUCTION_TMUX_SOCKET=webterm-production-durable", "WEBTERM_PRODUCTION_TMUX_VERSION="+version, "WEBTERM_PRODUCTION_SESSION_DIRECTORY=", "WEBTERM_PRODUCTION_SESSION_BINARY=")
 		out, err := cmd.CombinedOutput()
 		if (err == nil) != (version == "3.5a") {
 			t.Fatalf("version %s: %v %s", version, err, out)
