@@ -2,8 +2,12 @@
 	admin off
 	auto_https off
 	servers {
-		protocols h1 h2
-		timeouts read_body 30s read_headers 10s write 0s
+		timeouts {
+			read_body 30s
+			read_header 10s
+			write 0s
+			idle 2m
+		}
 	}
 }
 
