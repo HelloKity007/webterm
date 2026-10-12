@@ -60,7 +60,6 @@ import { calculateTerminalScale, constrainTerminalHeight, desktopRequestedGrid, 
 import { getSharedTerminalGrid, setSharedTerminalGrid } from './terminalGridCache';
 import { createAutomaticTerminalGeometry, type AutomaticTerminalGeometry } from './automaticTerminalGeometry';
 import { createTerminalReplayGeometry } from './terminalReplayGeometry';
-import { createWheelDebugRecorder } from './terminalWheelDebug';
 import { isMobileBrowserEnvironment } from '../layout/mobileLayout';
 import { clearShellHistoryViewport, loadShellHistoryViewport, restoredHistoryLine, saveShellHistoryViewport, shellHistoryViewportKey, type ShellHistoryViewport } from './shellHistoryViewport';
 
@@ -855,12 +854,6 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
     document.addEventListener('visibilitychange', geometryVisibility);
     const wheelSender = createLatestTerminalWheelSender((data) => sendRef.current(JSON.stringify({ data })));
     wheelNotchGateRef.current = createTerminalWheelNotchGate();
-    // Temporary release-test-only diagnostics for the macOS Magic Mouse scroll
-    // investigation. Records numeric wheel data only; never terminal content.
-    // The port gate keeps production browsers from producing any diag traffic.
-    const wheelDiag = import.meta.env.DEV || (workspaceIndex === 2 && panelNumber === 45 && window.location.port === '9444')
-      ? createWheelDebugRecorder(terminalID, workspaceIndex || 0, panelNumber || 0)
-      : null;
     let initialOutputFollow = true;
     let initialOutputFollowTimer: ReturnType<typeof setTimeout> | null = null;
     let cliViewportFollowTimer: ReturnType<typeof setTimeout> | null = null;
@@ -883,15 +876,13 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       const alternate = terminalModeRef.current === 'cli' ||
         term.buffer.active.type === 'alternate' ||
         (terminalModeRef.current !== 'shell' && term.modes.mouseTrackingMode !== 'none');
-      wheelDiag?.begin(event, { alternate, termMode: terminalModeRef.current });
-      const routed = routeTerminalWheel(event, {
+      return routeTerminalWheel(event, {
         // Both the CLI SGR path and the shell-history path must share the
         // gesture gate; an ungated momentum stream scrolls a Bash panel
         // straight to the top of its local buffer.
         notchGate: wheelNotchGateRef.current || undefined,
         scrollNotch: (lines) => {
           if (!alternate) {
-            wheelDiag?.emitted('shell-history');
             shellHistoryReaderActiveRef.current = true;
             // A peer can enlarge tmux beyond this panel's local height. That
             // makes the outer surface scrollable, but it is only blank grid
@@ -910,7 +901,6 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
             { x: event.clientX, y: bounds.top + bounds.height / 2 }, bounds, term.cols, term.rows,
           );
           if (lines < 0 && terminalModeRef.current === 'cli') setShowHistoryResume(true);
-          wheelDiag?.emitted('sgr-mouse');
           wheelSender.notch(`\x1b[<${lines < 0 ? 64 : 65};${col};${row}M`);
           // A downwards CLI wheel returns toward the composer. Its shared grid
           // may be taller than this display, so reveal the actual xterm cursor
@@ -934,8 +924,6 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
           }
         },
       });
-      wheelDiag?.finish(routed ? 'passthrough' : 'intercepted');
-      return routed;
     };
     term.attachCustomWheelEventHandler(handleTerminalWheel);
     // Handle wheels on the complete panel, including the area below xterm's
@@ -1547,7 +1535,6 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       surfaceElement?.removeEventListener('wheel', handleSurfaceWheel, true);
       surfaceElement?.removeEventListener('webglcontextlost', handleWebglContextLost, true);
       wheelSender.dispose();
-      wheelDiag?.dispose();
       wheelNotchGateRef.current = null;
       rendererObservation?.dispose();
       if (webglAddon) {

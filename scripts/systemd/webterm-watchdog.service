@@ -1,0 +1,7 @@
+[Unit]
+Description=WebTerm production health watchdog check
+After=webterm-lan.service
+
+[Service]
+Type=oneshot
+ExecStart=/media/pgz/DATA-B/code/tools/webterm-xufanchn/webterm-HelloKity007/scripts/prod-watchdog.sh

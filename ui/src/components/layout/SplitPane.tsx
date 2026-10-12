@@ -926,6 +926,12 @@ function GridContainer({ onActiveSshChange, workspaceIndex, presenceCounts }: { 
   const compactGrid = compactDesktop ? buildCompactPanelGrid(visiblePaneIds, wideShortDesktop ? 4 : 2) : null;
   const [mobilePaneId, setMobilePaneId] = useState(visiblePaneIds[0] || paneIds[0] || 'root');
   const effectiveMobilePaneId = visiblePaneIds.includes(mobilePaneId) ? mobilePaneId : (visiblePaneIds[0] || paneIds[0] || 'root');
+  // With 8 panels the switcher overflows a phone screen; the active button
+  // must stay visible when the panel changes or a layout restores.
+  const mobileActivePanelButtonRef = useRef<HTMLButtonElement | null>(null);
+  useEffect(() => {
+    mobileActivePanelButtonRef.current?.scrollIntoView({ block: 'nearest', inline: 'center' });
+  }, [effectiveMobilePaneId]);
 
   // Build grid-template-areas
   const grid: string[][] = Array.from({ length: rows }, () => Array(cols).fill('.'));
@@ -947,6 +953,7 @@ function GridContainer({ onActiveSshChange, workspaceIndex, presenceCounts }: { 
         <nav className="mobile-panel-switcher" aria-label="Terminal panels">
           {visiblePaneIds.map((id, index) => (
             <button key={id} type="button" aria-label={`Panel ${index + 1}`} aria-current={id === effectiveMobilePaneId ? 'page' : undefined}
+              ref={id === effectiveMobilePaneId ? mobileActivePanelButtonRef : undefined}
               onClick={() => setMobilePaneId(id)}>{index + 1}</button>
           ))}
         </nav>

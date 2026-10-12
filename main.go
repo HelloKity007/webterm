@@ -166,13 +166,6 @@ func main() {
 	layoutH := &handler.LayoutHandler{Store: st, Hub: layoutHub, Registry: wsRegistry, Presence: presenceRegistry}
 	wsTickets := handler.NewWSTicketService()
 	wsTicketH := &handler.WSTicketHandler{Store: st, Tickets: wsTickets}
-	wheelDiagH := &handler.WheelDiagHandler{}
-	if *deploymentEnvironment == "release-test" {
-		wheelDiagH.SetEnabled(true)
-		mux.Handle("POST /api/diag/wheel", auth.Middleware(http.HandlerFunc(wheelDiagH.AppendHTTP)))
-		mux.Handle("GET /api/diag/wheel", auth.Middleware(http.HandlerFunc(wheelDiagH.SnapshotHTTP)))
-	}
-
 	wsH := &handler.WSHandler{
 		Store: st, Pool: pool, AESCipher: aesCipher,
 		TmuxSessionDirectory: *sessionDirectory, TmuxSessionBinary: *sessionBinary,

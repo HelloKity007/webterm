@@ -52,5 +52,6 @@ lan_start_release
 release_wait_health "http://127.0.0.1:8889/api/health" release-test "$candidate" || lan_die "release-test failed its versioned health check"
 public_health="$(curl --silent --show-error --insecure --interface "$LAN_PUBLIC_IP" "https://$LAN_PUBLIC_IP:9444/api/health")"
 [[ "$public_health" == *"\"version\":\"$candidate\""* ]] || lan_die "release-test public endpoint is not serving the candidate; reload Caddy"
+BROWSER_ONLY=1 "$SCRIPT_DIR/release-gate.sh"
 echo "release candidate deployed: $candidate"
 echo "release test URL: https://$LAN_PUBLIC_IP:9444/"
