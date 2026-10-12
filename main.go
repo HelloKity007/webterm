@@ -128,6 +128,12 @@ func main() {
 	}
 	defer st.Close()
 	seedAdmin(st)
+	if pruned, err := st.PruneSessionLogs(30); err == nil && pruned > 0 {
+		log.Printf("pruned %d session logs older than 30 days", pruned)
+	}
+	if closed, err := st.CloseStaleReservations(24); err == nil && closed > 0 {
+		log.Printf("closed %d stale terminal reservations", closed)
+	}
 
 	aesCipher, err := crypto.New(cfg.EncryptionKey)
 	if err != nil {

@@ -1,0 +1,7 @@
+[Unit]
+Description=WebTerm periodic cleanup (orphan tmux + runtime artifacts)
+
+[Service]
+Type=oneshot
+ExecStart=/media/pgz/DATA-B/code/tools/webterm-xufanchn/webterm-HelloKity007/scripts/cleanup-orphan-tmux.sh
+ExecStart=/media/pgz/DATA-B/code/tools/webterm-xufanchn/webterm-HelloKity007/scripts/cleanup-runtime.sh
