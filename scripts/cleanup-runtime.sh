@@ -17,7 +17,7 @@ freed=0
 # the release deployment directory itself.
 preserve_name() {
   case "$1" in
-    release|release-gate|tmux-fixed|production|wheel-diag-20261010) return 0 ;;
+    release|release-gate|tmux-fixed|production|wheel-diag-20261010|resilience-*|geometry-*|automatic-*) return 0 ;;
   esac
   return 1
 }
