@@ -73,6 +73,19 @@ async function waitForCaptureLine(sessionName, marker) {
   throw new Error(`terminal never executed keyboard marker ${marker}`);
 }
 
+// The frontend no longer exposes a per-terminal input hook; drive the focused
+// xterm textarea through real key events instead.
+async function sendToTerminal(text, { submit = true } = {}) {
+  await page.evaluate(() => document.querySelector('.xterm-helper-textarea')?.focus());
+  await page.keyboard.type(text);
+  if (submit) await page.keyboard.press('Enter');
+}
+
+async function pressInTerminal(key) {
+  await page.evaluate(() => document.querySelector('.xterm-helper-textarea')?.focus());
+  await page.keyboard.press(key);
+}
+
 let browser;
 let context;
 let page;
@@ -97,8 +110,12 @@ try {
   const temporaryLogin = await login(page, temporaryUsername, temporaryPassword);
   const token = temporaryLogin.token;
   const connection = await api(page, token, '/api/quick-connect/local', { method: 'POST', body: '{}' });
-  const terminalID = `context-menu-tab-${randomBytes(8).toString('hex')}`;
-  sessionName = `wt${String(temporaryUserID).padStart(2, '0')}-01-01-${createHash('sha256').update(terminalID).digest('hex').slice(0, 16)}`;
+  // Terminal identity is allocated by the backend; a fabricated layout id is
+  // rejected by identity verification and the terminal never attaches.
+  const terminalID = (await api(page, token, `/api/terminal-sessions/${connection.connection.id}`, { method: 'POST', body: '{}' })).terminal_id;
+  // Mirrors handler/persistent_terminal.go persistentTerminalSessionName:
+  // wt-<userID>-<connectionID>-<sha256(terminalID)[:8] as 16 hex chars>.
+  sessionName = `wt-${temporaryUserID}-${connection.connection.id}-${createHash('sha256').update(terminalID).digest('hex').slice(0, 16)}`;
   const current = await api(page, token, '/api/layout');
   await api(page, token, '/api/layout', {
     method: 'PUT',
@@ -115,18 +132,27 @@ try {
     localStorage.setItem('token', token);
     localStorage.setItem('webterm-user', JSON.stringify(user));
     window.__terminalVerificationSends = [];
+    window.__terminalVerificationSocket = null;
     const originalSend = WebSocket.prototype.send;
     WebSocket.prototype.send = function verificationSend(data) {
+      if (!window.__terminalVerificationSocket) window.__terminalVerificationSocket = this;
       if (typeof data === 'string') window.__terminalVerificationSends.push(data);
       return originalSend.call(this, data);
     };
   }, { token, user: temporaryLogin.user });
   await page.reload({ waitUntil: 'domcontentloaded', timeout });
-  await page.waitForFunction((id) => typeof window[`webterm-ws-${id}`] === 'function', terminalID, { timeout });
+  // Wait for the shell socket to be open, not for a removed per-terminal
+  // window hook. WebGL rendering leaves .xterm-rows empty, so DOM text is not
+  // a readiness signal.
+  await page.waitForFunction(() => (
+    Boolean(document.querySelector('.xterm-helper-textarea'))
+    && window.__terminalVerificationSocket
+    && window.__terminalVerificationSocket.readyState === WebSocket.OPEN
+  ), null, { timeout });
   const screen = page.locator('.xterm-screen');
   await screen.waitFor({ state: 'visible', timeout });
   await page.getByTitle('展开侧边栏').waitFor({ state: 'visible', timeout });
-  await page.getByTitle('展开 SFTP').waitFor({ state: 'visible', timeout });
+  await page.getByTitle('SSH 终端').waitFor({ state: 'visible', timeout });
   const box = await screen.boundingBox();
   if (!box) throw new Error('terminal screen has no bounds');
 
@@ -167,10 +193,12 @@ try {
     process.stdout.write(`${JSON.stringify({ keyboardInputAndEnter: 'ok', ctrlCInterrupt: 'ok', interruptMessages, pageErrors })}\n`);
   } else {
   const copyMarker = `WEBTERM_CONTEXT_COPY_${randomBytes(6).toString('hex')}`;
-  await page.evaluate(({ id, marker }) => {
-    window[`webterm-ws-${id}`](JSON.stringify({ data: `printf '${marker}\\n'\r` }));
-  }, { id: terminalID, marker: copyMarker });
+  await sendToTerminal(`printf '${copyMarker}\\n'`);
   await waitForCapture(sessionName, copyMarker);
+  // The selection drag below starts on the top terminal row. Keep that row
+  // populated on any panel height, otherwise auto-copy has nothing to copy.
+  await sendToTerminal('for i in $(seq 1 40); do echo SELECT-ROW-$i; done');
+  await waitForCapture(sessionName, 'SELECT-ROW-40');
   await new Promise((resolve) => setTimeout(resolve, 300));
 
   await screen.click({ button: 'right', position: { x: box.width / 2, y: box.height / 2 } });
@@ -239,63 +267,6 @@ try {
   await page.getByText('复制', { exact: true }).click();
   const copied = await page.evaluate(() => navigator.clipboard.readText());
   if (!copied) throw new Error('frontend Copy left the clipboard empty');
-
-  await screen.click({ position: { x: Math.min(80, box.width / 4), y: Math.min(80, box.height / 4) } });
-  await page.keyboard.type(`node ${JSON.stringify(selectionFixture)}`);
-  await page.keyboard.press('Enter');
-  await waitForCapture(sessionName, 'SYNTHETIC_CLI_SELECT_ROW_03');
-  const terminalRows = paneHistory(sessionName, '#{window_height}');
-  const rowHeight = box.height / terminalRows;
-  await screen.click({ position: { x: Math.min(80, box.width / 4), y: rowHeight * 0.5 } });
-  await waitForCapture(sessionName, 'SYNTHETIC_CLI_CLICK_OK');
-  await page.evaluate(() => { window.__terminalVerificationSends = []; });
-  await page.mouse.move(box.x + 4, box.y + rowHeight * 2.5);
-  await page.mouse.down();
-  await page.mouse.move(box.x + Math.min(410, box.width - 8), box.y + rowHeight * 2.5, { steps: 8 });
-  await page.mouse.up();
-  await page.getByRole('status').filter({ hasText: '已复制' }).waitFor({ state: 'visible', timeout });
-  if (await page.locator('.terminal-selection-snapshot > div').count() === 0) {
-    throw new Error('direct TUI drag did not preserve a visual snapshot after mouse release');
-  }
-  const tuiCopied = await page.evaluate(() => navigator.clipboard.readText());
-  if (!tuiCopied.includes('SYNTHETIC_CLI_SELECT_ROW_03')) {
-    throw new Error(`direct TUI drag copied the wrong fullscreen TUI text: ${JSON.stringify(tuiCopied)}`);
-  }
-  const selectionMessages = await page.evaluate(() => window.__terminalVerificationSends);
-  if (selectionMessages.some((message) => message.includes('\\u001b[<'))) {
-    throw new Error(`direct TUI drag leaked mouse reports into fullscreen TUI: ${JSON.stringify(selectionMessages)}`);
-  }
-  await page.evaluate((id) => window[`webterm-ws-${id}`](JSON.stringify({ data: '\u0004' })), terminalID);
-  const selectionExitDeadline = Date.now() + 3000;
-  while (Date.now() < selectionExitDeadline && paneCurrentCommand(sessionName) !== 'bash') {
-    await new Promise((resolve) => setTimeout(resolve, 50));
-  }
-  if (paneCurrentCommand(sessionName) !== 'bash') throw new Error('synthetic selection TUI did not exit');
-
-  const shortcutPasteMarker = `WEBTERM_SHORTCUT_PASTE_${randomBytes(6).toString('hex')}`;
-  await page.evaluate((marker) => navigator.clipboard.writeText(marker), shortcutPasteMarker);
-  await page.evaluate(() => { window.__terminalVerificationSends = []; });
-  await page.keyboard.press('Control+Shift+V');
-  try {
-    await waitForCapture(sessionName, shortcutPasteMarker);
-  } catch (error) {
-    const diagnostic = await page.evaluate(() => ({
-      activeElement: document.activeElement?.className || document.activeElement?.tagName,
-      notices: Array.from(document.querySelectorAll('[role="status"]')).map((node) => node.textContent),
-      sends: window.__terminalVerificationSends,
-    }));
-    throw new Error(`${error.message}; browser=${JSON.stringify(diagnostic)}`);
-  }
-  const shortcutPasteMessages = await page.evaluate(() => window.__terminalVerificationSends);
-  const shortcutPasteData = shortcutPasteMessages.map((message) => {
-    try { return JSON.parse(message).data || ''; } catch { return ''; }
-  }).join('');
-  const shortcutPasteOccurrences = shortcutPasteData.split(shortcutPasteMarker).length - 1;
-  if (shortcutPasteOccurrences !== 1) {
-    throw new Error(`Ctrl+Shift+V pasted ${shortcutPasteOccurrences} copies: ${JSON.stringify(shortcutPasteMessages)}`);
-  }
-  await page.evaluate((id) => window[`webterm-ws-${id}`](JSON.stringify({ data: '\u0003' })), terminalID);
-
   // Ctrl+V must take the same native paste path. Leaving it to xterm would
   // send ^V (0x16) instead and cancel the keydown that triggers the paste.
   const ctrlVPasteMarker = `WEBTERM_CTRL_V_PASTE_${randomBytes(6).toString('hex')}`;
@@ -325,17 +296,77 @@ try {
   }
   await page.keyboard.press('Control+C');
 
+  await screen.click({ position: { x: Math.min(80, box.width / 4), y: Math.min(80, box.height / 4) } });
+  await page.keyboard.type(`node ${JSON.stringify(selectionFixture)}`);
+  await page.keyboard.press('Enter');
+  await waitForCapture(sessionName, 'SYNTHETIC_CLI_SELECT_ROW_03');
+  const terminalRows = paneHistory(sessionName, '#{window_height}');
+  const rowHeight = box.height / terminalRows;
+  await screen.click({ position: { x: Math.min(80, box.width / 4), y: rowHeight * 0.5 } });
+  await waitForCapture(sessionName, 'SYNTHETIC_CLI_CLICK_OK');
+  await page.evaluate(() => { window.__terminalVerificationSends = []; });
+  await page.mouse.move(box.x + 4, box.y + rowHeight * 2.5);
+  await page.mouse.down();
+  await page.mouse.move(box.x + Math.min(410, box.width - 8), box.y + rowHeight * 2.5, { steps: 8 });
+  await page.mouse.up();
+  await page.getByRole('status').filter({ hasText: '已复制' }).waitFor({ state: 'visible', timeout });
+  // ffc82db removed the persistent selection overlay on purpose. A fullscreen
+  // TUI drag is judged by the copied text and the cleared visual selection,
+  // not by leftover selection chrome that the product no longer renders.
+  if (await page.locator('.terminal-selection-snapshot > div').count() !== 0) {
+    throw new Error('fullscreen TUI drag unexpectedly rendered the removed selection overlay');
+  }
+  if (await page.locator('.xterm-selection div').count() !== 0) {
+    throw new Error('fullscreen TUI selection remained visible after automatic copy');
+  }
+  const tuiCopied = await page.evaluate(() => navigator.clipboard.readText());
+  if (!tuiCopied.includes('SYNTHETIC_CLI_SELECT_ROW_03')) {
+    throw new Error(`direct TUI drag copied the wrong fullscreen TUI text: ${JSON.stringify(tuiCopied)}`);
+  }
+  const selectionMessages = await page.evaluate(() => window.__terminalVerificationSends);
+  if (selectionMessages.some((message) => message.includes('\\u001b[<'))) {
+    throw new Error(`direct TUI drag leaked mouse reports into fullscreen TUI: ${JSON.stringify(selectionMessages)}`);
+  }
+  await pressInTerminal('Control+D');
+  const selectionExitDeadline = Date.now() + 3000;
+  while (Date.now() < selectionExitDeadline && paneCurrentCommand(sessionName) !== 'bash') {
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  if (paneCurrentCommand(sessionName) !== 'bash') throw new Error('synthetic selection TUI did not exit');
+
+  const shortcutPasteMarker = `WEBTERM_SHORTCUT_PASTE_${randomBytes(6).toString('hex')}`;
+  await page.evaluate((marker) => navigator.clipboard.writeText(marker), shortcutPasteMarker);
+  await page.evaluate(() => { window.__terminalVerificationSends = []; });
+  await page.keyboard.press('Control+Shift+V');
+  try {
+    await waitForCapture(sessionName, shortcutPasteMarker);
+  } catch (error) {
+    const diagnostic = await page.evaluate(() => ({
+      activeElement: document.activeElement?.className || document.activeElement?.tagName,
+      notices: Array.from(document.querySelectorAll('[role="status"]')).map((node) => node.textContent),
+      sends: window.__terminalVerificationSends,
+    }));
+    throw new Error(`${error.message}; browser=${JSON.stringify(diagnostic)}`);
+  }
+  const shortcutPasteMessages = await page.evaluate(() => window.__terminalVerificationSends);
+  const shortcutPasteData = shortcutPasteMessages.map((message) => {
+    try { return JSON.parse(message).data || ''; } catch { return ''; }
+  }).join('');
+  const shortcutPasteOccurrences = shortcutPasteData.split(shortcutPasteMarker).length - 1;
+  if (shortcutPasteOccurrences !== 1) {
+    throw new Error(`Ctrl+Shift+V pasted ${shortcutPasteOccurrences} copies: ${JSON.stringify(shortcutPasteMessages)}`);
+  }
+  await pressInTerminal('Control+C');
+
   const pasteMarker = `WEBTERM_CONTEXT_PASTE_${randomBytes(6).toString('hex')}`;
   await page.evaluate((marker) => navigator.clipboard.writeText(marker), pasteMarker);
   await screen.click({ button: 'right', position: { x: box.width / 2, y: box.height / 2 } });
   await page.getByText('粘贴', { exact: true }).click();
   await waitForCapture(sessionName, pasteMarker);
-  await page.evaluate((id) => window[`webterm-ws-${id}`](JSON.stringify({ data: '\u0003' })), terminalID);
+  await pressInTerminal('Control+C');
 
   const clearMarker = `WEBTERM_CLEAR_HISTORY_${randomBytes(6).toString('hex')}`;
-  await page.evaluate(({ id, marker }) => {
-    window[`webterm-ws-${id}`](JSON.stringify({ data: `for i in $(seq 1 120); do echo ${marker}-$i; done\r` }));
-  }, { id: terminalID, marker: clearMarker });
+  await sendToTerminal(`for i in $(seq 1 120); do echo ${clearMarker}-$i; done`);
   await waitForCapture(sessionName, `${clearMarker}-120`);
   if (paneHistory(sessionName, '#{history_limit}') !== 200000) {
     throw new Error(`tmux history limit is ${paneHistory(sessionName, '#{history_limit}')}, want 200000`);
@@ -358,7 +389,7 @@ try {
 
   // Keep the clicked tmux cell blank so the standard menu has a stable shape;
   // clicking a populated cell conditionally inserts "Copy Line" above Split.
-  await page.evaluate((id) => window[`webterm-ws-${id}`](JSON.stringify({ data: 'clear\r' })), terminalID);
+  await sendToTerminal('clear');
   await new Promise((resolve) => setTimeout(resolve, 300));
 
   await page.keyboard.down('Control');
