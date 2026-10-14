@@ -182,6 +182,28 @@ try {
   await page.mouse.click(box.x + 8, box.y + 8);
   await page.getByText('复制', { exact: true }).waitFor({ state: 'hidden', timeout });
 
+  // Right-click near the bottom edge of the window: the menu must flip above
+  // the anchor instead of hanging half outside the visible area.
+  const viewportSize = page.viewportSize();
+  if (!viewportSize) throw new Error('browser viewport size is unavailable');
+  const bottomAnchor = { x: box.width / 2, y: box.height - 12 };
+  const bottomClientY = box.y + bottomAnchor.y;
+  if (bottomClientY < viewportSize.height - 200) {
+    throw new Error(`terminal bottom is ${viewportSize.height - bottomClientY}px above the window edge; bottom-of-viewport menu scenario is not exercised`);
+  }
+  await screen.click({ button: 'right', position: bottomAnchor });
+  await page.getByText('复制', { exact: true }).waitFor({ state: 'visible', timeout });
+  const menuRect = await page.getByText('复制', { exact: true }).evaluate((node) => {
+    const rect = node.parentElement.getBoundingClientRect();
+    return { top: rect.top, bottom: rect.bottom, left: rect.left, right: rect.right };
+  });
+  if (menuRect.bottom > viewportSize.height || menuRect.top < 0 || menuRect.right > viewportSize.width || menuRect.left < 0) {
+    throw new Error(`bottom right-click menu is outside the viewport: ${JSON.stringify({ menuRect, viewportSize })}`);
+  }
+  await page.screenshot({ path: '/tmp/webterm-bottom-right-click.png' });
+  await page.mouse.click(box.x + 8, box.y + 8);
+  await page.getByText('复制', { exact: true }).waitFor({ state: 'hidden', timeout });
+
   await page.mouse.move(box.x + 8, box.y + 15);
   await page.mouse.down();
   await page.mouse.move(box.x + Math.min(500, box.width - 8), box.y + 15, { steps: 8 });
@@ -274,6 +296,35 @@ try {
   }
   await page.evaluate((id) => window[`webterm-ws-${id}`](JSON.stringify({ data: '\u0003' })), terminalID);
 
+  // Ctrl+V must take the same native paste path. Leaving it to xterm would
+  // send ^V (0x16) instead and cancel the keydown that triggers the paste.
+  const ctrlVPasteMarker = `WEBTERM_CTRL_V_PASTE_${randomBytes(6).toString('hex')}`;
+  await page.evaluate((marker) => navigator.clipboard.writeText(marker), ctrlVPasteMarker);
+  await page.evaluate(() => { window.__terminalVerificationSends = []; });
+  await page.keyboard.press('Control+V');
+  try {
+    await waitForCapture(sessionName, ctrlVPasteMarker);
+  } catch (error) {
+    const diagnostic = await page.evaluate(() => ({
+      activeElement: document.activeElement?.className || document.activeElement?.tagName,
+      notices: Array.from(document.querySelectorAll('[role="status"]')).map((node) => node.textContent),
+      sends: window.__terminalVerificationSends,
+    }));
+    throw new Error(`Ctrl+V did not paste: ${error.message}; browser=${JSON.stringify(diagnostic)}`);
+  }
+  const ctrlVPasteMessages = await page.evaluate(() => window.__terminalVerificationSends);
+  const ctrlVPasteData = ctrlVPasteMessages.map((message) => {
+    try { return JSON.parse(message).data || ''; } catch { return ''; }
+  }).join('');
+  const ctrlVPasteOccurrences = ctrlVPasteData.split(ctrlVPasteMarker).length - 1;
+  if (ctrlVPasteOccurrences !== 1) {
+    throw new Error(`Ctrl+V pasted ${ctrlVPasteOccurrences} copies: ${JSON.stringify(ctrlVPasteMessages)}`);
+  }
+  if (ctrlVPasteData.includes(String.fromCharCode(22))) {
+    throw new Error(`Ctrl+V leaked ^V to the terminal instead of pasting: ${JSON.stringify(ctrlVPasteMessages)}`);
+  }
+  await page.keyboard.press('Control+C');
+
   const pasteMarker = `WEBTERM_CONTEXT_PASTE_${randomBytes(6).toString('hex')}`;
   await page.evaluate((marker) => navigator.clipboard.writeText(marker), pasteMarker);
   await screen.click({ button: 'right', position: { x: box.width / 2, y: box.height / 2 } });
@@ -348,7 +399,7 @@ try {
   await page.getByText('八分屏（上四下四）', { exact: true }).click();
   await page.waitForFunction(() => document.querySelectorAll('.xterm-screen').length === 8, null, { timeout });
   if (pageErrors.length > 0) throw new Error(`browser errors: ${pageErrors.join(' | ')}`);
-  process.stdout.write(`${JSON.stringify({ defaultPanels: 'collapsed', keyboardInputAndEnter: 'ok', ctrlCInterrupt: 'ok', interruptMessages, plainRightClick: 'frontend-only', outsideClickClose: 'ok', plainLeftSelection: 'ok', fullscreenTuiSelectAndCopy: 'ok-no-mouse-leak', copyShortcutBrowserDefault: 'blocked', keyboardCopyPaste: 'single-copy', contextMenuCopyPaste: 'ok', clearCurrentTabHistory: 'ok', tmuxHistoryLimit: paneHistory(sessionName, '#{history_limit}'), ctrlRightClick: 'tmux-mouse-operable', ctrlRightClickMessages, eightPaneGrid: '4x2', pageErrors })}\n`);
+  process.stdout.write(`${JSON.stringify({ defaultPanels: 'collapsed', keyboardInputAndEnter: 'ok', ctrlCInterrupt: 'ok', interruptMessages, plainRightClick: 'frontend-only', outsideClickClose: 'ok', bottomRightClickMenu: 'inside-viewport', menuRect, plainLeftSelection: 'ok', fullscreenTuiSelectAndCopy: 'ok-no-mouse-leak', copyShortcutBrowserDefault: 'blocked', keyboardCopyPaste: 'single-copy', ctrlVPaste: 'single-copy', contextMenuCopyPaste: 'ok', clearCurrentTabHistory: 'ok', tmuxHistoryLimit: paneHistory(sessionName, '#{history_limit}'), ctrlRightClick: 'tmux-mouse-operable', ctrlRightClickMessages, eightPaneGrid: '4x2', pageErrors })}\n`);
   }
 } finally {
   if (controllerToken && temporaryUserID && page) { try { await api(page, controllerToken, `/api/users/${temporaryUserID}`, { method: 'DELETE' }); } catch { /* cleanup best effort */ } }

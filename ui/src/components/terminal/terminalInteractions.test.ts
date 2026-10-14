@@ -309,6 +309,45 @@ describe('terminal clipboard actions', () => {
     expect(copy).not.toHaveBeenCalled();
   });
 
+  it('claims Ctrl+V from xterm without canceling the browser paste event', () => {
+    const copy = vi.fn();
+    const preventDefault = vi.fn();
+    const stopPropagation = vi.fn();
+
+    const handledByTerminal = routeTerminalClipboardShortcut(
+      {
+        type: 'keydown',
+        key: 'v',
+        ctrlKey: true,
+        shiftKey: false,
+        altKey: false,
+        metaKey: false,
+        preventDefault,
+        stopPropagation,
+      },
+      { copy },
+    );
+
+    // Returning false keeps xterm from mapping Ctrl+V to ^V; leaving the event
+    // uncanceled is what lets the native paste event reach xterm's paste path.
+    expect(handledByTerminal).toBe(false);
+    expect(preventDefault).not.toHaveBeenCalled();
+    expect(stopPropagation).toHaveBeenCalledTimes(1);
+    expect(copy).not.toHaveBeenCalled();
+  });
+
+  it('leaves Ctrl+Alt and Ctrl+Command V to xterm unchanged', () => {
+    const copy = vi.fn();
+
+    for (const modifiers of [{ altKey: true, metaKey: false }, { altKey: false, metaKey: true }]) {
+      expect(routeTerminalClipboardShortcut(
+        { type: 'keydown', key: 'v', ctrlKey: true, shiftKey: false, ...modifiers },
+        { copy },
+      )).toBe(true);
+    }
+    expect(copy).not.toHaveBeenCalled();
+  });
+
   it('copies the selection snapshot captured before the context menu opened', async () => {
     const clipboard = { writeText: vi.fn().mockResolvedValue(undefined) };
 

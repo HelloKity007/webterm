@@ -172,14 +172,23 @@ export function routeTerminalClipboardShortcut(
   event: TerminalKeyboardEvent,
   actions: TerminalClipboardShortcutActions,
 ): boolean {
-  if (!event.ctrlKey || !event.shiftKey || event.altKey || event.metaKey) return true;
+  if (!event.ctrlKey || event.altKey || event.metaKey) return true;
   const key = event.key.toLowerCase();
-  // Ctrl+Shift+V already produces a trusted browser paste event that xterm
-  // handles. Reading and pasting here as well duplicates the payload.
-  if (key !== 'c') return true;
-  event.preventDefault?.();
+  if (event.shiftKey) {
+    // Ctrl+Shift+V already produces a trusted browser paste event that xterm
+    // handles. Reading and pasting here as well duplicates the payload.
+    if (key !== 'c') return true;
+    event.preventDefault?.();
+    event.stopPropagation?.();
+    if (event.type === 'keydown') actions.copy();
+    return false;
+  }
+  // Ctrl+V is mapped by xterm to ^V (0x16) and that mapping cancels the
+  // keydown, which suppresses the browser's native paste event entirely.
+  // Claim the shortcut from xterm without canceling it so the same trusted
+  // paste path Ctrl+Shift+V uses still runs.
+  if (key !== 'v') return true;
   event.stopPropagation?.();
-  if (event.type === 'keydown') actions.copy();
   return false;
 }
 
