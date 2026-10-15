@@ -18,6 +18,8 @@ import { shouldPersistLayout } from './layoutSave';
 import { useWebSocket } from '../../hooks/useWebSocket';
 import { panelGrid, presetDestinationID, replaceLeafWithEightPaneGrid } from './layoutPresets';
 import { canDismissUnverifiedTerminal, closeTerminalSession, createTerminalSession } from '../../api/terminalSessions';
+import { defaultTerminalRecoveryActions, recoverTerminalIdentities, type TerminalRecoveryTarget } from '../terminal/terminalRecovery';
+import { isReleaseTestEnvironment } from '../common/releaseEnvironment';
 import WorkspaceTabBar from './WorkspaceTabBar';
 import { getSharedTerminalGrid, setSharedTerminalGrid } from '../terminal/terminalGridCache';
 import { discardPersistentTerminal } from '../terminal/persistentTerminalStore';
@@ -726,6 +728,34 @@ function LeafPane({ nodeId, restoreVersion, onActiveSshChange, isInSplit, worksp
     replacementInFlightRef.current.set(id, task);
     return task;
   }, []);
+  // release-test only: a production snapshot carries production-scoped
+  // identities that can never verify here, and unvisited tabs are not mounted
+  // at all. Bind every panel to a session that already exists on this server,
+  // otherwise complete it with a fresh one — in the background at layout load,
+  // never on click and never behind a dialog.
+  const recoveryAttemptedRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    let cancelled = false;
+    void isReleaseTestEnvironment().then((releaseTest) => {
+      if (!releaseTest || cancelled) return;
+      const pending: TerminalRecoveryTarget[] = [];
+      tabsRef.current.forEach((tab, index) => {
+        if (tab.type !== 'ssh' || !tab.connId || recoveryAttemptedRef.current.has(tab.id)) return;
+        recoveryAttemptedRef.current.add(tab.id);
+        pending.push({
+          connId: tab.connId,
+          terminalId: tab.id,
+          workspaceIndex,
+          panelNumber: tab.labelNumber ?? index + 1,
+        });
+      });
+      if (pending.length === 0) return;
+      void recoverTerminalIdentities(pending, defaultTerminalRecoveryActions(async (target) => {
+        await replaceUnrecoverableTerminal(target.terminalId);
+      }));
+    });
+    return () => { cancelled = true; };
+  }, [replaceUnrecoverableTerminal, tabs, workspaceIndex]);
   const createSafeTabInCurrentPane = async (tab: Tab) => {
     if (!tab.connId) throw new Error('terminal connection is missing');
     const connection = connections.find((candidate) => candidate.id === tab.connId);
