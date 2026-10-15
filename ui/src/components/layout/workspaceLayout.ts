@@ -166,6 +166,28 @@ export function renameWorkspaceTab(value: PersistedWorkspace, workspaceID: strin
   };
 }
 
+/** Rewrites one panel's terminal id in place across every workspace. */
+export function replaceWorkspaceTabIdentity(value: PersistedWorkspace, tabID: string, nextTabID: string): PersistedWorkspace {
+  if (!tabID || !nextTabID || tabID === nextTabID) return value;
+  let changed = false;
+  const workspaceTabs = value.workspaceTabs.map((workspace) => {
+    let workspaceChanged = false;
+    const panes = Object.fromEntries(Object.entries(workspace.layout.panes).map(([paneID, pane]) => {
+      if (!pane.tabs.some((tab) => tab.id === tabID)) return [paneID, pane];
+      workspaceChanged = true;
+      return [paneID, {
+        ...pane,
+        activeTabId: pane.activeTabId === tabID ? nextTabID : pane.activeTabId,
+        tabs: pane.tabs.map((tab) => (tab.id === tabID ? { ...tab, id: nextTabID } : tab)),
+      }];
+    }));
+    if (!workspaceChanged) return workspace;
+    changed = true;
+    return { ...workspace, layout: { ...workspace.layout, panes } };
+  });
+  return changed ? { workspaceTabs } : value;
+}
+
 /** Reorders the shared workspace list while preserving each workspace's stable index. */
 export function reorderWorkspaceTabs(value: PersistedWorkspace, sourceID: string, targetID: string, after = false): PersistedWorkspace {
   if (sourceID === targetID) return value;

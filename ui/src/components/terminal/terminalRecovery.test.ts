@@ -56,14 +56,16 @@ describe('recoverTerminalIdentity', () => {
     await expect(recoverTerminalIdentity(target, run)).resolves.toBe('failed');
   });
 
-  it('still replaces when adoption itself throws', async () => {
+  it('still replaces when adoption itself throws, without re-probing', async () => {
+    const probe = vi.fn(async () => 'unverified' as const);
     const run = actions({
-      probe: vi.fn(async () => 'unverified' as const),
+      probe,
       adopt: vi.fn(async () => { throw new Error('identity belongs to another endpoint'); }),
     });
 
     await expect(recoverTerminalIdentity(target, run)).resolves.toBe('replaced');
     expect(run.replace).toHaveBeenCalledTimes(1);
+    expect(probe).toHaveBeenCalledTimes(1);
   });
 });
 

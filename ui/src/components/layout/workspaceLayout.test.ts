@@ -7,6 +7,7 @@ import {
   normalizePersistedWorkspace,
   preserveLocalWorkspaceSelection,
   renameWorkspaceTab,
+  replaceWorkspaceTabIdentity,
   removeWorkspaceTab,
   reorderWorkspaceTabs,
   sharedWorkspaceSnapshot,
@@ -162,5 +163,37 @@ describe('workspace layout schema v2', () => {
     expect(reorderWorkspaceTabs(value, 'one', 'three', true).workspaceTabs.map(tab => tab.id)).toEqual(['two', 'three', 'one']);
     expect(reorderWorkspaceTabs(value, 'one', 'missing')).toBe(value);
     expect(reorderWorkspaceTabs(value, 'three', 'one').workspaceTabs.map(tab => tab.index)).toEqual([3, 1, 2]);
+  });
+});
+
+describe('replaceWorkspaceTabIdentity', () => {
+  function fixture() {
+    const value = migrateLayoutV1(emptyPersistedLayout())!;
+    value.workspaceTabs[0].layout.panes.root.tabs = [
+      { id: 'keep', type: 'ssh', title: 'kept', connId: 1 },
+      { id: 'swap', type: 'ssh', title: 'swapped', connId: 2, labelNumber: 7 },
+    ];
+    value.workspaceTabs[0].layout.panes.root.activeTabId = 'swap';
+    return value;
+  }
+
+  it('rewrites the panel id and keeps it selected', () => {
+    const result = replaceWorkspaceTabIdentity(fixture(), 'swap', 'fresh');
+    const pane = result.workspaceTabs[0].layout.panes.root;
+    expect(pane.tabs.map((tab) => tab.id)).toEqual(['keep', 'fresh']);
+    expect(pane.tabs[1]).toMatchObject({ title: 'swapped', connId: 2, labelNumber: 7 });
+    expect(pane.activeTabId).toBe('fresh');
+  });
+
+  it('leaves every other panel and workspace untouched', () => {
+    const original = fixture();
+    const result = replaceWorkspaceTabIdentity(original, 'missing', 'fresh');
+    expect(result).toBe(original);
+  });
+
+  it('ignores empty or identical identities', () => {
+    const original = fixture();
+    expect(replaceWorkspaceTabIdentity(original, '', 'fresh')).toBe(original);
+    expect(replaceWorkspaceTabIdentity(original, 'swap', 'swap')).toBe(original);
   });
 });

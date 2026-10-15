@@ -27,7 +27,13 @@ export async function recoverTerminalIdentity(
   try {
     await actions.adopt(target);
   } catch {
-    // Adoption is best-effort: a foreign or legacy identity cannot be bound.
+    // Nothing was bound, so the identity is unchanged: skip the re-probe.
+    try {
+      await actions.replace(target);
+      return 'replaced';
+    } catch {
+      return 'failed';
+    }
   }
   if (await actions.probe(target) === 'ready') return 'adopted';
   try {
@@ -36,6 +42,21 @@ export async function recoverTerminalIdentity(
   } catch {
     return 'failed';
   }
+}
+
+const recoveryInFlight = new Map<string, Promise<TerminalRecoveryOutcome>>();
+
+// A layout reload and a pane mounting may ask for the same panel at once.
+// One attempt per terminal id keeps recovery from creating duplicate sessions.
+export function recoverTerminalIdentityOnce(
+  target: TerminalRecoveryTarget,
+  actions: TerminalRecoveryActions,
+): Promise<TerminalRecoveryOutcome> {
+  const existing = recoveryInFlight.get(target.terminalId);
+  if (existing) return existing;
+  const task = recoverTerminalIdentity(target, actions).finally(() => recoveryInFlight.delete(target.terminalId));
+  recoveryInFlight.set(target.terminalId, task);
+  return task;
 }
 
 export function defaultTerminalRecoveryActions(replace: (target: TerminalRecoveryTarget) => Promise<unknown>): TerminalRecoveryActions {
@@ -58,7 +79,7 @@ export async function recoverTerminalIdentities(
   const workers = Array.from({ length: Math.max(1, Math.min(concurrency, queue.length)) }, async () => {
     for (let target = queue.shift(); target; target = queue.shift()) {
       try {
-        outcomes.set(target.terminalId, await recoverTerminalIdentity(target, actions));
+        outcomes.set(target.terminalId, await recoverTerminalIdentityOnce(target, actions));
       } catch {
         outcomes.set(target.terminalId, 'failed');
       }

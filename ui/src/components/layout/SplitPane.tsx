@@ -31,6 +31,7 @@ import {
   normalizePersistedWorkspace,
   preserveLocalWorkspaceSelection,
   renameWorkspaceTab,
+  replaceWorkspaceTabIdentity,
   removeWorkspaceTab,
   reorderWorkspaceTabs,
   sharedWorkspaceSnapshot,
@@ -303,6 +304,60 @@ function restoreLayout(value: unknown) {
   useLayoutStore.getState().setFocusedPane(focusedPane);
   layoutRestoreVersion++;
   notify();
+}
+
+// Rewrites one panel's terminal id wherever it currently lives: the mounted
+// panes of the active workspace and every persisted workspace, including ones
+// that are not open yet.
+function applyTerminalIdentityReplacement(tabID: string, nextTabID: string) {
+  let changed = false;
+  for (const [paneID, tabs] of paneTabsCache) {
+    if (!tabs.some((tab) => tab.id === tabID)) continue;
+    paneTabsCache.set(paneID, tabs.map((tab) => (tab.id === tabID ? { ...tab, id: nextTabID } : tab)));
+    if (paneActiveCache.get(paneID) === tabID) paneActiveCache.set(paneID, nextTabID);
+    changed = true;
+  }
+  const next = replaceWorkspaceTabIdentity(workspaceState, tabID, nextTabID);
+  if (next !== workspaceState) {
+    workspaceState = next;
+    changed = true;
+  }
+  if (!changed) return;
+  layoutRestoreVersion++;
+  notify();
+}
+
+let terminalPrewarmInFlight: Promise<void> | null = null;
+
+// release-test only: a production snapshot carries production-scoped identities
+// that can never verify here. Recover every panel of every workspace in the
+// background at layout load — including workspaces that are not open — so no
+// panel is ever first judged when the user clicks it.
+function prewarmTerminalRecovery(): Promise<void> {
+  if (!terminalPrewarmInFlight) {
+    terminalPrewarmInFlight = (async () => {
+      if (!await isReleaseTestEnvironment()) return;
+      const targets: TerminalRecoveryTarget[] = [];
+      workspaceState.workspaceTabs.forEach((workspace) => {
+        Object.values(workspace.layout.panes).forEach((pane) => {
+          pane.tabs.forEach((tab) => {
+            if (tab.type !== 'ssh' || !tab.connId) return;
+            targets.push({
+              connId: tab.connId,
+              terminalId: tab.id,
+              workspaceIndex: workspace.index,
+              panelNumber: tab.labelNumber || 1,
+            });
+          });
+        });
+      });
+      await recoverTerminalIdentities(targets, defaultTerminalRecoveryActions(async (target) => {
+        const nextID = await createTerminalSession(target.connId);
+        applyTerminalIdentityReplacement(target.terminalId, nextID);
+      }), 6);
+    })().finally(() => { terminalPrewarmInFlight = null; });
+  }
+  return terminalPrewarmInFlight;
 }
 
 
@@ -728,34 +783,6 @@ function LeafPane({ nodeId, restoreVersion, onActiveSshChange, isInSplit, worksp
     replacementInFlightRef.current.set(id, task);
     return task;
   }, []);
-  // release-test only: a production snapshot carries production-scoped
-  // identities that can never verify here, and unvisited tabs are not mounted
-  // at all. Bind every panel to a session that already exists on this server,
-  // otherwise complete it with a fresh one — in the background at layout load,
-  // never on click and never behind a dialog.
-  const recoveryAttemptedRef = useRef<Set<string>>(new Set());
-  useEffect(() => {
-    let cancelled = false;
-    void isReleaseTestEnvironment().then((releaseTest) => {
-      if (!releaseTest || cancelled) return;
-      const pending: TerminalRecoveryTarget[] = [];
-      tabsRef.current.forEach((tab, index) => {
-        if (tab.type !== 'ssh' || !tab.connId || recoveryAttemptedRef.current.has(tab.id)) return;
-        recoveryAttemptedRef.current.add(tab.id);
-        pending.push({
-          connId: tab.connId,
-          terminalId: tab.id,
-          workspaceIndex,
-          panelNumber: tab.labelNumber ?? index + 1,
-        });
-      });
-      if (pending.length === 0) return;
-      void recoverTerminalIdentities(pending, defaultTerminalRecoveryActions(async (target) => {
-        await replaceUnrecoverableTerminal(target.terminalId);
-      }));
-    });
-    return () => { cancelled = true; };
-  }, [replaceUnrecoverableTerminal, tabs, workspaceIndex]);
   const createSafeTabInCurrentPane = async (tab: Tab) => {
     if (!tab.connId) throw new Error('terminal connection is missing');
     const connection = connections.find((candidate) => candidate.id === tab.connId);
@@ -1230,6 +1257,7 @@ export default function SplitPane({ onActiveSshChange }: { onActiveSshChange?: (
     revisionRef.current = response.revision;
     persistedLayoutRef.current = JSON.stringify(sharedWorkspaceSnapshot(workspaceSnapshot()));
     restoredAtRef.current = Date.now();
+    void prewarmTerminalRecovery();
     if (response.skipped_tabs > 0) setLayoutMessage(`已跳过 ${response.skipped_tabs} 个无法访问的已保存标签页。`);
   }, []);
 
