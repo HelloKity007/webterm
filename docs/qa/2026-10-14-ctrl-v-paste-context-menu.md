@@ -34,3 +34,32 @@
 - release-test 开启 `-test-auto-login`，页面加载即用 admin 覆盖会话，脚本的临时用户流程在 9444 上无法直接使用，故 9444 侧证据来自上述只读探针。
 - AGENTS.md 要求的终端动态视觉回归矩阵（双端同会话字号、刷新后全量重跑、手机交互、标签拖动排序等）本轮 NOT RUN。
 - Ctrl+V 现不再向远端发送 `^V`(0x16)；需要字面 `^V` 的终端场景需改用其它输入方式。
+
+---
+
+## 2026-10-15 发布测试环境后台终端身份绑定
+
+候选 `51cf2f6`（`dev-1.1.2`），已部署 9444。生产 9443 未变更。
+
+**背景**：测试库是生产库快照，快照里的身份是 `environment=production` + 生产隔离 socket，而 release-test 服务要求 `release-test` + `webterm-release-test-fixed`，因此每个 Panel 点开都会报
+`terminal identity is missing, inactive, or no longer matches this connection`。未点开的 Panel 又因为懒挂载根本不做校验，所以「点了才提示」。
+
+**变更**（仅 release-test，生产仍保持 fail-closed 弹窗）：
+
+- `ui/src/components/terminal/terminalRecovery.ts`：单 Panel 恢复流程——先探测身份，再 adopt 绑定既有远端会话（adopt 永不新建会话），绑不上才新建并替换；同一 terminal id 只跑一次。
+- `ui/src/components/layout/workspaceLayout.ts`：`replaceWorkspaceTabIdentity` 在所有工作区里原位改写 Panel 的 terminal id（含未打开的工作区）。
+- `ui/src/components/layout/SplitPane.tsx`：布局应用后对**全部工作区**预热（含未切换到的），改写同时落在已挂载 pane 缓存与持久化工作区，`paneActiveCache` 一并更新，保持当前选中 Panel 不变。
+
+**证据**（`https://192.168.11.87:9444/`，只读探针 + UI 点击，未输入任何终端内容）：
+
+- 部署后页面加载即触发预热：25 个 SSH Panel（工作区 3572 与 730 合计）在 **03:24:15–03:24:19 共 4 秒**内全部完成绑定，DB 中新增 25 条 `release-test`+`active` 身份，无需切换工作区、无需点击 Panel。
+- 切到 tab2（730）后逐个点开 Panel（45/48/迁移基线1、hdcp1 等）：`role="alert"` 覆盖层为空，页面不含 identity 文案，未出现「连接已断开」。
+- 单测 248 通过（含 `terminalRecovery.test.ts` 6 例、`workspaceLayout.test.ts` 新增 `replaceWorkspaceTabIdentity` 3 例）；lint 干净；`go test ./...` 通过。
+- post-deploy release-gate PASS，版本 `51cf2f672d95d545f7480aae7755de63c7d0ee9b`。
+
+**限制**：
+
+- 自动绑定只覆盖 release-test；生产遇到身份失效仍弹窗，需人工选择（adopt / 新建 / 移除）。
+- 「绑定既有会话」指 release-test 自己 socket 上的既有会话；生产隔离 socket 上的会话测试端无法访问，绑不上时按授权自动新建独立终端（不恢复原进程）。
+- 每次 `release-deploy.sh` 重拍快照后，预热会在下次打开页面时重新补齐，无需人工干预。
+- AGENTS.md 的终端动态视觉回归矩阵本轮 NOT RUN。
