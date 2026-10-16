@@ -1501,6 +1501,11 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       if (entries.some(entry => entry.isIntersecting)) {
         scheduleFit();
         activateGeometry();
+        // A hidden panel's WebGL canvas can lose its drawing buffer, and the
+        // fit above no-ops when the grid is unchanged, so nothing repaints and
+        // the panel comes back blank with a lone cursor block. Re-render the
+        // whole buffer whenever the panel becomes visible again.
+        term.refresh(0, term.rows - 1);
       } else deactivateGeometry();
     });
     if (ref.current) visibilityObserver.observe(ref.current);
