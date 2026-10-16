@@ -372,6 +372,19 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
     requestAnimationFrame(() => termRef.current?.focus());
   }, []);
 
+  const revealInputCursor = useCallback(() => {
+    const surface = ref.current;
+    const term = termRef.current;
+    if (!surface?.classList.contains('desktop-local-viewport') || !term) return;
+    if (desktopViewportRef.current) { desktopViewportRef.current.revealCursor(); return; }
+    term.scrollToBottom();
+    const screen = term.element?.querySelector<HTMLElement>('.xterm-screen');
+    if (!screen) return;
+    surface.scrollTop = localViewportRevealRow(surface.scrollTop, surface.clientHeight, surface.scrollHeight,
+      screen.getBoundingClientRect().height / term.rows, term.buffer.active.cursorY);
+  }, []);
+
+
   // Copying should not leave a translucent visual selection behind. xterm can
   // repaint its native selection after React's mouse-up handler, so clear it
   // again on the next paints and task turn.
@@ -509,11 +522,15 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
           { x: pending.clientX, y: pending.clientY, detail: pending.detail },
           { x: event.clientX, y: event.clientY },
         );
+        // A plain click is an intent to type. Reading history must not hide the
+        // input row behind a click the way it used to: reveal it exactly like
+        // the next keypress would, while a drag keeps selecting history.
+        if (!pending.detail || pending.detail <= 1) revealInputCursor();
       }
       return;
     }
     routeTerminalMouseUp(event, mouseStateRef.current, { focusTerminal: focusTerminalAfterPointer });
-  }, [clearVisualSelection, copySelectionText, extendSelectionCopy, focusTerminalAfterPointer]);
+  }, [clearVisualSelection, copySelectionText, extendSelectionCopy, focusTerminalAfterPointer, revealInputCursor]);
 
   useEffect(() => {
     globalSelectionMoveRef.current = (event) => {
@@ -549,9 +566,10 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
           { x: pending.clientX, y: pending.clientY, detail: pending.detail },
           { x: event.clientX, y: event.clientY },
         );
+        if (!pending.detail || pending.detail <= 1) revealInputCursor();
       }
     };
-  }, [clearVisualSelection, copySelectionText, extendSelectionCopy]);
+  }, [clearVisualSelection, copySelectionText, extendSelectionCopy, revealInputCursor]);
 
   useEffect(() => () => {
     if (clipboardNoticeTimerRef.current) clearTimeout(clipboardNoticeTimerRef.current);
@@ -1790,18 +1808,6 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
     });
     return () => disposable.dispose();
   }, [send, setShowHistoryResume, termKey]);
-
-  const revealInputCursor = useCallback(() => {
-    const surface = ref.current;
-    const term = termRef.current;
-    if (!surface?.classList.contains('desktop-local-viewport') || !term) return;
-    if (desktopViewportRef.current) { desktopViewportRef.current.revealCursor(); return; }
-    term.scrollToBottom();
-    const screen = term.element?.querySelector<HTMLElement>('.xterm-screen');
-    if (!screen) return;
-    surface.scrollTop = localViewportRevealRow(surface.scrollTop, surface.clientHeight, surface.scrollHeight,
-      screen.getBoundingClientRect().height / term.rows, term.buffer.active.cursorY);
-  }, []);
 
   const takeSizeControl = useCallback(() => {
     const requested = requestedGridRef.current;
