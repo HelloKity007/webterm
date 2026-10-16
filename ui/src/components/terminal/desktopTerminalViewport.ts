@@ -56,6 +56,17 @@ export function createDesktopTerminalViewport(term: Terminal, surface: HTMLEleme
     element.style.top = `${(term.buffer.active.viewportY - base()) * cellHeight}px`;
     surface.dataset.scrollOwner = 'surface';
     surface.dataset.historyBase = String(base());
+    // A history restore moves xterm's viewport without touching the surface
+    // rail. Left alone, the rendered frame ends up outside the visible band and
+    // the panel paints completely blank after switching back to that tab. Keep
+    // the rail in step with xterm whenever the frame would fall out of view.
+    // A hidden panel has no measurable band; never rewrite its saved position.
+    const frameTop = term.buffer.active.viewportY * cellHeight;
+    const frameBottom = frameTop + term.rows * cellHeight;
+    if (surface.clientHeight > 0 &&
+      (frameBottom <= surface.scrollTop + 1 || frameTop >= surface.scrollTop + surface.clientHeight - 1)) {
+      setTop(frameTop);
+    }
   };
   const revealCursor = () => {
     refresh();
