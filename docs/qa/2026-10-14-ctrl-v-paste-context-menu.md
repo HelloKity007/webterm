@@ -94,3 +94,45 @@
 - post-deploy release-gate PASS，版本 `5fb454c0a93d60737863aaccbfe6a6baeb3169ef`。
 
 **限制**：AGENTS.md 的终端动态视觉回归矩阵本轮 NOT RUN；移动端滚动路径（`localViewportRevealRow`）未改，建议手机端顺手看一眼长历史滚动。
+
+---
+
+## 2026-10-16 点击唤回光标 + 切回标签 Panel 全空白
+
+候选 `c2dee1b`，已部署 9444。生产 9443 未变更。
+
+**现象**：panel 53 鼠标点击输入位置光标不出现；另有 panel 52/47 一类光标不见的问题。要求补做真实视觉场景测试。
+
+**根因 A（点击不唤回）**：`handleSurfaceMouseUp` 的单击分支只 `replayTerminalLeftClick` + `focus()`，不像按键那样调用 `revealInputCursor`。视口停在历史上方时，点击输入区后光标行仍在视口外。
+
+**根因 B（切回标签整屏空白）**：`restoreShellHistoryViewport` 用 `term.scrollToLine` 移动 xterm 视口，但不改外层滚动条；`refresh()` 再按 `viewportY` 算出 `element.style.top`。两者错位后（实测 `scrollTop=8274` 而 `viewportY=361`）整帧被画到可视区之外，Panel 全黑。历史锚点在切换标签时被重新应用，所以只在「读历史 → 切走 → 切回」后出现。
+
+**修复**：
+
+- `ThemedTerminal.tsx`：单击（非拖选、非双击选词）后 `revealInputCursor()`，与按键一致；拖选仍只选文本不跳视口。文档级 mouseup（拖出面板外松开）同路径。
+- `desktopTerminalViewport.ts`：`refresh()` 里当渲染帧会落到可视区外时把滚动条拉回 `viewportY * cellHeight`；面板隐藏时（`clientHeight === 0`）不改写保存的位置。
+
+**视觉场景测试**（新脚本 `scripts/verify-terminal-viewport-visuals.mjs`，输出 `runtime/terminal-visuals/<stamp>/`）：
+
+覆盖 15 步：5 个标签逐个切换、输入、Enter、制造长历史、滚入历史、点击输入区、再滚入历史、按 Enter、切走切回历史标签、点击未用过的 Panel。每步断言「光标行是否在渲染帧内 / 是否在实时底部 / 轨道与视口是否同步 / 渲染帧是否在可视区内」并截图。
+
+| 步骤 | 结果 |
+|---|---|
+| 01-switch-to-47/53/54/56/57 | PASS（切换后光标可见） |
+| 02-after-typing / 03-after-enter | PASS |
+| 04-after-history-built | PASS |
+| 05-scrolled-into-history | PASS（按预期停在历史，光标不在） |
+| 06-click-input-area-reveals-cursor | PASS（点击唤回光标，截图可见提示行 + 光标块） |
+| 07-scrolled-again / 08-enter-reveals-cursor | PASS |
+| 09-other-tab | PASS |
+| 10-back-on-history-tab | PASS（修复前**整屏空白**；现在保留阅读位置 355–373 行正常显示，轨道与视口同步） |
+| 11-click-untouched-panel | PASS |
+
+两轮均 **15/15**；截图存 `runtime/terminal-visuals/20261016/`（gitignore，未入库）。
+
+**限制**：
+
+- 场景套件跑在 release-test（会向测试 Panel 写入临时内容）；生产未跑。
+- 「读历史 → 切走 → 切回」保留阅读位置而不是跳回输入行；若希望切回来就唤回光标，可再加。
+- 双击选词、拖选、右键菜单、Ctrl+右键 tmux 菜单未纳入本套件；手机端路径未覆盖。
+- AGENTS.md 的终端动态视觉回归矩阵（双端字号、刷新后全量重跑等）本轮 NOT RUN。
