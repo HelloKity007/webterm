@@ -63,3 +63,34 @@
 - 「绑定既有会话」指 release-test 自己 socket 上的既有会话；生产隔离 socket 上的会话测试端无法访问，绑不上时按授权自动新建独立终端（不恢复原进程）。
 - 每次 `release-deploy.sh` 重拍快照后，预热会在下次打开页面时重新补齐，无需人工干预。
 - AGENTS.md 的终端动态视觉回归矩阵本轮 NOT RUN。
+
+---
+
+## 2026-10-16 输入行被画出可视区（长历史 Panel 切标签后光标消失）
+
+候选 `5fb454c`，已部署 9444。生产 9443 未变更。
+
+**现象**：tab2 panel 47（长历史）从其它标签切回来后输入光标不见了，要按 Enter 才出现；panel 52 甚至按 Enter 也不出现「光标行」。
+
+**根因**：`desktopTerminalViewport` 的滚动轨道高度是「历史 spacer + xterm 元素高度」，而 xterm 元素高度取的是屏幕行高整数倍（19×21=399px），面板可视高度是 406px，于是轨道末端比 `baseY * cellHeight` 短 7px。`applySurfaceScroll` 用 `floor(scrollTop / cellHeight)` 映射视口行号，「滚到底」就落到 `baseY - 1`：xterm 被 `top:-21px` 上移一行，实时底部那行（提示行 + 输入光标）被画在空白尾巴里，不可见。
+
+**放大条件**：历史越长 spacer 越高，切换标签时布局/历史锚点恢复触发 scroll 事件就越容易命中这个映射；历史短时轨道根本不滚动，所以只在长历史 Panel 上出现。Enter 之所以「有时管用」，是 `revealCursor` 直接 `scrollToBottom` 把 `viewportY` 拉回 `baseY`；但随后的 scroll 事件又按 floor 映射回 `baseY - 1`，把修正推翻——这就是 panel 52 按 Enter 也没用的原因。
+
+**修复**（`ui/src/components/terminal/desktopTerminalViewport.ts`）：
+
+- `refresh()` 把 xterm 元素高度下限设为 `surface.clientHeight`，轨道末端精确等于 `baseY * cellHeight`。
+- `scrollPosition(…, maxPixels)` 在滚动条末端（`>= maxPixels - 1`）吸附回实时底部，不再落 `baseY - 1`。
+
+**证据**（同一复现脚本前后对比，只在测试环境写入临时终端内容）：
+
+| 状态 | 修复前 | 修复后 |
+|---|---|---|
+| 切标签回来 `xtermTop` | `-21px` | `0px` |
+| xterm 元素 | 465–864（底部 21px 空白） | 479–885（贴满面板） |
+| 输入行 | 整行不可见（截图 `p47-2`） | `x99-pc(87) … $` + 光标块可见 |
+| panel 52 按 Enter | 光标行不出现 | 光标行 + 光标块可见 |
+
+- 单测 249 通过（新增 `scrollPosition` 末端吸附 1 例）；lint 干净；`go test ./...` 通过。
+- post-deploy release-gate PASS，版本 `5fb454c0a93d60737863aaccbfe6a6baeb3169ef`。
+
+**限制**：AGENTS.md 的终端动态视觉回归矩阵本轮 NOT RUN；移动端滚动路径（`localViewportRevealRow`）未改，建议手机端顺手看一眼长历史滚动。
