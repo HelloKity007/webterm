@@ -7,8 +7,14 @@ export function desktopCapacity(width: number, height: number, cellWidth: number
   };
 }
 
-export function scrollPosition(pixels: number, baseY: number, cellHeight: number) {
-  const line = Math.max(0, Math.min(baseY, Math.floor(pixels / cellHeight)));
+export function scrollPosition(pixels: number, baseY: number, cellHeight: number, maxPixels?: number) {
+  // The live frame is a few pixels shorter than the surface whenever the panel
+  // height is not a whole number of rows, so the very end of the scrollbar is
+  // below baseY * cellHeight. Mapping that tail with floor lands one line above
+  // the live bottom and leaves the input row unpainted under the blank tail, so
+  // an "at the end" scroll is snapped back to the live bottom instead.
+  const atLiveBottom = maxPixels !== undefined && pixels >= maxPixels - 1;
+  const line = atLiveBottom ? baseY : Math.max(0, Math.min(baseY, Math.floor(pixels / cellHeight)));
   return { line, top: (line - baseY) * cellHeight };
 }
 
@@ -42,7 +48,10 @@ export function createDesktopTerminalViewport(term: Terminal, surface: HTMLEleme
     cellHeight = height / term.rows;
     spacer.style.height = `${base() * cellHeight}px`;
     element.style.position = 'relative';
-    element.style.height = `${height}px`;
+    // Never shorter than the surface: a panel height that is not a whole number
+    // of rows used to leave the rail a few pixels short of baseY * cellHeight,
+    // so "scrolled to the end" parked the viewport one line above the prompt.
+    element.style.height = `${Math.max(height, surface.clientHeight)}px`;
     element.style.minHeight = '';
     element.style.top = `${(term.buffer.active.viewportY - base()) * cellHeight}px`;
     surface.dataset.scrollOwner = 'surface';
@@ -73,7 +82,8 @@ export function createDesktopTerminalViewport(term: Terminal, surface: HTMLEleme
     refresh();
   };
   const applySurfaceScroll = () => {
-    const position = scrollPosition(surface.scrollTop, base(), cellHeight);
+    const maxTop = Math.max(0, surface.scrollHeight - surface.clientHeight);
+    const position = scrollPosition(surface.scrollTop, base(), cellHeight, maxTop);
     syncing = true;
     term.scrollToLine(position.line);
     syncing = false;
