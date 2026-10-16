@@ -136,3 +136,35 @@
 - 「读历史 → 切走 → 切回」保留阅读位置而不是跳回输入行；若希望切回来就唤回光标，可再加。
 - 双击选词、拖选、右键菜单、Ctrl+右键 tmux 菜单未纳入本套件；手机端路径未覆盖。
 - AGENTS.md 的终端动态视觉回归矩阵（双端字号、刷新后全量重跑等）本轮 NOT RUN。
+
+---
+
+## 2026-10-16 光标不在 `$` 后（Panel 一片空白只剩孤立光标块）
+
+候选 `fdc57ef`，已部署 9444。生产 9443 未变更。
+
+**现象**：panel 53 光标位置异常，按理应该在 `$` 后面。
+
+**排查路径**（记录以免后人重走）：
+
+1. DPR 1 下逐帧差分定位光标块：`$` 墨迹 x 185–192、光标块 x 193–201，同行、紧邻右侧 —— 此时位置是对的。
+2. DPR 2 下看到文字与光标都按 2 倍绘制并被裁切，一度怀疑高 DPI 度量错位；用最小页面验证：Playwright 无头 Chromium 在 `deviceScaleFactor: 2` 下 `window.devicePixelRatio` 是 2，但 `ResizeObserver` 的 `devicePixelContentBoxSize` 仍按 CSS 像素上报（100×100 而非 200×200）。**这是无头浏览器假象，真实浏览器不受影响**，与本问题无关。
+3. 改做**像素级**校验（帧差分找光标块 + 找 `$` 墨迹比对行/列）才复现：tab-53/56 的面板几乎没有文字，光标块孤零零画在空白处（tab-53 在第 18 行，最近的 `$` 在第 0 行），**光标离 `$` 有 17 行**。几何断言（viewportY/cursorRow 数学）此时依然全对 —— 只验数学不验像素会漏掉这一类。
+
+**根因**：隐藏的 Panel（`display:none`）其 WebGL 画布会丢失绘制缓冲；切回来时 `fitWhenVisible` 因网格未变直接 return，没有任何重绘，于是面板空白、只剩光标闪烁层画的一个孤块。
+
+**修复**：`ThemedTerminal.tsx` 的 IntersectionObserver 在面板重新可见时 `term.refresh(0, term.rows - 1)` 整缓冲重绘。
+
+**证据**（`scripts/verify-terminal-cursor-alignment.mjs`，输出 `runtime/terminal-cursor-align/<stamp>/`）：
+
+| 标签 | 修复前 | 修复后 |
+|---|---|---|
+| 47 / 54 / 57 | 光标紧邻 `$` 同行 | PASS |
+| 53 | 面板空白，光标块在第 18 行，`$` 在第 0 行 | PASS（光标块 x 193–201，`$` 墨迹 x 188 同行紧邻） |
+| 56 | 光标块与 `$` 差 2 行 | PASS |
+
+修复后 **5/5 aligned**，截图可见 `x99-pc(87) 03:08:20 $` 后紧跟光标块。
+
+**方法论补充**：像素级校验已入仓库（`verify-terminal-cursor-alignment.mjs`），与几何套件（`verify-terminal-viewport-visuals.mjs`）互补——后者此前在面板空白时仍报 PASS，因为只算坐标不看像素。
+
+**限制**：仍只覆盖 release-test；双击选词、右键菜单、Ctrl+右键 tmux 菜单、手机端未纳入；AGENTS.md 动态视觉回归矩阵本轮 NOT RUN。
