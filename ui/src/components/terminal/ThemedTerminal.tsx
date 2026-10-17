@@ -1501,6 +1501,11 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       if (entries.some(entry => entry.isIntersecting)) {
         scheduleFit();
         activateGeometry();
+        // Hiding a panel resets its scroll rail to 0 while xterm's own viewport
+        // keeps the saved history line. Re-align the rail before the next paint
+        // so the panel comes straight back at the line the user left, instead of
+        // showing the start of the history until something else scrolls it.
+        desktopViewportRef.current?.refresh();
         // A hidden panel's WebGL canvas can lose its drawing buffer, and the
         // fit above no-ops when the grid is unchanged, so nothing repaints and
         // the panel comes back blank with a lone cursor block. Re-render the
