@@ -337,6 +337,15 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
     };
   }, []);
 
+  const selectionAutoScrollRef = useRef<{ direction: number; x: number; y: number; timer: number | null } | null>(null);
+  const selectionAutoScrollUpdateRef = useRef<((x: number, y: number) => void) | null>(null);
+
+  const stopSelectionAutoScroll = useCallback(() => {
+    const state = selectionAutoScrollRef.current;
+    if (state?.timer) window.clearTimeout(state.timer);
+    selectionAutoScrollRef.current = null;
+  }, []);
+
   const extendSelectionCopy = useCallback((clientX: number, clientY: number) => {
     const term = termRef.current;
     const anchor = selectionAnchorRef.current;
@@ -461,6 +470,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       event.preventDefault();
       event.stopPropagation();
       extendSelectionCopy(event.clientX, event.clientY);
+      selectionAutoScrollUpdateRef.current?.(event.clientX, event.clientY);
       return;
     }
     const pending = pendingLeftGestureRef.current;
@@ -480,7 +490,10 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
         termRef.current?.select(pending.anchor.col, pending.anchor.row, 1);
         selectionSnapshotRef.current = termRef.current?.getSelection() || '';
       }
-      if (pending.selecting) extendSelectionCopy(event.clientX, event.clientY);
+      if (pending.selecting) {
+        extendSelectionCopy(event.clientX, event.clientY);
+        selectionAutoScrollUpdateRef.current?.(event.clientX, event.clientY);
+      }
       return;
     }
     routeTerminalMouseMove(event, mouseStateRef.current, { moveTmuxMenuAt });
@@ -498,6 +511,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       selectionAnchorRef.current = null;
       selectionCopyArmedRef.current = false;
       setSelectionCopyArmed(false);
+      stopSelectionAutoScroll();
       void copySelectionText(selected?.text || selectionSnapshotRef.current);
       return;
     }
@@ -514,6 +528,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       pendingLeftGestureRef.current = null;
       selectionAnchorRef.current = null;
       globalSelectionCleanupRef.current?.();
+      stopSelectionAutoScroll();
       if (selecting) {
         void copySelectionText(selected?.text || selectionSnapshotRef.current);
       } else {
@@ -530,7 +545,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       return;
     }
     routeTerminalMouseUp(event, mouseStateRef.current, { focusTerminal: focusTerminalAfterPointer });
-  }, [clearVisualSelection, copySelectionText, extendSelectionCopy, focusTerminalAfterPointer, revealInputCursor]);
+  }, [clearVisualSelection, copySelectionText, extendSelectionCopy, focusTerminalAfterPointer, revealInputCursor, stopSelectionAutoScroll]);
 
   useEffect(() => {
     globalSelectionMoveRef.current = (event) => {
@@ -545,7 +560,10 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
         termRef.current?.select(pending.anchor.col, pending.anchor.row, 1);
         selectionSnapshotRef.current = termRef.current?.getSelection() || '';
       }
-      if (pending.selecting) extendSelectionCopy(event.clientX, event.clientY);
+      if (pending.selecting) {
+        extendSelectionCopy(event.clientX, event.clientY);
+        selectionAutoScrollUpdateRef.current?.(event.clientX, event.clientY);
+      }
     };
     globalSelectionUpRef.current = (event) => {
       const pending = pendingLeftGestureRef.current;
@@ -753,6 +771,43 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       }
     })();
   }, [connId, enqueueTerminalOutput, panelNumber, terminalID, waitForTerminalOutputIdle, workspaceIndex]);
+
+  // Dragging a selection past the top or bottom edge must keep scrolling, the
+  // way every text surface does. Without it a selection can only ever cover
+  // what is already on screen, which made long Bash/Claude transcripts
+  // impossible to copy in one drag. Published through a ref so the mouse-move
+  // callbacks can reach it regardless of declaration order.
+  const updateSelectionAutoScroll = (clientX: number, clientY: number) => {
+    const surface = ref.current;
+    if (!surface) return;
+    const rect = surface.getBoundingClientRect();
+    const edge = Math.min(32, Math.max(16, rect.height * 0.12));
+    const direction = clientY < rect.top + edge ? -1 : clientY > rect.bottom - edge ? 1 : 0;
+    const state = selectionAutoScrollRef.current;
+    if (!direction) {
+      if (state) stopSelectionAutoScroll();
+      return;
+    }
+    if (state && state.direction === direction) {
+      state.x = clientX;
+      state.y = clientY;
+      return;
+    }
+    stopSelectionAutoScroll();
+    const tick = () => {
+      const current = selectionAutoScrollRef.current;
+      if (!current) return;
+      loadShellHistoryForScroll(current.direction * 3, true);
+      extendSelectionCopy(current.x, current.y);
+      current.timer = window.setTimeout(tick, 70);
+    };
+    selectionAutoScrollRef.current = { direction, x: clientX, y: clientY, timer: window.setTimeout(tick, 70) };
+  };
+  useEffect(() => {
+    selectionAutoScrollUpdateRef.current = updateSelectionAutoScroll;
+    return () => { selectionAutoScrollUpdateRef.current = null; };
+  });
+
 
   useEffect(() => {
     const themeConfig = getTheme(themeName || 'XTerminal Green');
