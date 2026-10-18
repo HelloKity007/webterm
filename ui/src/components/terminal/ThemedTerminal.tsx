@@ -1500,6 +1500,10 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
     const visibilityObserver = new IntersectionObserver(entries => {
       if (entries.some(entry => entry.isIntersecting)) {
         scheduleFit();
+        // Showing a panel is a user action on this client: drop the stale
+        // "already controlling" flag so a shared grid inflated by a departed
+        // peer is reclaimed instead of staying oversized.
+        deactivateGeometry();
         activateGeometry();
         // Hiding a panel resets its scroll rail to 0 while xterm's own viewport
         // keeps the saved history line. Re-align the rail before the next paint
