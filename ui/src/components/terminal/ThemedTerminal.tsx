@@ -860,14 +860,21 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
     if (geometryConnectedRef.current) automaticGeometry?.connect();
     const activateGeometry = () => automaticGeometry?.activate();
     const deactivateGeometry = () => automaticGeometry?.deactivate();
+    // Returning to this window is a user action on this client. Drop the stale
+    // control flag so a shared grid inflated by a departed peer is reclaimed
+    // for every panel at once, not only the one that gets clicked.
+    const reclaimGeometry = () => {
+      automaticGeometry?.deactivate();
+      automaticGeometry?.activate();
+    };
     const geometryVisibility = () => {
-      if (document.visibilityState === 'visible') activateGeometry();
+      if (document.visibilityState === 'visible') reclaimGeometry();
       else deactivateGeometry();
     };
     const geometryPanel = geometrySurface?.closest('.terminal-grid-cell') || geometrySurface;
     geometryPanel?.addEventListener('pointerdown', activateGeometry, true);
     geometryPanel?.addEventListener('keydown', activateGeometry, true);
-    window.addEventListener('focus', activateGeometry);
+    window.addEventListener('focus', reclaimGeometry);
     window.addEventListener('blur', deactivateGeometry);
     document.addEventListener('visibilitychange', geometryVisibility);
     const wheelSender = createLatestTerminalWheelSender((data) => sendRef.current(JSON.stringify({ data })));
@@ -1500,11 +1507,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
     const visibilityObserver = new IntersectionObserver(entries => {
       if (entries.some(entry => entry.isIntersecting)) {
         scheduleFit();
-        // Showing a panel is a user action on this client: drop the stale
-        // "already controlling" flag so a shared grid inflated by a departed
-        // peer is reclaimed instead of staying oversized.
-        deactivateGeometry();
-        activateGeometry();
+        reclaimGeometry();
         // Hiding a panel resets its scroll rail to 0 while xterm's own viewport
         // keeps the saved history line. Re-align the rail before the next paint
         // so the panel comes straight back at the line the user left, instead of
@@ -1528,7 +1531,7 @@ export default function ThemedTerminal({ connId, onStatus, onResizeDim, extraMen
       if (automaticGeometryRef.current === automaticGeometry) automaticGeometryRef.current = null;
       geometryPanel?.removeEventListener('pointerdown', activateGeometry, true);
       geometryPanel?.removeEventListener('keydown', activateGeometry, true);
-      window.removeEventListener('focus', activateGeometry);
+      window.removeEventListener('focus', reclaimGeometry);
       window.removeEventListener('blur', deactivateGeometry);
       document.removeEventListener('visibilitychange', geometryVisibility);
       modeFitRef.current = () => {};
