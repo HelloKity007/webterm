@@ -51,10 +51,10 @@ try {
   await session.route('**/api/auth/test-session', (route) => route.fulfill({ status: 404, body: '' }));
   const page = await session.newPage();
   const dialogs = [];
+  let acceptNextConfirm = false;
   page.on('dialog', async (dialog) => {
     dialogs.push({ type: dialog.type(), message: dialog.message() });
-    if (dialogs.length === 1 && dialog.type() === 'confirm') await dialog.dismiss(); // cancel path
-    else if (dialog.type() === 'confirm') await dialog.accept(); // confirm path
+    if (dialog.type() === 'confirm' && acceptNextConfirm) await dialog.accept();
     else await dialog.dismiss();
   });
   page.on('pageerror', (e) => rows.push({ row: 'pageerror', status: 'FAIL', note: e.message }));
@@ -116,7 +116,8 @@ try {
     const state = await layoutState();
     const layout = state.layout;
     const terminal = JSON.parse((await userApi(`/api/terminal-sessions/${connId}`, 'POST', {})).text).terminal_id;
-    const wsIndex = layout.workspaceTabs.length + 1;
+    // Indexes must be unique; closing workspaces leaves gaps, so take the max.
+    const wsIndex = Math.max(0, ...layout.workspaceTabs.map((w) => Number(w.index) || 0)) + 1;
     void toV2;
     const paneId = `matrix-close-pane-${wsIndex}`;
     layout.workspaceTabs.push({
@@ -132,7 +133,7 @@ try {
     const saved = await userApi('/api/layout', 'PUT', {
       schema_version: 2, revision: state.revision, layout,
     });
-    if (saved.status >= 300) throw new Error(`cannot create workspace: ${saved.text}`);
+    if (saved.status >= 300) throw new Error(`cannot create workspace: ${saved.text} :: payload=${JSON.stringify(layout).slice(0, 400)}`);
     return { workspaceId: layout.workspaceTabs.at(-1).id, terminal };
   };
 
@@ -164,6 +165,7 @@ try {
   const before = await layoutState();
   const btn1 = closeButton('矩阵关闭');
   if (!await btn1.count()) throw new Error('workspace close button not found');
+  acceptNextConfirm = false; // cancel path
   await btn1.first().click();
   await page.waitForTimeout(600);
   const afterCancel = await layoutState();
@@ -175,6 +177,7 @@ try {
   await expandTabs();
   const activeBefore = await page.evaluate(() => document.querySelectorAll('.terminal-surface').length);
   const btn2 = closeButton('矩阵关闭');
+  acceptNextConfirm = true;
   await btn2.first().click();
   await page.waitForTimeout(1200); // second dialog is accepted
   const activeAfter = await page.evaluate(() => document.querySelectorAll('.terminal-surface').length);
@@ -189,6 +192,7 @@ try {
     await expandTabs();
     const btn = closeButton('矩阵');
     if (!await btn.count()) break;
+    acceptNextConfirm = true;
     await btn.first().click();
     await page.waitForTimeout(1200);
     guard += 1;
@@ -215,9 +219,91 @@ try {
   record('close: survives cache-bypassing reload', afterHard.layout.workspaceTabs.length === afterReload.layout.workspaceTabs.length ? 'PASS' : 'FAIL',
     `ws ${afterReload.layout.workspaceTabs.length} -> ${afterHard.layout.workspaceTabs.length}`);
 
-  // 5. Peer additions during close need a renewed confirmation (not automated).
-  record('close: peer additions require renewed confirmation', 'NOT RUN',
-    'needs a second authenticated client mutating the workspace mid-close');
+  // 5. A peer that adds a Panel during the close must force a renewed
+  //    confirmation instead of the close silently eating the new tab.
+  try {
+    const extra = await makeWorkspaceWithTerminal();
+    await makeWorkspaceWithTerminal();
+    await makeWorkspaceWithTerminal();
+    await page.reload({ waitUntil: 'domcontentloaded', timeout: 60000 });
+    await page.waitForSelector('.activity-rail', { timeout: 60000 });
+    await page.waitForTimeout(2500);
+    await expandTabs();
+
+    // A second client of the same user mutates the workspace mid-close.
+    const peerContext = await browser.newContext({ ignoreHTTPSErrors: true, viewport: { width: 1280, height: 800 } });
+    await peerContext.route('**/api/auth/test-session', (route) => route.fulfill({ status: 404, body: '' }));
+    const peerPage = await peerContext.newPage();
+    await peerPage.goto(`${origin}/`, { waitUntil: 'domcontentloaded', timeout: 60000 });
+    await peerPage.waitForTimeout(600);
+    await peerPage.getByLabel(/用户名|user/i).first().fill(username);
+    await peerPage.getByLabel(/密码|password/i).first().fill(password);
+    await peerPage.keyboard.press('Enter');
+    await peerPage.waitForSelector('.activity-rail', { timeout: 60000 });
+    await peerPage.waitForTimeout(1500);
+    const peerApi = (path, method = 'GET', body) => peerPage.evaluate(async ({ path, method, body }) => {
+      const token = localStorage.getItem('token') || '';
+      const response = await fetch(path, {
+        method,
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: body ? JSON.stringify(body) : undefined,
+      });
+      return { status: response.status, text: await response.text() };
+    }, { path, method, body });
+
+    dialogs.length = 0;
+    acceptNextConfirm = true; // this close should be accepted so the race can happen
+    const btn = closeButton('矩阵关闭');
+    await btn.first().click();
+    // While the close is terminating terminals, the peer adds a new Panel.
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    const peerState = JSON.parse((await peerApi('/api/layout')).text);
+    const peerLayout = toV2(peerState.layout);
+    const target = peerLayout.workspaceTabs.find((w) => w.name.includes('矩阵关闭') && w.layout?.panes
+      && Object.values(w.layout.panes).some((pane) => (pane.tabs || []).length > 0));
+    const peerTerminal = JSON.parse((await peerApi(`/api/terminal-sessions/${connId}`, 'POST', {})).text).terminal_id;
+    const peerPaneId = Object.keys(target.layout.panes)[0];
+    target.layout.panes[peerPaneId].tabs.push({ id: peerTerminal, type: 'ssh', title: 'peer-add', connId, labelNumber: 77 });
+    await peerApi('/api/layout', 'PUT', { schema_version: 2, revision: peerState.revision, layout: peerLayout });
+
+    let message = '';
+    for (let i = 0; i < 12; i += 1) {
+      await page.waitForTimeout(300);
+      message = await page.evaluate(() => Array.from(document.querySelectorAll('[role="status"]')).map((n) => n.textContent).join(' | '));
+      if (message.includes('新增了 Panel') || message.includes('重新确认') || message.includes('部分终端')) break;
+    }
+    const stillThere = await hasWorkspace('矩阵关闭');
+    const afterRace = await layoutState();
+    const keptPeerTab = JSON.stringify(afterRace.layout.workspaceTabs).includes(peerTerminal);
+    // The acceptance criterion is that the close did not silently eat the new
+    // Panel: the workspace survives with the peer's tab, so a renewed
+    // confirmation is required.
+    const renewed = (message.includes('新增了 Panel') || message.includes('重新确认') || message.includes('同步最新布局')) && stillThere && keptPeerTab;
+    record('close: peer additions require renewed confirmation', renewed && stillThere ? 'PASS' : 'FAIL',
+      `message=${JSON.stringify(message.slice(0, 160))}, dialogs=${JSON.stringify(dialogs.map((d) => d.type))}, workspace kept=${stillThere}, peer tab=${peerTerminal.slice(0, 12)}`);
+
+    // After a renewed confirmation with no further additions, the close succeeds.
+    acceptNextConfirm = true;
+    // Renewed confirmation: close every workspace that still holds a matrix tab.
+    let passes = 0;
+    while (passes < 6) {
+      await expandTabs();
+      const again = closeButton('矩阵');
+      if (!await again.count()) break;
+      acceptNextConfirm = true;
+      await again.first().click();
+      await page.waitForTimeout(2000);
+      passes += 1;
+    }
+    const finalState = await layoutState();
+    const leftovers = JSON.stringify(finalState.layout.workspaceTabs).includes(peerTerminal);
+    record('close: renewed confirmation then succeeds', leftovers ? 'FAIL' : 'PASS',
+      `${passes} confirm passes, workspaces left=${finalState.layout.workspaceTabs.length}, peer tab left=${leftovers}`);
+    await peerContext.close();
+    void extra;
+  } catch (error) {
+    record('close: peer additions require renewed confirmation', 'FAIL', error.message);
+  }
 
   await session.close();
   void first;
