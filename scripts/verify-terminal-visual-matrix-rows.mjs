@@ -225,9 +225,15 @@ try {
     for (let i = 0; i < 5; i += 1) {
       const from = i % 2;
       const to = from + 1;
-      // Tabs are HTML5-draggable; a raw mouse drag does not fire dragstart.
-      await pane.locator('.terminal-tabbar [data-terminal-tab]').nth(from)
-        .dragTo(pane.locator('.terminal-tabbar [data-terminal-tab]').nth(to));
+      const sourceId = before[from];
+      const targetId = before[to];
+      const targetBox = await pane.locator(`[data-tab-id="${targetId}"]`).boundingBox();
+      // Tabs are HTML5-draggable: only a real drag-and-drop fires dragstart.
+      // onDrop inserts AFTER the target when the pointer lands past its middle,
+      // so the drop must land on the right half to actually reorder.
+      await page.dragAndDrop(`[data-tab-id="${sourceId}"]`, `[data-tab-id="${targetId}"]`, {
+        targetPosition: { x: Math.round(targetBox.width - 6), y: Math.round(targetBox.height / 2) },
+      });
       await page.waitForTimeout(500);
       const after = await orderOf();
       cycles.push({ moved: after.join() !== before.join(), after });

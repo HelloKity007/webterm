@@ -107,6 +107,15 @@ try {
     const page = await context.newPage();
     page.on('pageerror', (e) => errors.push(`${name}: ${e.message}`));
     await boot(page);
+    // Earlier contexts at other viewport sizes leave the shared tmux grids
+    // inflated. Activate each panel so the local capacity is reclaimed before
+    // measuring fill; otherwise the row only measures that leftover conflict.
+    await page.bringToFront();
+    for (let i = 0; i < 8; i += 1) {
+      await page.locator('.terminal-surface').nth(i).click({ position: { x: 12, y: 12 } }).catch(() => {});
+      await page.waitForTimeout(250);
+    }
+    await page.waitForTimeout(1200);
     await shot(page, `fill-${name}`);
     const states = await page.evaluate(() => Array.from(document.querySelectorAll('.terminal-surface'))
       .filter((n) => n.offsetParent !== null)
